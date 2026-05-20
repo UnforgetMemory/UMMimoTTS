@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { api, type Task, type TaskStatus, type TaskEvent } from '@/api/client'
-import { useIntervalFn } from '@vueuse/core'
 
 export const useTaskStore = defineStore('task', () => {
   const tasks = ref<Task[]>([])
@@ -130,17 +129,9 @@ export const useTaskStore = defineStore('task', () => {
     eventSources.clear()
   }
 
-  // 自动刷新（5秒间隔）
-  const { pause: pauseRefresh, resume: resumeRefresh } = useIntervalFn(
-    () => loadTasks(),
-    5000,
-    { immediate: false }
-  )
-
-  // 初始化时加载任务并开始自动刷新
+  // 初始化时加载任务（不再使用轮询）
   function init() {
     loadTasks()
-    resumeRefresh()
   }
 
   return {
@@ -154,8 +145,6 @@ export const useTaskStore = defineStore('task', () => {
     createTask,
     removeTask,
     updateTaskStatus,
-    pauseRefresh,
-    resumeRefresh,
     init,
     cleanup,
   }

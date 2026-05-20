@@ -84,6 +84,20 @@ impl AppState {
         self.tasks.read().values().cloned().collect()
     }
 
+    pub fn update_task_title(&self, task_id: &str, title: String) -> Option<TtsTask> {
+        let mut tasks = self.tasks.write();
+        if let Some(task) = tasks.get_mut(task_id) {
+            task.custom_title = if title.is_empty() {
+                None
+            } else {
+                Some(title)
+            };
+            Some(task.clone())
+        } else {
+            None
+        }
+    }
+
     pub fn subscribe_events(&self, task_id: String) -> Receiver<TaskEvent> {
         let (tx, rx) = flume::bounded::<TaskEvent>(100);
         self.event_senders

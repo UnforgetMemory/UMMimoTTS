@@ -13,6 +13,7 @@ pub struct SynthesizeResponse {
 #[derive(Debug, Serialize)]
 pub struct TaskResponse {
     pub id: String,
+    pub custom_title: Option<String>,
     pub status: TaskStatus,
     pub model: String,
     pub voice: Option<String>,

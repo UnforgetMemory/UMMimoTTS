@@ -21,6 +21,7 @@ export type TaskStatus = 'pending' | 'queued' | 'synthesizing' | 'streaming' | '
 
 export interface Task {
   id: string
+  custom_title?: string
   status: TaskStatus
   model: string
   voice: string | null
@@ -103,5 +104,9 @@ export const api = {
   // 优先使用 CDN URL（零延迟），回退到后端代理（兼容性）
   getVoicePreviewUrl(voiceId: string, previewUrl?: string): string {
     return previewUrl || `/api/v1/voices/${voiceId}/preview`
+  },
+
+  async updateTaskTitle(taskId: string, title: string): Promise<void> {
+    await apiClient.patch(`/api/v1/tasks/${taskId}/title`, { title })
   },
 }

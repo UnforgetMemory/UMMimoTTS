@@ -51,7 +51,10 @@
         </div>
         
         <div class="flex-1 overflow-y-auto p-3 sm:p-4">
-          <TaskListSidebar />
+          <TaskListSidebar
+            @open-player="handleOpenPlayer"
+            @reuse-config="handleReuseConfig"
+          />
         </div>
       </aside>
     </Transition>
@@ -66,6 +69,11 @@
     </Transition>
 
     <ApiConfigDialog v-model:open="showConfigDialog" />
+    
+    <AudioPlayerDialog
+      v-model:open="showAudioPlayer"
+      :task-id="currentAudioTaskId"
+    />
 
     <Toaster />
   </div>
@@ -82,6 +90,7 @@ import FooterInfo from './components/FooterInfo.vue'
 import TaskListSidebar from './components/TaskListSidebar.vue'
 import SynthesizeForm from './components/SynthesizeForm.vue'
 import ApiConfigDialog from './components/ApiConfigDialog.vue'
+import AudioPlayerDialog from './components/AudioPlayerDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { X as XIcon } from 'lucide-vue-next'
@@ -92,6 +101,8 @@ const themeStore = useThemeStore()
 const showConfigDialog = ref(false)
 const showTaskSidebar = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
+const showAudioPlayer = ref(false)
+const currentAudioTaskId = ref<string | null>(null)
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {
@@ -107,6 +118,17 @@ watch(showTaskSidebar, async (newValue) => {
     sidebarRef.value?.focus()
   }
 })
+
+// Audio player handlers
+function handleOpenPlayer(taskId: string) {
+  currentAudioTaskId.value = taskId
+  showAudioPlayer.value = true
+}
+
+function handleReuseConfig(config: { text: string; voice: string | null; model: string }) {
+  // TODO: Implement config reuse - fill into SynthesizeForm
+  console.log('Reuse config:', config)
+}
 
 onMounted(() => {
   // 初始化主题

@@ -37,6 +37,7 @@ impl std::fmt::Display for TaskStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TtsTask {
     pub id: String,
+    pub custom_title: Option<String>,
     pub status: TaskStatus,
     pub model: String,
     pub voice: Option<String>,
@@ -65,6 +66,7 @@ impl TtsTask {
 
         Self {
             id: Uuid::new_v4().to_string(),
+            custom_title: None,
             status: TaskStatus::Pending,
             model,
             voice,

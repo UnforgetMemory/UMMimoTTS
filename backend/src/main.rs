@@ -61,6 +61,10 @@ async fn main() -> std::io::Result<()> {
                 "/api/v1/tasks/{task_id}/audio",
                 web::get().to(routes::tasks::get_audio),
             )
+            .route(
+                "/api/v1/tasks/{task_id}/title",
+                web::patch().to(routes::tasks::update_task_title),
+            )
             .route("/api/v1/voices", web::get().to(routes::voices::list_voices))
             .route(
                 "/api/v1/voices/{voice_id}/preview",

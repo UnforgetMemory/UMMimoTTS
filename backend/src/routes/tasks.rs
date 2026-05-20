@@ -1,6 +1,7 @@
 use crate::models::response::{ErrorResponse, TaskResponse};
 use crate::state::app_state::AppState;
 use actix_web::{web, HttpResponse, Responder};
+use serde::Deserialize;
 
 pub async fn list_tasks(data: web::Data<AppState>) -> impl Responder {
     let tasks = data.list_tasks();
@@ -9,6 +10,7 @@ pub async fn list_tasks(data: web::Data<AppState>) -> impl Responder {
         .into_iter()
         .map(|task| TaskResponse {
             id: task.id.clone(),
+            custom_title: task.custom_title.clone(),
             status: task.status.clone(),
             model: task.model.clone(),
             voice: task.voice.clone(),
@@ -34,6 +36,7 @@ pub async fn get_task(path: web::Path<String>, data: web::Data<AppState>) -> imp
         Some(task) => {
             let response = TaskResponse {
                 id: task.id.clone(),
+                custom_title: task.custom_title.clone(),
                 status: task.status.clone(),
                 model: task.model.clone(),
                 voice: task.voice.clone(),
@@ -94,6 +97,47 @@ pub async fn get_audio(path: web::Path<String>, data: web::Data<AppState>) -> im
                     code: Some("AUDIO_NOT_AVAILABLE".to_string()),
                 })
             }
+        }
+        None => HttpResponse::NotFound().json(ErrorResponse {
+            error: "任务不存在".to_string(),
+            message: format!("任务 ID: {}", task_id),
+            code: Some("TASK_NOT_FOUND".to_string()),
+        }),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateTitleRequest {
+    pub title: String,
+}
+
+pub async fn update_task_title(
+    path: web::Path<String>,
+    body: web::Json<UpdateTitleRequest>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let task_id = path.into_inner();
+    let new_title = body.into_inner().title;
+
+    match data.update_task_title(&task_id, new_title) {
+        Some(task) => {
+            let response = TaskResponse {
+                id: task.id.clone(),
+                custom_title: task.custom_title.clone(),
+                status: task.status.clone(),
+                model: task.model.clone(),
+                voice: task.voice.clone(),
+                text: task.text.clone(),
+                created_at: task.created_at.to_rfc3339(),
+                completed_at: task.completed_at.map(|t| t.to_rfc3339()),
+                error: task.error.clone(),
+                progress: task.progress,
+                token_count: task.token_count,
+                char_count: task.char_count,
+                elapsed_secs: task.elapsed_seconds(),
+                has_audio: task.audio_data.is_some(),
+            };
+            HttpResponse::Ok().json(response)
         }
         None => HttpResponse::NotFound().json(ErrorResponse {
             error: "任务不存在".to_string(),
