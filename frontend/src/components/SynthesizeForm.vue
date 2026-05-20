@@ -4,7 +4,7 @@
       <CardTitle>新建合成任务</CardTitle>
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
     </CardHeader>
-    <CardContent class="space-y-4">
+    <CardContent class="space-y-3 sm:space-y-4">
       <!-- Text Input -->
       <div class="space-y-2">
         <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
@@ -39,12 +39,15 @@
       <div class="space-y-2">
         <Label>音色 <span class="text-destructive">*</span></Label>
         <div v-if="voicesLoading" class="text-sm text-muted-foreground">加载音色中...</div>
-        <div v-else class="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
+        <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
           <Card
             v-for="voice in voices"
             :key="voice.id"
-            class="cursor-pointer transition hover:border-primary relative group"
-            :class="{ 'border-primary bg-primary/5': form.voice === voice.id }"
+            class="cursor-pointer transition-colors relative group 
+                   border-border hover:border-primary/60 dark:hover:border-primary/80"
+            :class="{ 
+              'border-primary bg-primary-light dark:bg-primary-light': form.voice === voice.id 
+            }"
             @click="form.voice = voice.id"
           >
             <CardContent class="p-2 sm:p-3">
@@ -182,6 +185,13 @@ async function handleSubmit() {
 }
 
 async function playVoicePreview(voiceId: string) {
+  const voice = voices.value.find(v => v.id === voiceId)
+  
+  if (!voice) {
+    toast.error('音色不存在')
+    return
+  }
+
   // 如果正在播放同一个音色，停止播放
   if (previewingVoice.value === voiceId && currentAudio.value) {
     currentAudio.value.pause()
@@ -198,22 +208,31 @@ async function playVoicePreview(voiceId: string) {
 
   try {
     previewingVoice.value = voiceId
-    const audio = new Audio(api.getVoicePreviewUrl(voiceId))
+    
+    // 优先使用 CDN URL，回退到后端代理
+    const previewUrl = api.getVoicePreviewUrl(voiceId, voice.preview_url)
+    console.log(`[音色预览] 使用 URL: ${previewUrl}`)
+    
+    const audio = new Audio(previewUrl)
     currentAudio.value = audio
     
     audio.onended = () => {
+      console.log(`[音色预览] 播放完成: ${voiceId}`)
       previewingVoice.value = null
       currentAudio.value = null
     }
     
-    audio.onerror = () => {
+    audio.onerror = (e) => {
+      console.error(`[音色预览] 加载失败:`, e, 'URL:', previewUrl)
       toast.error('试听音频加载失败')
       previewingVoice.value = null
       currentAudio.value = null
     }
     
     await audio.play()
+    console.log(`[音色预览] 开始播放: ${voiceId}`)
   } catch (error) {
+    console.error(`[音色预览] 播放异常:`, error)
     toast.error('试听播放失败')
     previewingVoice.value = null
     currentAudio.value = null

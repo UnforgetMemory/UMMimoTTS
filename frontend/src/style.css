@@ -9,23 +9,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --color-primary: #3b82f6;
-  --color-primary-foreground: #ffffff;
-  --radius-lg: 0.5rem;
-}
-
-@layer base {
-  body {
-    @apply bg-background text-foreground antialiased;
-    @apply bg-background text-foreground;
-    @apply font-sans;
-  }
-  * {
-    @apply border-border outline-ring/50;
-  }
-}
-
 @theme inline {
   /* 自定义断点 */
   --breakpoint-xs: 375px;    /* 小手机 */
@@ -82,8 +65,11 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.488 0.243 264.376);  /* blue-700 */
+  --primary-foreground: oklch(1 0 0);      /* 白色文字 */
+  --primary-hover: oklch(0.45 0.243 264.376);  /* blue-800，用于悬停 */
+  --primary-light: oklch(0.95 0.05 264.376);    /* 极浅蓝色，用于选中背景 */
+  --primary-subtle: oklch(0.97 0.03 264.376);   /* 微妙蓝色，用于悬停背景 */
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -102,7 +88,7 @@
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
@@ -117,12 +103,15 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+  --primary: oklch(0.623 0.214 259.815);  /* blue-500，在暗色背景下更醒目 */
+  --primary-foreground: oklch(1 0 0);      /* 白色文字 */
+  --primary-hover: oklch(0.68 0.214 259.815);   /* blue-400，用于悬停 */
+  --primary-light: oklch(0.25 0.08 259.815);    /* 深蓝，用于选中背景 */
+  --primary-subtle: oklch(0.22 0.06 259.815);   /* 更深蓝，用于悬停背景 */
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.75 0 0);  /* 从 0.708 提升到 0.75，提高可读性 */
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -136,7 +125,7 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: oklch(0.623 0.214 259.815);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
@@ -165,4 +154,17 @@ html {
   html {
     font-size: 17px;
   }
+}
+
+/* 主题切换过渡动画 - 仅应用于需要过渡的元素 */
+button, a, [role="button"], .card, .badge, input, textarea, select {
+  transition-property: color, background-color, border-color, box-shadow;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* 主题切换时的平滑过渡 */
+html {
+  transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+              color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }

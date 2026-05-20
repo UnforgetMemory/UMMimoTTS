@@ -60,7 +60,7 @@
           <Button
             size="sm"
             variant="ghost"
-            class="h-6 sm:h-7 px-2 text-xs text-destructive hover:text-destructive"
+            class="h-6 sm:h-7 px-2 text-xs text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
             @click="handleDelete(task.id)"
           >
             删除

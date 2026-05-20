@@ -1,19 +1,19 @@
 <template>
   <div class="min-h-screen bg-background">
     <main class="flex flex-col">
-      <header class="border-b bg-card px-4 sm:px-6 py-3 sm:py-4">
+      <header class="border-b bg-background text-foreground px-3 sm:px-6 py-2.5 sm:py-3">
         <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
           <div class="flex-1 min-w-0">
             <h1 class="text-lg sm:text-xl md:text-2xl font-bold truncate">MIMO TTS 语音合成</h1>
             <p class="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">基于 MIMO v2.5 模型的高品质语音合成服务</p>
           </div>
           
-          <div class="flex items-center gap-2 shrink-0">
+          <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Button 
               variant="outline" 
               size="sm" 
               @click="showTaskSidebar = !showTaskSidebar"
-              :class="{ 'bg-primary/10': showTaskSidebar }"
+              :class="{ 'bg-primary-light dark:bg-primary-light': showTaskSidebar }"
               class="text-xs sm:text-sm"
             >
               <ListIcon class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
@@ -25,13 +25,46 @@
               <SettingsIcon class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
               <span class="hidden xs:inline">配置</span>
             </Button>
+            
+            <!-- Theme Toggle Dropdown -->
+            <DropdownMenu>
+              <DropdownMenuTrigger as-child>
+                <Button variant="outline" size="sm" class="text-xs sm:text-sm">
+                  <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                  <MoonIcon v-else class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                  <span class="hidden xs:inline">
+                    {{ themeStore.theme === 'system' ? '系统' : themeStore.theme === 'light' ? '明亮' : '暗色' }}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem @click="themeStore.setTheme('light')">
+                  <SunIcon class="w-4 h-4 mr-2" />
+                  <span>明亮模式</span>
+                  <DropdownMenuShortcut v-if="themeStore.theme === 'light'">✓</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="themeStore.setTheme('dark')">
+                  <MoonIcon class="w-4 h-4 mr-2" />
+                  <span>暗色模式</span>
+                  <DropdownMenuShortcut v-if="themeStore.theme === 'dark'">✓</DropdownMenuShortcut>
+                </DropdownMenuItem>
+                <DropdownMenuItem @click="themeStore.setTheme('system')">
+                  <MonitorIcon class="w-4 h-4 mr-2" />
+                  <span>跟随系统</span>
+                  <DropdownMenuShortcut v-if="themeStore.theme === 'system'">✓</DropdownMenuShortcut>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <span class="text-xs text-muted-foreground hidden sm:inline">v2.0</span>
           </div>
         </div>
       </header>
 
-      <div class="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 space-y-4 sm:space-y-6">
-        <SynthesizeForm />
+      <div class="flex-1 overflow-y-auto bg-background px-3 sm:px-4 md:px-6 py-4 sm:py-6">
+        <div class="max-w-4xl mx-auto space-y-4 sm:space-y-6">
+          <SynthesizeForm />
+        </div>
       </div>
     </main>
 
@@ -39,7 +72,7 @@
       <aside 
         ref="sidebarRef"
         v-if="showTaskSidebar" 
-        class="fixed right-0 top-0 h-full bg-card border-l shadow-xl z-50 flex flex-col
+        class="fixed right-0 top-0 h-full bg-background text-foreground border-l shadow-xl z-50 flex flex-col
                w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[32rem]"
         role="complementary"
         aria-label="任务列表面板"
@@ -103,19 +136,31 @@
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
+import { useThemeStore } from '@/stores/theme'
 import TaskListSidebar from './components/TaskListSidebar.vue'
 import SynthesizeForm from './components/SynthesizeForm.vue'
 import ApiConfigDialog from './components/ApiConfigDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+} from '@/components/ui/dropdown-menu'
 import { 
   Settings as SettingsIcon, 
   List as ListIcon,
-  X as XIcon 
+  X as XIcon,
+  Moon as MoonIcon,
+  Sun as SunIcon,
+  Monitor as MonitorIcon
 } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
 const configStore = useConfigStore()
+const themeStore = useThemeStore()
 const showConfigDialog = ref(false)
 const showTaskSidebar = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
@@ -136,6 +181,9 @@ watch(showTaskSidebar, async (newValue) => {
 })
 
 onMounted(() => {
+  // 初始化主题
+  themeStore.init()
+  
   configStore.loadFromStorage()
   taskStore.init()
   // 添加键盘监听

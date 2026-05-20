@@ -100,7 +100,8 @@ export const api = {
   },
 
   // 获取音色试听 URL
-  getVoicePreviewUrl(voiceId: string): string {
-    return `/api/v1/voices/${voiceId}/preview`
+  // 优先使用 CDN URL（零延迟），回退到后端代理（兼容性）
+  getVoicePreviewUrl(voiceId: string, previewUrl?: string): string {
+    return previewUrl || `/api/v1/voices/${voiceId}/preview`
   },
 }

@@ -34,6 +34,7 @@ pub struct VoiceInfo {
     pub language: String,
     pub gender: String,
     pub style: String,
+    pub preview_url: Option<String>,  // CDN 预览音频 URL
 }
 
 #[derive(Debug, Serialize)]
