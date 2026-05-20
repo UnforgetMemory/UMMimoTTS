@@ -4,7 +4,7 @@
     <BrandHero />
     
     <!-- 主内容区 -->
-    <main class="relative z-10 flex flex-col items-center justify-start min-h-screen px-4 py-8 sm:py-12">
+    <main class="relative z-1 flex flex-col items-center justify-start min-h-screen px-4 py-8 sm:py-12">
       
       <!-- 合成表单 -->
       <div class="w-full max-w-4xl mt-8 sm:mt-12">
@@ -20,6 +20,7 @@
       :show-task-sidebar="showTaskSidebar"
       @open-config="showConfigDialog = true"
       @toggle-tasks="showTaskSidebar = !showTaskSidebar"
+      class="z-50"
     />
 
     <!-- 任务列表面板（保持现有逻辑） -->
