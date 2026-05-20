@@ -8,7 +8,7 @@
       
       <!-- 合成表单 -->
       <div class="w-full max-w-4xl mt-8 sm:mt-12">
-        <SynthesizeForm />
+        <SynthesizeForm ref="synthesizeFormRef" />
       </div>
       
       <!-- 底部信息 -->
@@ -103,6 +103,7 @@ const showTaskSidebar = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
 const showAudioPlayer = ref(false)
 const currentAudioTaskId = ref<string | null>(null)
+const synthesizeFormRef = ref<InstanceType<typeof SynthesizeForm> | null>(null)
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {
@@ -126,8 +127,10 @@ function handleOpenPlayer(taskId: string) {
 }
 
 function handleReuseConfig(config: { text: string; voice: string | null; model: string }) {
-  // TODO: Implement config reuse - fill into SynthesizeForm
-  console.log('Reuse config:', config)
+  // 调用 SynthesizeForm 的 setConfig 方法
+  synthesizeFormRef.value?.setConfig(config)
+  // 关闭侧边栏以便用户查看填充后的表单
+  showTaskSidebar.value = false
 }
 
 onMounted(() => {

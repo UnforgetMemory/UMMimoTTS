@@ -138,6 +138,7 @@ import {
   Loader2 as Loader2Icon
 } from 'lucide-vue-next'
 import { api, type Task, type TaskStatus } from '@/api/client'
+import { debounce } from '@/utils'
 
 const props = defineProps<{
   task: Task
@@ -162,8 +163,14 @@ function startEditTitle() {
   nextTick(() => titleInputRef.value?.focus())
 }
 
+// Debounced save title to avoid frequent API calls
+const debouncedSaveTitle = debounce((taskId: string, title: string) => {
+  emit('editTitle', taskId, title)
+}, 500)
+
 function saveTitle() {
-  emit('editTitle', props.task.id, editingTitle.value.trim())
+  const trimmedTitle = editingTitle.value.trim()
+  debouncedSaveTitle(props.task.id, trimmedTitle)
   isEditingTitle.value = false
 }
 
@@ -183,8 +190,8 @@ function formatDuration(secs: number): string {
   return `${mins}m ${remainingSecs.toFixed(0)}s`
 }
 
-function getStatusVariant(status: TaskStatus) {
-  const variants: Record<TaskStatus, any> = {
+function getStatusVariant(status: TaskStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
+  const variants: Record<TaskStatus, 'default' | 'secondary' | 'destructive' | 'outline'> = {
     pending: 'secondary',
     queued: 'secondary',
     synthesizing: 'default',

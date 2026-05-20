@@ -98,6 +98,7 @@ const isPlaying = ref(false)
 const playbackRate = ref(1)
 const waveformCanvas = ref<HTMLCanvasElement | null>(null)
 const currentTimeValue = ref([0])
+const audioContextRef = ref<AudioContext | null>(null)
 
 watch(() => props.taskId, async (taskId) => {
   if (taskId && props.open) {
@@ -180,12 +181,18 @@ async function drawWaveform(url: string) {
   canvas.height = canvas.offsetHeight
   
   try {
-    // Fetch audio data
-    const response = await fetch(url)
+    // Fetch audio data with CORS
+    const response = await fetch(url, { mode: 'cors' })
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+    
     const arrayBuffer = await response.arrayBuffer()
     
     // Decode audio
     const audioContext = new AudioContext()
+    audioContextRef.value = audioContext
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
     
     // Get channel data
@@ -216,15 +223,41 @@ async function drawWaveform(url: string) {
       ctx.fillRect(x, y, barWidth - 1, barHeight)
     }
     
-    audioContext.close()
+    // Important: close AudioContext to free resources
+    await audioContext.close()
+    
   } catch (error) {
-    console.error('Failed to draw waveform:', error)
-    // Fallback: draw simple placeholder
-    ctx.fillStyle = 'hsl(var(--muted-foreground))'
-    ctx.font = '12px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText('波形可视化暂不可用', canvas.width / 2, canvas.height / 2)
+    console.warn('波形可视化失败，使用降级方案:', error)
+    drawFallbackWaveform(ctx, canvas)
   }
+}
+
+// Fallback: draw simple sine wave pattern
+function drawFallbackWaveform(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+  ctx.strokeStyle = 'hsl(var(--primary))'
+  ctx.lineWidth = 2
+  
+  const centerY = canvas.height / 2
+  const amplitude = canvas.height / 4
+  const frequency = 0.02
+  
+  ctx.beginPath()
+  for (let x = 0; x < canvas.width; x++) {
+    const y = centerY + Math.sin(x * frequency) * amplitude * Math.sin(x * 0.01)
+    if (x === 0) {
+      ctx.moveTo(x, y)
+    } else {
+      ctx.lineTo(x, y)
+    }
+  }
+  ctx.stroke()
+  
+  // Add hint text
+  ctx.fillStyle = 'hsl(var(--muted-foreground))'
+  ctx.font = '12px sans-serif'
+  ctx.textAlign = 'center'
+  ctx.fillText('波形预览（简化模式）', canvas.width / 2, canvas.height - 10)
 }
 
 function cleanup() {
@@ -232,6 +265,10 @@ function cleanup() {
     audio.value.pause()
     audio.value.src = ''
     audio.value = null
+  }
+  if (audioContextRef.value) {
+    audioContextRef.value.close()
+    audioContextRef.value = null
   }
   isPlaying.value = false
   currentTime.value = 0

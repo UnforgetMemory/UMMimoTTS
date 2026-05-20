@@ -1,5 +1,19 @@
 <template>
   <div class="space-y-4">
+    <!-- Header with refresh button -->
+    <div class="flex items-center justify-between mb-2">
+      <h2 class="text-lg font-semibold">任务历史</h2>
+      <Button 
+        variant="outline" 
+        size="sm"
+        @click="refreshTasks" 
+        :disabled="taskStore.loading"
+      >
+        <Loader2Icon v-if="taskStore.loading" class="w-4 h-4 mr-2 animate-spin" />
+        {{ taskStore.loading ? '刷新中...' : '刷新' }}
+      </Button>
+    </div>
+
     <!-- Loading State -->
     <div v-if="taskStore.loading && taskStore.tasks.length === 0" class="space-y-2">
       <Skeleton class="h-20 w-full" />
@@ -96,6 +110,7 @@ import { computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { api, type Task } from '@/api/client'
+import { handleApiError } from '@/utils/errorHandler'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import TaskItem from './TaskItem.vue'
@@ -144,7 +159,7 @@ async function handleEditTitle(taskId: string, newTitle: string) {
     toast.success('标题已更新')
     await taskStore.loadTasks() // Reload to get updated data
   } catch (error) {
-    toast.error('更新失败')
+    handleApiError(error, '更新标题失败')
   }
 }
 
@@ -157,5 +172,10 @@ async function handleDelete(taskId: string) {
   } catch (error) {
     toast.error('删除失败')
   }
+}
+
+async function refreshTasks() {
+  await taskStore.loadTasks()
+  toast.success('列表已刷新')
 }
 </script>

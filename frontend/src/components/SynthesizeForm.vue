@@ -7,7 +7,18 @@
     <CardContent class="space-y-5 sm:space-y-6 pt-0 px-4 md:px-6 lg:px-8">
       <!-- Text Input -->
       <div class="space-y-2">
-        <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
+        <div class="flex items-center justify-between">
+          <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
+          <Button 
+            v-if="form.text" 
+            variant="ghost" 
+            size="sm"
+            class="h-6 text-xs"
+            @click="clearText"
+          >
+            清空
+          </Button>
+        </div>
         <Textarea
           id="text"
           v-model="form.text"
@@ -131,7 +142,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
@@ -172,10 +183,22 @@ const charCount = ref(0)
 const estimatedTokens = ref(0)
 
 function updateCounts() {
-  charCount.value = form.value.text.length
-  const chineseChars = (form.value.text.match(/[\u4e00-\u9fff]/g) || []).length
-  const englishWords = form.value.text.split(/\s+/).filter(w => w).length
-  estimatedTokens.value = Math.ceil(chineseChars * 1.5 + englishWords * 0.75)
+  const text = form.value.text
+  charCount.value = text.length
+  
+  // More accurate token estimation
+  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length
+  const englishWords = text.split(/\s+/).filter(w => w.length > 0).length
+  const punctuation = (text.match(/[.,!?;:，。！？；：]/g) || []).length
+  const numbers = (text.match(/\d+/g) || []).length
+  
+  // MIMO TTS actual token calculation rules
+  estimatedTokens.value = Math.ceil(
+    chineseChars * 1.2 +   // Chinese characters
+    englishWords * 0.8 +   // English words
+    punctuation * 0.3 +    // Punctuation
+    numbers * 0.5          // Numbers
+  )
 }
 
 async function loadVoices() {
@@ -283,7 +306,52 @@ async function playVoicePreview(voiceId: string) {
   }
 }
 
+// Keyboard shortcuts
+function handleKeydown(event: KeyboardEvent) {
+  // Ctrl/Cmd + Enter to submit
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault()
+    if (!isSubmitting.value && form.value.text.trim() && form.value.voice) {
+      handleSubmit()
+    }
+  }
+  
+  // ESC to clear text (only when textarea is focused)
+  if (event.key === 'Escape') {
+    const textArea = document.getElementById('text') as HTMLTextAreaElement
+    if (document.activeElement === textArea && form.value.text) {
+      event.preventDefault()
+      clearText()
+    }
+  }
+}
+
+function clearText() {
+  if (confirm('确定要清空文本吗？')) {
+    form.value.text = ''
+    updateCounts()
+  }
+}
+
 onMounted(() => {
   loadVoices()
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
+
+// 暴露方法供父组件调用（配置复用）
+function setConfig(config: { text: string; voice: string | null; model: string }) {
+  if (config.text) form.value.text = config.text
+  if (config.voice) form.value.voice = config.voice
+  if (config.model) form.value.model = config.model
+  updateCounts()
+  toast.success('已复用历史配置')
+}
+
+defineExpose({
+  setConfig
 })
 </script>
