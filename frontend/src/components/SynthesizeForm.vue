@@ -4,7 +4,7 @@
       <CardTitle>新建合成任务</CardTitle>
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
     </CardHeader>
-    <CardContent class="space-y-5 sm:space-y-6 pt-0">
+    <CardContent class="space-y-5 sm:space-y-6 pt-0 px-4">
       <!-- Text Input -->
       <div class="space-y-2">
         <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
