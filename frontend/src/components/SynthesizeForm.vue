@@ -1,5 +1,5 @@
 <template>
-  <Card>
+  <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg">
     <CardHeader class="pb-3">
       <CardTitle>新建合成任务</CardTitle>
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
