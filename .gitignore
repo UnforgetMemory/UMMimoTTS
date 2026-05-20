@@ -34,3 +34,6 @@ npm-debug.log*
 # Test scripts and reports (temporary)
 *-test.ps1
 *TEST-REPORT.md
+
+# Test screenshots
+test-screenshots/
