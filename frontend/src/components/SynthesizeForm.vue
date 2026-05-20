@@ -4,7 +4,7 @@
       <CardTitle>新建合成任务</CardTitle>
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
     </CardHeader>
-    <CardContent class="space-y-4 sm:space-y-5 pt-0">
+    <CardContent class="space-y-5 sm:space-y-6 pt-0">
       <!-- Text Input -->
       <div class="space-y-2">
         <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
@@ -39,50 +39,72 @@
       <div class="space-y-2">
         <Label>音色 <span class="text-destructive">*</span></Label>
         
-        <!-- 选择状态提示 -->
-        <div v-if="form.voice" class="text-sm font-medium mb-2 flex items-center gap-2 text-primary">
-          <CheckIcon class="w-4 h-4" />
-          已选择: {{ voices.find(v => v.id === form.voice)?.name }}
-        </div>
-        
         <div v-if="voicesLoading" class="text-sm text-muted-foreground">加载音色中...</div>
-        <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
-          <Card
+        <div v-else class="space-y-2.5 xl:grid xl:grid-cols-2 xl:gap-2.5 xl:space-y-0">
+          <div
             v-for="voice in voices"
             :key="voice.id"
-            class="cursor-pointer transition-all duration-150 relative group border-2"
-            :class="{ 
-              'border-primary bg-primary-light dark:bg-primary/10 shadow-md': form.voice === voice.id,
-              'hover:border-primary/50 hover:bg-muted/50': form.voice !== voice.id
+            class="flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all duration-150 active:scale-[0.98]"
+            :class="{
+              'border-primary bg-primary-light dark:bg-primary/10': form.voice === voice.id,
+              'border-border hover:border-primary/50 hover:bg-muted/50': form.voice !== voice.id
             }"
             @click="form.voice = voice.id"
+            tabindex="0"
+            @keydown.enter="form.voice = voice.id"
+            @keydown.space.prevent="form.voice = voice.id"
           >
-            <CardContent class="p-3 sm:p-4">
-              <!-- 选中标记 -->
-              <div v-if="form.voice === voice.id" 
-                   class="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md">
-                <CheckIcon class="w-3 h-3 text-white" />
-              </div>
+            <!-- 左侧：选中标记 + 音色信息 -->
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+              <!-- 选中标记（仅选中时显示） -->
+              <CheckIcon v-if="form.voice === voice.id" 
+                         class="w-5 h-5 text-primary shrink-0 mr-1" />
+              <div v-else class="w-5 shrink-0 mr-1"></div>
               
-              <!-- 音色信息 -->
-              <div class="font-medium text-sm pr-6">{{ voice.name }}</div>
-              <div class="text-xs text-muted-foreground mt-1">
-                {{ voice.language }} · {{ voice.gender }}
+              <!-- 音色名称和描述 -->
+              <div class="min-w-0 flex-1">
+                <div class="font-medium text-sm truncate mb-1.5">{{ voice.name }}</div>
+                
+                <!-- 图标化属性标签 -->
+                <div class="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+                  <!-- 语言 -->
+                  <span class="inline-flex items-center gap-1">
+                    <GlobeIcon class="w-3 h-3" />
+                    {{ voice.language }}
+                  </span>
+                  
+                  <!-- 性别 -->
+                  <span class="inline-flex items-center gap-1">
+                    <UserIcon v-if="voice.gender === '男声'" class="w-3 h-3" />
+                    <UserRoundIcon v-else class="w-3 h-3" />
+                    {{ voice.gender }}
+                  </span>
+                  
+                  <!-- 风格（如果有） -->
+                  <span v-if="voice.style" class="inline-flex items-center gap-1">
+                    <SparklesIcon class="w-3 h-3" />
+                    {{ voice.style }}
+                  </span>
+                </div>
               </div>
-              
-              <!-- 预览按钮（悬停显示） -->
-              <Button
-                size="sm"
-                variant="ghost"
-                class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
-                @click.stop="playVoicePreview(voice.id)"
-                :disabled="previewingVoice === voice.id"
-              >
-                <PlayIcon v-if="previewingVoice !== voice.id" class="w-3 h-3" />
-                <Loader2Icon v-else class="w-3 h-3 animate-spin" />
-              </Button>
-            </CardContent>
-          </Card>
+            </div>
+            
+            <!-- 右侧：播放按钮（固定显示） -->
+            <Button
+              size="sm"
+              variant="outline"
+              class="h-10 w-10 p-0 shrink-0 ml-3 rounded-full border-2 
+                     hover:bg-primary/10 hover:border-primary 
+                     active:scale-95 transition-all duration-150
+                     disabled:opacity-50 disabled:cursor-not-allowed"
+              @click.stop="playVoicePreview(voice.id)"
+              :disabled="previewingVoice === voice.id"
+              aria-label="试听音色"
+            >
+              <PlayIcon v-if="previewingVoice !== voice.id" class="w-5 h-5 text-primary" />
+              <Loader2Icon v-else class="w-5 h-5 text-primary animate-spin" />
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -114,13 +136,21 @@ import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
 import { api, type Voice } from '@/api/client'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Play as PlayIcon, Loader2 as Loader2Icon, Check as CheckIcon } from 'lucide-vue-next'
+import { 
+  Play as PlayIcon, 
+  Loader2 as Loader2Icon, 
+  Check as CheckIcon,
+  Globe as GlobeIcon,
+  User as UserIcon,
+  UserRound as UserRoundIcon,
+  Sparkles as SparklesIcon
+} from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
 const configStore = useConfigStore()
