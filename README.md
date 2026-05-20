@@ -195,7 +195,43 @@ Pending → Queued → Synthesizing → Streaming → Completed
 
 ## 许可证
 
-MIT
+本项目采用 **MIT License** 开源协议。
+
+详见 [LICENSE](LICENSE) 文件。
+
+## 第三方资源声明
+
+### 小米官方资源引用
+
+本项目使用了以下来自小米官方的资源和材料：
+
+1. **音色预览音频**
+   - 来源：小米 MIMO TTS 官方 CDN
+   - URL: `https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/`
+   - 包含音色：冰糖、茉莉、苏打、白桦、Mia、Chloe、Milo、Dean
+   - 版权：归小米公司所有
+
+2. **音色头像图片**
+   - 来源：小米 MiMo Studio 官方网站
+   - 格式：WebP
+   - 版权：归小米公司所有
+
+3. **API 服务**
+   - 服务提供方：小米 MIMO 开放平台
+   - 文档：[MIMO API 文档](https://platform.xiaomimimo.com/docs/zh-CN/usage-guide/speech-synthesis-v2.5)
+   - 使用需遵守小米开放平台服务条款
+
+### 免责声明
+
+- 本项目仅为技术演示和学习用途，非小米官方产品
+- 所有音色相关资源（音频、图片）的版权归小米公司所有
+- 使用本项目时需自行申请 MIMO API Key 并遵守小米开放平台的使用条款
+- 本项目作者与小米公司无任何隶属关系
+- 如因使用本项目产生的任何纠纷，由使用者自行承担
+
+### 致谢
+
+感谢小米公司提供优质的 TTS 服务和开发平台。
 
 ## 相关链接
 
