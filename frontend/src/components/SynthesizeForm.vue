@@ -1,10 +1,10 @@
 <template>
   <Card>
-    <CardHeader>
+    <CardHeader class="pb-3">
       <CardTitle>新建合成任务</CardTitle>
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
     </CardHeader>
-    <CardContent class="space-y-3 sm:space-y-4">
+    <CardContent class="space-y-4 sm:space-y-5 pt-0">
       <!-- Text Input -->
       <div class="space-y-2">
         <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
@@ -40,7 +40,7 @@
         <Label>音色 <span class="text-destructive">*</span></Label>
         
         <!-- 选择状态提示 -->
-        <div v-if="form.voice" class="text-sm text-primary font-medium mb-2 flex items-center gap-2">
+        <div v-if="form.voice" class="text-sm font-medium mb-2 flex items-center gap-2 text-primary">
           <CheckIcon class="w-4 h-4" />
           已选择: {{ voices.find(v => v.id === form.voice)?.name }}
         </div>
@@ -52,15 +52,15 @@
             :key="voice.id"
             class="cursor-pointer transition-all duration-150 relative group border-2"
             :class="{ 
-              'border-primary bg-muted': form.voice === voice.id,
-              'hover:border-primary/50': form.voice !== voice.id
+              'border-primary bg-primary-light dark:bg-primary/10 shadow-md': form.voice === voice.id,
+              'hover:border-primary/50 hover:bg-muted/50': form.voice !== voice.id
             }"
             @click="form.voice = voice.id"
           >
             <CardContent class="p-3 sm:p-4">
               <!-- 选中标记 -->
               <div v-if="form.voice === voice.id" 
-                   class="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                   class="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-md">
                 <CheckIcon class="w-3 h-3 text-white" />
               </div>
               

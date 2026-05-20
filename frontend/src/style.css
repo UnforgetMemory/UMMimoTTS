@@ -112,11 +112,11 @@
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.75 0 0);  /* 从 0.708 提升到 0.75，提高可读性 */
-  --accent: oklch(0.269 0 0);
+  --accent: oklch(0.3 0 0);  /* 从 0.269 提升到 0.3，增加对比度 */
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --border: oklch(1 0 0 / 15%);  /* 从 10% 提升到 15% */
+  --input: oklch(1 0 0 / 20%);   /* 从 15% 提升到 20% */
   --ring: oklch(0.556 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);

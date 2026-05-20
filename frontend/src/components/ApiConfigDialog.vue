@@ -1,6 +1,6 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-md w-[95vw] xs:w-[90vw] sm:w-auto mx-auto">
+    <DialogContent class="sm:max-w-md w-[95vw] xs:w-[90vw] sm:w-auto mx-auto p-6">
       <DialogHeader>
         <DialogTitle class="text-base sm:text-lg">API 配置</DialogTitle>
         <DialogDescription class="text-xs sm:text-sm">
@@ -17,7 +17,7 @@
             v-model="apiKey"
             type="password"
             placeholder="输入 MIMO API Key"
-            class="text-sm"
+            class="text-sm focus-visible:ring-2 focus-visible:ring-primary/50"
           />
           <p class="text-xs text-muted-foreground">
             API Key 将保存在浏览器本地存储中
@@ -25,8 +25,11 @@
         </div>
 
         <!-- Current Status -->
-        <div v-if="configStore.apiKey" class="p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-900">
-          <div class="flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+        <div v-if="configStore.apiKey" class="p-3 rounded-lg border transition-colors"
+             :class="isDark 
+               ? 'bg-green-950/30 border-green-800 text-green-300' 
+               : 'bg-green-50 border-green-200 text-green-700'">
+          <div class="flex items-center gap-2 text-sm">
             <CheckIcon class="w-4 h-4" />
             <span>API Key 已配置</span>
           </div>
@@ -49,6 +52,7 @@
 import { computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { useConfigStore } from '@/stores/config'
+import { useThemeStore } from '@/stores/theme'
 import {
   Dialog,
   DialogContent,
@@ -72,6 +76,8 @@ defineEmits<{
 }>()
 
 const configStore = useConfigStore()
+const themeStore = useThemeStore()
+const isDark = computed(() => themeStore.actualTheme === 'dark')
 const apiKey = computed({
   get: () => configStore.apiKey,
   set: (value) => configStore.apiKey = value,

@@ -13,8 +13,8 @@
           class="w-10 h-10 p-0 rounded-lg transition-colors hover:bg-muted"
           aria-label="切换主题"
         >
-          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5" />
-          <MoonIcon v-else class="w-5 h-5" />
+          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5 text-foreground" />
+          <MoonIcon v-else class="w-5 h-5 text-foreground" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
@@ -44,19 +44,19 @@
       @click="$emit('open-config')"
       aria-label="API 配置"
     >
-      <SettingsIcon class="w-5 h-5" />
+      <SettingsIcon class="w-5 h-5 text-foreground" />
     </Button>
 
     <!-- 任务列表按钮 -->
     <Button 
       variant="outline" 
       size="sm"
-      :class="{ 'bg-muted': showTaskSidebar }"
+      :class="{ 'bg-primary/10 border-primary': showTaskSidebar }"
       class="w-10 h-10 p-0 rounded-lg transition-colors hover:bg-muted"
       @click="$emit('toggle-tasks')"
       aria-label="任务列表"
     >
-      <ListIcon class="w-5 h-5" />
+      <ListIcon class="w-5 h-5 text-foreground" />
     </Button>
   </div>
 </template>

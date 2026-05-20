@@ -14,11 +14,14 @@
     </div>
 
     <!-- Task Items -->
-    <div v-else class="space-y-2">
+    <div v-else class="space-y-2.5">
       <div
         v-for="task in displayedTasks"
         :key="task.id"
-        class="border rounded-lg p-2 sm:p-3 space-y-2 hover:bg-accent transition-colors"
+        class="border rounded-lg p-2 sm:p-3 space-y-2 
+               hover:bg-accent/50 dark:hover:bg-accent/70 
+               active:bg-accent/70 dark:active:bg-accent/90
+               transition-colors duration-150"
       >
         <!-- Status and Voice -->
         <div class="flex items-center justify-between gap-2">
@@ -33,7 +36,7 @@
 
         <!-- Progress Bar -->
         <div v-if="isProcessing(task.status)" class="space-y-1">
-          <Progress :value="task.progress * 100" class="h-1" />
+          <Progress :value="task.progress * 100" class="h-1.5" />
         </div>
 
         <!-- Actions -->
@@ -60,7 +63,10 @@
           <Button
             size="sm"
             variant="ghost"
-            class="h-6 sm:h-7 px-2 text-xs text-destructive hover:bg-destructive/10 dark:hover:bg-destructive/20"
+            class="h-6 sm:h-7 px-2 text-xs text-destructive 
+                   hover:bg-destructive/15 dark:hover:bg-destructive/30
+                   active:bg-destructive/25 dark:active:bg-destructive/40
+                   transition-colors"
             @click="handleDelete(task.id)"
           >
             删除
@@ -119,14 +125,14 @@ const displayedTasks = computed(() => {
 
 function getStatusVariant(status: TaskStatus): 'default' | 'secondary' | 'destructive' | 'outline' {
   const variants: Record<TaskStatus, any> = {
-    pending: 'outline',
-    queued: 'outline',
-    synthesizing: 'secondary',
-    streaming: 'secondary',
+    pending: 'secondary',
+    queued: 'secondary',
+    synthesizing: 'default',
+    streaming: 'default',
     completed: 'default',
     failed: 'destructive',
   }
-  return variants[status] || 'outline'
+  return variants[status] || 'secondary'
 }
 
 function getStatusText(status: TaskStatus): string {
