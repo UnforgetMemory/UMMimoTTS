@@ -30,3 +30,7 @@ npm-debug.log*
 *.wav
 *.mp3
 *.test.*
+
+# Test scripts and reports (temporary)
+*-test.ps1
+*TEST-REPORT.md
