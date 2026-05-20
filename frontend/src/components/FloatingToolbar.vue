@@ -8,9 +8,9 @@
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
         <Button 
-          variant="outline" 
+          variant="ghost" 
           size="sm"
-          class="w-10 h-10 p-0 rounded-full backdrop-blur-md bg-background/80 hover:bg-background/95 shadow-lg transition-all duration-200 hover:scale-110"
+          class="w-10 h-10 p-0 rounded-lg hover:bg-muted transition-colors"
           aria-label="切换主题"
         >
           <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5" />
@@ -38,9 +38,9 @@
 
     <!-- API 配置按钮 -->
     <Button 
-      variant="outline" 
+      variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full backdrop-blur-md bg-background/80 hover:bg-background/95 shadow-lg transition-all duration-200 hover:scale-110"
+      class="w-10 h-10 p-0 rounded-lg hover:bg-muted transition-colors"
       @click="$emit('open-config')"
       aria-label="API 配置"
     >
@@ -49,10 +49,10 @@
 
     <!-- 任务列表按钮 -->
     <Button 
-      variant="outline" 
+      variant="ghost" 
       size="sm"
-      :class="{ 'bg-primary-light dark:bg-primary-light': showTaskSidebar }"
-      class="w-10 h-10 p-0 rounded-full backdrop-blur-md bg-background/80 hover:bg-background/95 shadow-lg transition-all duration-200 hover:scale-110"
+      :class="{ 'bg-muted': showTaskSidebar }"
+      class="w-10 h-10 p-0 rounded-lg hover:bg-muted transition-colors"
       @click="$emit('toggle-tasks')"
       aria-label="任务列表"
     >

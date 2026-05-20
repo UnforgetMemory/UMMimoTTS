@@ -1,19 +1,10 @@
 <template>
-  <div class="min-h-screen bg-background relative overflow-hidden">
-    <!-- 背景装饰层 -->
-    <div class="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/50 dark:from-gray-900 dark:via-purple-900/20 dark:to-gray-900 pointer-events-none"></div>
-    
-    <!-- 悬浮工具栏 -->
-    <FloatingToolbar 
-      :show-task-sidebar="showTaskSidebar"
-      @open-config="showConfigDialog = true"
-      @toggle-tasks="showTaskSidebar = !showTaskSidebar"
-    />
+  <div class="min-h-screen bg-background relative">
+    <!-- 背景水印 -->
+    <BrandHero />
     
     <!-- 主内容区 -->
     <main class="relative z-10 flex flex-col items-center justify-start min-h-screen px-4 py-8 sm:py-12">
-      <!-- 品牌展示 -->
-      <BrandHero />
       
       <!-- 合成表单 -->
       <div class="w-full max-w-4xl mt-8 sm:mt-12">
@@ -23,6 +14,13 @@
       <!-- 底部信息 -->
       <FooterInfo />
     </main>
+
+    <!-- 悬浮工具栏 -->
+    <FloatingToolbar 
+      :show-task-sidebar="showTaskSidebar"
+      @open-config="showConfigDialog = true"
+      @toggle-tasks="showTaskSidebar = !showTaskSidebar"
+    />
 
     <!-- 任务列表面板（保持现有逻辑） -->
     <Transition name="slide-in-right">

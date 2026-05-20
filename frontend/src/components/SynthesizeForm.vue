@@ -50,23 +50,22 @@
           <Card
             v-for="voice in voices"
             :key="voice.id"
-            class="cursor-pointer transition-all duration-200 relative group
-                   border-2 hover:border-primary/80 hover:shadow-lg hover:shadow-primary/20
-                   active:scale-95"
+            class="cursor-pointer transition-all duration-150 relative group border-2"
             :class="{ 
-              'border-primary bg-gradient-to-br from-primary/10 to-purple-500/10 shadow-lg shadow-primary/30': form.voice === voice.id 
+              'border-primary bg-muted': form.voice === voice.id,
+              'hover:border-primary/50': form.voice !== voice.id
             }"
             @click="form.voice = voice.id"
           >
             <CardContent class="p-3 sm:p-4">
               <!-- 选中标记 -->
               <div v-if="form.voice === voice.id" 
-                   class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md animate-bounce-in">
-                <CheckIcon class="w-3.5 h-3.5 text-white" />
+                   class="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                <CheckIcon class="w-3 h-3 text-white" />
               </div>
               
               <!-- 音色信息 -->
-              <div class="font-medium text-sm">{{ voice.name }}</div>
+              <div class="font-medium text-sm pr-6">{{ voice.name }}</div>
               <div class="text-xs text-muted-foreground mt-1">
                 {{ voice.language }} · {{ voice.gender }}
               </div>
@@ -74,8 +73,8 @@
               <!-- 预览按钮（悬停显示） -->
               <Button
                 size="sm"
-                variant="secondary"
-                class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
+                variant="ghost"
+                class="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-0"
                 @click.stop="playVoicePreview(voice.id)"
                 :disabled="previewingVoice === voice.id"
               >
@@ -258,15 +257,3 @@ onMounted(() => {
   loadVoices()
 })
 </script>
-
-<style scoped>
-@keyframes bounceIn {
-  0% { transform: scale(0); opacity: 0; }
-  50% { transform: scale(1.2); }
-  100% { transform: scale(1); opacity: 1; }
-}
-
-.animate-bounce-in {
-  animation: bounceIn 0.3s ease-out;
-}
-</style>
