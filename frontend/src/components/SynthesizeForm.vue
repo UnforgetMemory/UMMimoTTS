@@ -1,0 +1,226 @@
+<template>
+  <Card>
+    <CardHeader>
+      <CardTitle>新建合成任务</CardTitle>
+      <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
+    </CardHeader>
+    <CardContent class="space-y-4">
+      <!-- Text Input -->
+      <div class="space-y-2">
+        <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
+        <Textarea
+          id="text"
+          v-model="form.text"
+          placeholder="输入要合成的文本..."
+          rows="4"
+          class="text-sm sm:text-base"
+          @input="updateCounts"
+        />
+        <div class="text-xs text-muted-foreground flex flex-wrap gap-2 sm:gap-3">
+          <span>字符数: {{ charCount }}</span>
+          <span>预估 Token: {{ estimatedTokens }}</span>
+        </div>
+      </div>
+
+      <!-- Model Select -->
+      <div class="space-y-2">
+        <Label for="model">模型</Label>
+        <Select v-model="form.model">
+          <SelectTrigger>
+            <SelectValue placeholder="选择模型" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts (预置音色)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <!-- Voice Selection -->
+      <div class="space-y-2">
+        <Label>音色 <span class="text-destructive">*</span></Label>
+        <div v-if="voicesLoading" class="text-sm text-muted-foreground">加载音色中...</div>
+        <div v-else class="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 sm:gap-3">
+          <Card
+            v-for="voice in voices"
+            :key="voice.id"
+            class="cursor-pointer transition hover:border-primary relative group"
+            :class="{ 'border-primary bg-primary/5': form.voice === voice.id }"
+            @click="form.voice = voice.id"
+          >
+            <CardContent class="p-2 sm:p-3">
+              <div class="font-medium text-xs sm:text-sm">{{ voice.name }}</div>
+              <div class="text-xs text-muted-foreground mt-1">
+                {{ voice.language }} · {{ voice.gender }}
+              </div>
+              
+              <!-- Preview Button (appears on hover) -->
+              <Button
+                size="sm"
+                variant="secondary"
+                class="absolute top-1 right-1 sm:top-2 sm:right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 sm:h-7 sm:w-7 p-0"
+                @click.stop="playVoicePreview(voice.id)"
+                :disabled="previewingVoice === voice.id"
+              >
+                <PlayIcon v-if="previewingVoice !== voice.id" class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                <Loader2Icon v-else class="w-2.5 h-2.5 sm:w-3 sm:h-3 animate-spin" />
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <!-- Context Input -->
+      <div class="space-y-2">
+        <Label for="context">风格控制 (可选)</Label>
+        <Input
+          id="context"
+          v-model="form.context"
+          placeholder="例如：用温柔的语气，语速稍慢"
+        />
+      </div>
+
+      <!-- Submit Button -->
+      <Button
+        @click="handleSubmit"
+        :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.apiKey"
+        class="w-full sm:w-auto text-sm sm:text-base"
+      >
+        {{ isSubmitting ? '合成中...' : '开始合成' }}
+      </Button>
+    </CardContent>
+  </Card>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { toast } from 'vue-sonner'
+import { useTaskStore } from '@/stores/task'
+import { useConfigStore } from '@/stores/config'
+import { api, type Voice } from '@/api/client'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Play as PlayIcon, Loader2 as Loader2Icon } from 'lucide-vue-next'
+
+const taskStore = useTaskStore()
+const configStore = useConfigStore()
+
+const voices = ref<Voice[]>([])
+const voicesLoading = ref(false)
+const isSubmitting = ref(false)
+const previewingVoice = ref<string | null>(null)
+const currentAudio = ref<HTMLAudioElement | null>(null)
+
+const form = ref({
+  text: '',
+  voice: '',
+  model: 'mimo-v2.5-tts',
+  context: '',
+})
+
+const charCount = ref(0)
+const estimatedTokens = ref(0)
+
+function updateCounts() {
+  charCount.value = form.value.text.length
+  const chineseChars = (form.value.text.match(/[\u4e00-\u9fff]/g) || []).length
+  const englishWords = form.value.text.split(/\s+/).filter(w => w).length
+  estimatedTokens.value = Math.ceil(chineseChars * 1.5 + englishWords * 0.75)
+}
+
+async function loadVoices() {
+  voicesLoading.value = true
+  try {
+    voices.value = await api.getVoices()
+    if (voices.value.length > 0 && !form.value.voice) {
+      form.value.voice = voices.value[0].id
+    }
+  } catch (error) {
+    toast.error('加载音色列表失败')
+    console.error(error)
+  } finally {
+    voicesLoading.value = false
+  }
+}
+
+async function handleSubmit() {
+  if (!form.value.text.trim()) {
+    toast.error('请输入合成文本')
+    return
+  }
+  if (!form.value.voice) {
+    toast.error('请选择音色')
+    return
+  }
+  if (!configStore.apiKey) {
+    toast.error('请配置 API Key')
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    await taskStore.createTask({
+      text: form.value.text,
+      voice: form.value.voice,
+      model: form.value.model,
+      context: form.value.context || undefined,
+      api_key: configStore.apiKey,
+    })
+    
+    toast.success('任务创建成功')
+    form.value.text = ''
+    form.value.context = ''
+    updateCounts()
+  } catch (error: any) {
+    toast.error(error.response?.data?.message || error.message || '创建任务失败')
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function playVoicePreview(voiceId: string) {
+  // 如果正在播放同一个音色，停止播放
+  if (previewingVoice.value === voiceId && currentAudio.value) {
+    currentAudio.value.pause()
+    currentAudio.value = null
+    previewingVoice.value = null
+    return
+  }
+
+  // 停止之前的播放
+  if (currentAudio.value) {
+    currentAudio.value.pause()
+    currentAudio.value = null
+  }
+
+  try {
+    previewingVoice.value = voiceId
+    const audio = new Audio(api.getVoicePreviewUrl(voiceId))
+    currentAudio.value = audio
+    
+    audio.onended = () => {
+      previewingVoice.value = null
+      currentAudio.value = null
+    }
+    
+    audio.onerror = () => {
+      toast.error('试听音频加载失败')
+      previewingVoice.value = null
+      currentAudio.value = null
+    }
+    
+    await audio.play()
+  } catch (error) {
+    toast.error('试听播放失败')
+    previewingVoice.value = null
+    currentAudio.value = null
+  }
+}
+
+onMounted(() => {
+  loadVoices()
+})
+</script>
