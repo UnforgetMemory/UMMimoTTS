@@ -5,6 +5,20 @@
       <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
     </CardHeader>
     <CardContent class="space-y-5 sm:space-y-6 pt-0 px-4 md:px-6 lg:px-8">
+      <!-- Task Name Input -->
+      <div class="space-y-2">
+        <Label for="taskName">任务名称（可选）</Label>
+        <Input
+          id="taskName"
+          v-model="form.taskName"
+          placeholder="留空则自动生成（例如：任务_20240519_143022）"
+          class="text-sm"
+        />
+        <p class="text-xs text-muted-foreground">
+          相同名称的任务会自动添加序号后缀以避免冲突
+        </p>
+      </div>
+
       <!-- Text Input -->
       <div class="space-y-2">
         <div class="flex items-center justify-between">
@@ -177,6 +191,7 @@ const form = ref({
   voice: '',
   model: 'mimo-v2.5-tts',
   context: '',
+  taskName: '',  // Optional custom task name
 })
 
 const charCount = ref(0)
@@ -237,6 +252,7 @@ async function handleSubmit() {
       voice: form.value.voice,
       model: form.value.model,
       context: form.value.context || undefined,
+      task_name: form.value.taskName || undefined,  // Pass custom task name
       api_key: configStore.apiKey,
     })
     

@@ -1,11 +1,12 @@
 <template>
   <Dialog :open="open" @update:open="$emit('update:open', $event)">
-    <DialogContent class="sm:max-w-2xl">
-      <DialogHeader>
+    <DialogContent class="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
+      <DialogHeader class="shrink-0">
         <DialogTitle>音频播放器</DialogTitle>
       </DialogHeader>
       
-      <div class="space-y-4">
+      <!-- Fixed Audio Player Section -->
+      <div class="shrink-0 space-y-4 p-4 border-b bg-card">
         <!-- Waveform Visualization -->
         <canvas 
           ref="waveformCanvas" 
@@ -16,7 +17,7 @@
         <Slider
           v-model="currentTimeValue"
           :max="duration"
-          :step="0.1"
+          :step="0.01"
           @update:model-value="seekTo"
         />
         
@@ -29,36 +30,18 @@
         <!-- Playback Speed Controls -->
         <div class="flex items-center justify-center gap-2">
           <Button 
+            v-for="rate in [0.5, 1, 1.5, 2]"
+            :key="rate"
             size="sm" 
             variant="outline"
-            :class="{ 'bg-primary text-primary-foreground': playbackRate === 0.5 }"
-            @click="changeSpeed(0.5)"
+            :class="[
+              playbackRate === rate ? 'bg-primary text-primary-foreground border-primary shadow-md scale-105' : 'hover:bg-muted',
+              'transition-all duration-200 font-medium'
+            ]"
+            @click="changeSpeed(rate)"
           >
-            0.5x
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            :class="{ 'bg-primary text-primary-foreground': playbackRate === 1 }"
-            @click="changeSpeed(1)"
-          >
-            1x
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            :class="{ 'bg-primary text-primary-foreground': playbackRate === 1.5 }"
-            @click="changeSpeed(1.5)"
-          >
-            1.5x
-          </Button>
-          <Button 
-            size="sm" 
-            variant="outline"
-            :class="{ 'bg-primary text-primary-foreground': playbackRate === 2 }"
-            @click="changeSpeed(2)"
-          >
-            2x
+            <ZapIcon v-if="playbackRate === rate" class="w-3 h-3 mr-1" />
+            {{ rate }}x
           </Button>
         </div>
         
@@ -70,6 +53,14 @@
           </Button>
         </div>
       </div>
+      
+      <!-- Scrollable Original Text Section -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-3">
+        <h3 class="text-sm font-semibold text-muted-foreground">原文文本</h3>
+        <div class="text-sm leading-relaxed whitespace-pre-wrap text-foreground">
+          {{ props.originalText || '暂无文本' }}
+        </div>
+      </div>
     </DialogContent>
   </Dialog>
 </template>
@@ -79,12 +70,13 @@ import { ref, watch, onUnmounted } from 'vue'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { Play as PlayIcon, Pause as PauseIcon } from 'lucide-vue-next'
+import { Play as PlayIcon, Pause as PauseIcon, Zap as ZapIcon } from 'lucide-vue-next'
 import { api } from '@/api/client'
 
 const props = defineProps<{
   open: boolean
   taskId: string | null
+  originalText?: string  // Original text for display
 }>()
 
 const emit = defineEmits<{
@@ -122,6 +114,14 @@ async function loadAudio(taskId: string) {
     if (audio.value) {
       duration.value = audio.value.duration
       drawWaveform(api.getAudioUrl(taskId))
+      
+      // Auto-play when audio is loaded
+      audio.value.play().then(() => {
+        isPlaying.value = true
+      }).catch(err => {
+        console.warn('Auto-play prevented by browser policy:', err)
+        // Browser may block auto-play, fail silently
+      })
     }
   })
   audio.value.addEventListener('timeupdate', () => {
@@ -176,38 +176,38 @@ async function drawWaveform(url: string) {
   const ctx = canvas.getContext('2d')
   if (!ctx) return
   
-  // Set canvas size
-  canvas.width = canvas.offsetWidth
-  canvas.height = canvas.offsetHeight
+  // High DPI support for Retina displays
+  const dpr = window.devicePixelRatio || 1
+  const rect = canvas.getBoundingClientRect()
+  canvas.width = rect.width * dpr
+  canvas.height = rect.height * dpr
+  ctx.scale(dpr, dpr)
   
   try {
-    // Fetch audio data with CORS
     const response = await fetch(url, { mode: 'cors' })
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
     
     const arrayBuffer = await response.arrayBuffer()
-    
-    // Decode audio
     const audioContext = new AudioContext()
     audioContextRef.value = audioContext
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
     
-    // Get channel data
     const channelData = audioBuffer.getChannelData(0)
-    const samples = 100 // Number of bars
+    const samples = 200 // More samples for smoother visualization
     const blockSize = Math.floor(channelData.length / samples)
     
-    // Clear canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    // Gradient background
+    const gradient = ctx.createLinearGradient(0, 0, 0, rect.height)
+    gradient.addColorStop(0, 'hsl(var(--primary) / 0.1)')
+    gradient.addColorStop(0.5, 'hsl(var(--primary) / 0.3)')
+    gradient.addColorStop(1, 'hsl(var(--primary) / 0.1)')
     
-    // Draw waveform
-    const barWidth = canvas.width / samples
-    const amplitude = canvas.height / 2
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, rect.width, rect.height)
     
-    ctx.fillStyle = 'hsl(var(--primary))'
+    // Draw mirrored waveform
+    const barWidth = rect.width / samples
+    const centerY = rect.height / 2
     
     for (let i = 0; i < samples; i++) {
       let sum = 0
@@ -215,36 +215,63 @@ async function drawWaveform(url: string) {
         sum += Math.abs(channelData[i * blockSize + j])
       }
       const average = sum / blockSize
-      const barHeight = average * amplitude * 2
+      const barHeight = average * centerY * 1.8
       
       const x = i * barWidth
-      const y = (canvas.height - barHeight) / 2
+      const yTop = centerY - barHeight / 2
+      const yBottom = centerY + barHeight / 2
       
-      ctx.fillRect(x, y, barWidth - 1, barHeight)
+      // Gradient for bars
+      const barGradient = ctx.createLinearGradient(x, yTop, x, yBottom)
+      barGradient.addColorStop(0, 'hsl(var(--primary) / 0.6)')
+      barGradient.addColorStop(0.5, 'hsl(var(--primary))')
+      barGradient.addColorStop(1, 'hsl(var(--primary) / 0.6)')
+      
+      ctx.fillStyle = barGradient
+      ctx.fillRect(x, yTop, barWidth - 1, barHeight)
     }
     
-    // Important: close AudioContext to free resources
+    // Add center line
+    ctx.strokeStyle = 'hsl(var(--primary) / 0.3)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, centerY)
+    ctx.lineTo(rect.width, centerY)
+    ctx.stroke()
+    
     await audioContext.close()
     
   } catch (error) {
     console.warn('波形可视化失败，使用降级方案:', error)
-    drawFallbackWaveform(ctx, canvas)
+    drawEnhancedFallbackWaveform(ctx, rect)
   }
 }
 
-// Fallback: draw simple sine wave pattern
-function drawFallbackWaveform(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
+// Enhanced fallback with animation
+function drawEnhancedFallbackWaveform(ctx: CanvasRenderingContext2D, rect: DOMRect) {
+  ctx.clearRect(0, 0, rect.width, rect.height)
+  
+  // Background gradient
+  const bgGradient = ctx.createLinearGradient(0, 0, 0, rect.height)
+  bgGradient.addColorStop(0, 'hsl(var(--muted))')
+  bgGradient.addColorStop(1, 'hsl(var(--background))')
+  ctx.fillStyle = bgGradient
+  ctx.fillRect(0, 0, rect.width, rect.height)
+  
+  // Animated sine wave
+  const centerY = rect.height / 2
+  const amplitude = rect.height / 4
+  const time = Date.now() / 1000
+  
   ctx.strokeStyle = 'hsl(var(--primary))'
   ctx.lineWidth = 2
-  
-  const centerY = canvas.height / 2
-  const amplitude = canvas.height / 4
-  const frequency = 0.02
+  ctx.lineCap = 'round'
   
   ctx.beginPath()
-  for (let x = 0; x < canvas.width; x++) {
-    const y = centerY + Math.sin(x * frequency) * amplitude * Math.sin(x * 0.01)
+  for (let x = 0; x < rect.width; x++) {
+    const y = centerY + 
+      Math.sin(x * 0.02 + time * 2) * amplitude * 0.5 +
+      Math.sin(x * 0.05 + time * 3) * amplitude * 0.3
     if (x === 0) {
       ctx.moveTo(x, y)
     } else {
@@ -253,11 +280,11 @@ function drawFallbackWaveform(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasE
   }
   ctx.stroke()
   
-  // Add hint text
+  // Hint text
   ctx.fillStyle = 'hsl(var(--muted-foreground))'
   ctx.font = '12px sans-serif'
   ctx.textAlign = 'center'
-  ctx.fillText('波形预览（简化模式）', canvas.width / 2, canvas.height - 10)
+  ctx.fillText('波形预览（简化模式）', rect.width / 2, rect.height - 10)
 }
 
 function cleanup() {

@@ -73,6 +73,7 @@
     <AudioPlayerDialog
       v-model:open="showAudioPlayer"
       :task-id="currentAudioTaskId"
+      :original-text="getCurrentTaskText()"
     />
 
     <Toaster />
@@ -131,6 +132,13 @@ function handleReuseConfig(config: { text: string; voice: string | null; model: 
   synthesizeFormRef.value?.setConfig(config)
   // 关闭侧边栏以便用户查看填充后的表单
   showTaskSidebar.value = false
+}
+
+// Get current task text for audio player
+function getCurrentTaskText(): string {
+  if (!currentAudioTaskId.value) return ''
+  const task = taskStore.tasks.find(t => t.id === currentAudioTaskId.value)
+  return task?.text || ''
 }
 
 onMounted(() => {

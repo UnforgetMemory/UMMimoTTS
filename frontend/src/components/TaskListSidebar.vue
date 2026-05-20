@@ -14,6 +14,16 @@
       </Button>
     </div>
 
+    <!-- Search Bar -->
+    <div class="relative">
+      <SearchIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <Input
+        v-model="searchQuery"
+        placeholder="搜索任务名称或ID..."
+        class="pl-9 text-sm"
+      />
+    </div>
+
     <!-- Loading State -->
     <div v-if="taskStore.loading && taskStore.tasks.length === 0" class="space-y-2">
       <Skeleton class="h-20 w-full" />
@@ -30,14 +40,14 @@
     <!-- Task Items - Partitioned by Status -->
     <div v-else class="space-y-4">
       <!-- Pending Tasks Section -->
-      <section v-if="pendingTasks.length > 0" class="space-y-2">
+      <section v-if="filteredPendingTasks.length > 0" class="space-y-2">
         <h3 class="text-sm font-semibold text-primary flex items-center gap-2">
           <Loader2Icon class="w-4 h-4 animate-spin" />
-          进行中 ({{ pendingTasks.length }})
+          进行中 ({{ filteredPendingTasks.length }})
         </h3>
         <div class="space-y-2">
           <TaskItem 
-            v-for="task in pendingTasks" 
+            v-for="task in filteredPendingTasks" 
             :key="task.id"
             :task="task"
             mode="active"
@@ -50,13 +60,13 @@
       </section>
 
       <!-- Completed Tasks Section -->
-      <section v-if="completedTasks.length > 0" class="space-y-2">
+      <section v-if="filteredCompletedTasks.length > 0" class="space-y-2">
         <h3 class="text-sm font-semibold text-muted-foreground">
-          已完成 ({{ completedTasks.length }})
+          已完成 ({{ filteredCompletedTasks.length }})
         </h3>
         <div class="space-y-2">
           <TaskItem 
-            v-for="task in completedTasks" 
+            v-for="task in filteredCompletedTasks" 
             :key="task.id"
             :task="task"
             mode="completed"
@@ -69,15 +79,15 @@
       </section>
 
       <!-- Failed Tasks Section (Collapsible) -->
-      <section v-if="failedTasks.length > 0" class="space-y-2">
+      <section v-if="filteredFailedTasks.length > 0" class="space-y-2">
         <details class="group">
           <summary class="text-sm font-semibold text-destructive cursor-pointer list-none flex items-center gap-2">
             <ChevronRightIcon class="w-4 h-4 transition-transform group-open:rotate-90" />
-            失败 ({{ failedTasks.length }})
+            失败 ({{ filteredFailedTasks.length }})
           </summary>
           <div class="mt-2 space-y-2 pl-6">
             <TaskItem 
-              v-for="task in failedTasks" 
+              v-for="task in filteredFailedTasks" 
               :key="task.id"
               :task="task"
               mode="failed"
@@ -106,20 +116,23 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { api, type Task } from '@/api/client'
 import { handleApiError } from '@/utils/errorHandler'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import TaskItem from './TaskItem.vue'
 import { 
   Loader2 as Loader2Icon,
-  ChevronRight as ChevronRightIcon
+  ChevronRight as ChevronRightIcon,
+  Search as SearchIcon
 } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
+const searchQuery = ref('')
 
 // Computed properties for partitioned tasks
 const pendingTasks = computed(() => 
@@ -135,6 +148,34 @@ const completedTasks = computed(() =>
 const failedTasks = computed(() => 
   taskStore.tasks.filter(t => t.status === 'failed')
 )
+
+// Filtered tasks based on search query
+const filteredPendingTasks = computed(() => {
+  if (!searchQuery.value) return pendingTasks.value
+  const query = searchQuery.value.toLowerCase()
+  return pendingTasks.value.filter(t => 
+    t.custom_title?.toLowerCase().includes(query) ||
+    t.id.toLowerCase().includes(query)
+  )
+})
+
+const filteredCompletedTasks = computed(() => {
+  if (!searchQuery.value) return completedTasks.value
+  const query = searchQuery.value.toLowerCase()
+  return completedTasks.value.filter(t => 
+    t.custom_title?.toLowerCase().includes(query) ||
+    t.id.toLowerCase().includes(query)
+  )
+})
+
+const filteredFailedTasks = computed(() => {
+  if (!searchQuery.value) return failedTasks.value
+  const query = searchQuery.value.toLowerCase()
+  return failedTasks.value.filter(t => 
+    t.custom_title?.toLowerCase().includes(query) ||
+    t.id.toLowerCase().includes(query)
+  )
+})
 
 const emit = defineEmits<{
   'open-player': [taskId: string]

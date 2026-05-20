@@ -40,6 +40,7 @@ export const useTaskStore = defineStore('task', () => {
     voice: string
     model: string
     context?: string
+    task_name?: string  // Optional custom task name
     api_key?: string
   }) {
     loading.value = true

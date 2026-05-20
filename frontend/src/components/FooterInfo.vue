@@ -49,7 +49,7 @@
     
     <!-- Copyright -->
     <p class="mt-2 text-xs text-muted-foreground/70">
-      © 2026 MIMO TTS. All rights reserved.
+      © 2026 UM-MIMO-TTS. All rights reserved.
     </p>
   </footer>
 </template>

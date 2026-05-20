@@ -41,6 +41,7 @@ export interface SynthesizeRequest {
   voice: string
   model: string
   context?: string
+  task_name?: string  // Optional custom task name
   api_key?: string
 }
 

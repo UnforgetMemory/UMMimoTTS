@@ -65,7 +65,7 @@ impl TtsTask {
         let char_count = text.chars().count();
 
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::now_v7().to_string(),  // Use time-ordered UUIDv7 for better sorting
             custom_title: None,
             status: TaskStatus::Pending,
             model,

@@ -8,6 +8,7 @@ pub struct SynthesizeRequest {
     pub model: String,
     pub context: Option<String>,
     pub api_key: Option<String>,
+    pub task_name: Option<String>,  // Optional custom task name
 }
 
 #[derive(Debug, Deserialize)]
