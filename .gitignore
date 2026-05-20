@@ -16,6 +16,7 @@ frontend/dist/
 *~
 
 .lingma/
+.agents/
 
 # Environment
 .env
@@ -24,3 +25,8 @@ frontend/dist/
 # Logs
 *.log
 npm-debug.log*
+
+# Test files
+*.wav
+*.mp3
+*.test.*
