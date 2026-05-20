@@ -1,73 +1,30 @@
 <template>
-  <div class="min-h-screen bg-background">
-    <main class="flex flex-col">
-      <header class="border-b bg-background text-foreground px-3 sm:px-6 py-2.5 sm:py-3">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-0">
-          <div class="flex-1 min-w-0">
-            <h1 class="text-lg sm:text-xl md:text-2xl font-bold truncate">MIMO TTS 语音合成</h1>
-            <p class="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1">基于 MIMO v2.5 模型的高品质语音合成服务</p>
-          </div>
-          
-          <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              @click="showTaskSidebar = !showTaskSidebar"
-              :class="{ 'bg-primary-light dark:bg-primary-light': showTaskSidebar }"
-              class="text-xs sm:text-sm"
-            >
-              <ListIcon class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-              <span class="hidden xs:inline">任务列表</span>
-              <span class="xs:hidden">任务</span>
-            </Button>
-            
-            <Button variant="outline" size="sm" @click="showConfigDialog = true" class="text-xs sm:text-sm">
-              <SettingsIcon class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-              <span class="hidden xs:inline">配置</span>
-            </Button>
-            
-            <!-- Theme Toggle Dropdown -->
-            <DropdownMenu>
-              <DropdownMenuTrigger as-child>
-                <Button variant="outline" size="sm" class="text-xs sm:text-sm">
-                  <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                  <MoonIcon v-else class="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
-                  <span class="hidden xs:inline">
-                    {{ themeStore.theme === 'system' ? '系统' : themeStore.theme === 'light' ? '明亮' : '暗色' }}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem @click="themeStore.setTheme('light')">
-                  <SunIcon class="w-4 h-4 mr-2" />
-                  <span>明亮模式</span>
-                  <DropdownMenuShortcut v-if="themeStore.theme === 'light'">✓</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="themeStore.setTheme('dark')">
-                  <MoonIcon class="w-4 h-4 mr-2" />
-                  <span>暗色模式</span>
-                  <DropdownMenuShortcut v-if="themeStore.theme === 'dark'">✓</DropdownMenuShortcut>
-                </DropdownMenuItem>
-                <DropdownMenuItem @click="themeStore.setTheme('system')">
-                  <MonitorIcon class="w-4 h-4 mr-2" />
-                  <span>跟随系统</span>
-                  <DropdownMenuShortcut v-if="themeStore.theme === 'system'">✓</DropdownMenuShortcut>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            <span class="text-xs text-muted-foreground hidden sm:inline">v2.0</span>
-          </div>
-        </div>
-      </header>
-
-      <div class="flex-1 overflow-y-auto bg-background px-3 sm:px-4 md:px-6 py-4 sm:py-6">
-        <div class="max-w-4xl mx-auto space-y-4 sm:space-y-6">
-          <SynthesizeForm />
-        </div>
+  <div class="min-h-screen bg-background relative overflow-hidden">
+    <!-- 背景装饰层 -->
+    <div class="absolute inset-0 bg-gradient-to-br from-blue-50/50 via-purple-50/30 to-pink-50/50 dark:from-gray-900 dark:via-purple-900/20 dark:to-gray-900 pointer-events-none"></div>
+    
+    <!-- 悬浮工具栏 -->
+    <FloatingToolbar 
+      :show-task-sidebar="showTaskSidebar"
+      @open-config="showConfigDialog = true"
+      @toggle-tasks="showTaskSidebar = !showTaskSidebar"
+    />
+    
+    <!-- 主内容区 -->
+    <main class="relative z-10 flex flex-col items-center justify-start min-h-screen px-4 py-8 sm:py-12">
+      <!-- 品牌展示 -->
+      <BrandHero />
+      
+      <!-- 合成表单 -->
+      <div class="w-full max-w-4xl mt-8 sm:mt-12">
+        <SynthesizeForm />
       </div>
+      
+      <!-- 底部信息 -->
+      <FooterInfo />
     </main>
 
+    <!-- 任务列表面板（保持现有逻辑） -->
     <Transition name="slide-in-right">
       <aside 
         ref="sidebarRef"
@@ -109,23 +66,6 @@
       ></div>
     </Transition>
 
-    <div 
-      class="fixed right-4 top-1/2 -translate-y-1/2 w-1.5 h-20 xs:h-24 bg-blue-500/60 rounded-l cursor-pointer 
-             hover:bg-blue-500/90 hover:w-2 hover:h-28 xs:hover:h-32 transition-all duration-200 z-30
-             flex items-center justify-center group shadow-lg"
-      @click="showTaskSidebar = true"
-      title="点击查看任务列表"
-    >
-      <svg 
-        class="w-2.5 h-2.5 xs:w-3 xs:h-3 text-white opacity-0 group-hover:opacity-100 transition-opacity" 
-        fill="none" 
-        stroke="currentColor" 
-        viewBox="0 0 24 24"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
-      </svg>
-    </div>
-
     <ApiConfigDialog v-model:open="showConfigDialog" />
 
     <Toaster />
@@ -137,26 +77,15 @@ import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
 import { useThemeStore } from '@/stores/theme'
+import BrandHero from './components/BrandHero.vue'
+import FloatingToolbar from './components/FloatingToolbar.vue'
+import FooterInfo from './components/FooterInfo.vue'
 import TaskListSidebar from './components/TaskListSidebar.vue'
 import SynthesizeForm from './components/SynthesizeForm.vue'
 import ApiConfigDialog from './components/ApiConfigDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuShortcut,
-} from '@/components/ui/dropdown-menu'
-import { 
-  Settings as SettingsIcon, 
-  List as ListIcon,
-  X as XIcon,
-  Moon as MoonIcon,
-  Sun as SunIcon,
-  Monitor as MonitorIcon
-} from 'lucide-vue-next'
+import { X as XIcon } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
 const configStore = useConfigStore()

@@ -168,3 +168,67 @@ html {
   transition: background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
               color 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+/* ========== 现代化 UI 动画和工具类 ========== */
+
+/* 呼吸灯效动画 - 用于品牌标题 */
+@keyframes pulseGlow {
+  0%, 100% { 
+    filter: drop-shadow(0 0 8px rgba(102, 126, 234, 0.4)); 
+  }
+  50% { 
+    filter: drop-shadow(0 0 20px rgba(118, 75, 162, 0.8)); 
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 3s ease-in-out infinite;
+  will-change: filter;
+}
+
+/* 暗色模式下调整发光强度 */
+@media (prefers-color-scheme: dark) {
+  @keyframes pulseGlow {
+    0%, 100% { 
+      filter: drop-shadow(0 0 12px rgba(167, 139, 250, 0.5)); 
+    }
+    50% { 
+      filter: drop-shadow(0 0 28px rgba(192, 132, 252, 0.9)); 
+    }
+  }
+}
+
+/* 渐变文字工具类 */
+.text-gradient {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 暗色模式渐变文字 */
+@media (prefers-color-scheme: dark) {
+  .text-gradient {
+    background: linear-gradient(135deg, #a78bfa 0%, #c084fc 50%, #e879f9 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* 弹入动画 - 用于选中标记 */
+@keyframes bounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.3s ease-out;
+}
+
+/* 毛玻璃效果 */
+.glass-effect {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}

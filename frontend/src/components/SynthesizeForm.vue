@@ -38,34 +38,49 @@
       <!-- Voice Selection -->
       <div class="space-y-2">
         <Label>音色 <span class="text-destructive">*</span></Label>
+        
+        <!-- 选择状态提示 -->
+        <div v-if="form.voice" class="text-sm text-primary font-medium mb-2 flex items-center gap-2">
+          <CheckIcon class="w-4 h-4" />
+          已选择: {{ voices.find(v => v.id === form.voice)?.name }}
+        </div>
+        
         <div v-if="voicesLoading" class="text-sm text-muted-foreground">加载音色中...</div>
         <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-3">
           <Card
             v-for="voice in voices"
             :key="voice.id"
-            class="cursor-pointer transition-colors relative group 
-                   border-border hover:border-primary/60 dark:hover:border-primary/80"
+            class="cursor-pointer transition-all duration-200 relative group
+                   border-2 hover:border-primary/80 hover:shadow-lg hover:shadow-primary/20
+                   active:scale-95"
             :class="{ 
-              'border-primary bg-primary-light dark:bg-primary-light': form.voice === voice.id 
+              'border-primary bg-gradient-to-br from-primary/10 to-purple-500/10 shadow-lg shadow-primary/30': form.voice === voice.id 
             }"
             @click="form.voice = voice.id"
           >
-            <CardContent class="p-2 sm:p-3">
-              <div class="font-medium text-xs sm:text-sm">{{ voice.name }}</div>
+            <CardContent class="p-3 sm:p-4">
+              <!-- 选中标记 -->
+              <div v-if="form.voice === voice.id" 
+                   class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-primary flex items-center justify-center shadow-md animate-bounce-in">
+                <CheckIcon class="w-3.5 h-3.5 text-white" />
+              </div>
+              
+              <!-- 音色信息 -->
+              <div class="font-medium text-sm">{{ voice.name }}</div>
               <div class="text-xs text-muted-foreground mt-1">
                 {{ voice.language }} · {{ voice.gender }}
               </div>
               
-              <!-- Preview Button (appears on hover) -->
+              <!-- 预览按钮（悬停显示） -->
               <Button
                 size="sm"
                 variant="secondary"
-                class="absolute top-1 right-1 sm:top-2 sm:right-2 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 sm:h-7 sm:w-7 p-0"
+                class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 p-0"
                 @click.stop="playVoicePreview(voice.id)"
                 :disabled="previewingVoice === voice.id"
               >
-                <PlayIcon v-if="previewingVoice !== voice.id" class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                <Loader2Icon v-else class="w-2.5 h-2.5 sm:w-3 sm:h-3 animate-spin" />
+                <PlayIcon v-if="previewingVoice !== voice.id" class="w-3 h-3" />
+                <Loader2Icon v-else class="w-3 h-3 animate-spin" />
               </Button>
             </CardContent>
           </Card>
@@ -106,7 +121,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Play as PlayIcon, Loader2 as Loader2Icon } from 'lucide-vue-next'
+import { Play as PlayIcon, Loader2 as Loader2Icon, Check as CheckIcon } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
 const configStore = useConfigStore()
@@ -243,3 +258,15 @@ onMounted(() => {
   loadVoices()
 })
 </script>
+
+<style scoped>
+@keyframes bounceIn {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.animate-bounce-in {
+  animation: bounceIn 0.3s ease-out;
+}
+</style>
