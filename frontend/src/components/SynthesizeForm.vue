@@ -49,8 +49,8 @@
             将自动分 {{ Math.ceil(charCount / 2000) }} 片均匀合成
           </span>
         </div>
-        <div v-if="charCount > 2000" class="text-xs text-blue-600 dark:text-blue-400 mt-1">
-          ✨ 超长文本将按句子边界智能分片，每片约 {{ Math.ceil(charCount / Math.ceil(charCount / 2000)) }} 字，独立合成后合并为完整音频
+        <div v-if="charCount > 2000" class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+          ⚠️ 文本较长，将自动分 {{ Math.ceil(charCount / 2000) }} 片（每分钟 10 次 API 限制，约需 {{ Math.ceil(charCount / 2000) * 6 }} 秒）
         </div>
       </div>
 

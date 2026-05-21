@@ -9,8 +9,8 @@ const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY_MS: u64 = 500;
 const MAX_CHUNK_CHARS: usize = 2000;   // API 单次最大字符数
 const MIN_CHUNK_CHARS: usize = 300;    // 最小分片，避免碎片
-const CHUNK_DELAY_MS: u64 = 600;       // 分片间延迟，控制 RPM（100次/分钟 ≈ 600ms/次）
-const MAX_RPM: usize = 100;            // 每分钟最大请求数
+const CHUNK_DELAY_MS: u64 = 6500;      // 分片间延迟：10次/分钟 ≈ 6秒/次
+const MAX_RPM: usize = 10;             // 每分钟最大请求数
 
 /// 智能文本分片策略
 ///
