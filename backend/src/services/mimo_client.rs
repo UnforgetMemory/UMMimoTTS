@@ -1,6 +1,7 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing;
@@ -172,8 +173,13 @@ pub fn merge_wav_audio(chunks: Vec<Vec<u8>>) -> Result<Vec<u8>, MimoError> {
         num_channels, sample_rate, bits_per_sample
     );
 
-    // 收集所有 PCM 数据
-    let mut all_pcm_data = Vec::new();
+    // 收集所有 PCM 数据（预分配总大小，减少内存拷贝）
+    let total_pcm_size: usize = chunks.iter()
+        .filter(|c| c.len() > HEADER_SIZE)
+        .map(|c| c.len() - HEADER_SIZE)
+        .sum();
+    
+    let mut all_pcm_data = Vec::with_capacity(total_pcm_size);
     for (i, chunk) in chunks.iter().enumerate() {
         if chunk.len() > HEADER_SIZE {
             let pcm_data = &chunk[HEADER_SIZE..];
@@ -286,16 +292,16 @@ pub struct MimoClient {
     rate_limiter: Arc<Mutex<RateLimiter>>,
 }
 
-/// 速率限制器 - 滑动窗口实现
+/// 速率限制器 - 滑动窗口实现（使用 VecDeque 优化）
 struct RateLimiter {
-    request_times: Vec<std::time::Instant>,
+    request_times: VecDeque<std::time::Instant>,
     max_rpm: usize,
 }
 
 impl RateLimiter {
     fn new(max_rpm: usize) -> Self {
         Self {
-            request_times: Vec::new(),
+            request_times: VecDeque::with_capacity(max_rpm),
             max_rpm,
         }
     }
@@ -305,12 +311,18 @@ impl RateLimiter {
         let now = std::time::Instant::now();
         let window = std::time::Duration::from_secs(60);
 
-        // 清理超过 1 分钟的记录
-        self.request_times.retain(|t| now.duration_since(*t) < window);
+        // 清理超过 1 分钟的记录（从队列前端移除）
+        while let Some(front) = self.request_times.front() {
+            if now.duration_since(*front) >= window {
+                self.request_times.pop_front();
+            } else {
+                break;
+            }
+        }
 
         // 如果达到限制，等待直到最早的记录过期
         if self.request_times.len() >= self.max_rpm {
-            if let Some(oldest) = self.request_times.first() {
+            if let Some(oldest) = self.request_times.front() {
                 let wait_time = window - now.duration_since(*oldest);
                 tracing::warn!(
                     "Rate limit reached ({} requests/min), waiting {:?}",
@@ -321,20 +333,25 @@ impl RateLimiter {
             }
         }
 
-        self.request_times.push(std::time::Instant::now());
+        self.request_times.push_back(std::time::Instant::now());
     }
 }
 
 impl MimoClient {
     pub fn new(api_key: String) -> Self {
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(300))
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .pool_max_idle_per_host(10)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .build()
+            .unwrap_or_else(|e| {
+                tracing::error!("Failed to create HTTP client: {}, using default", e);
+                Client::new()
+            });
+
         Self {
-            client: Client::builder()
-                .timeout(std::time::Duration::from_secs(300))  // 5 分钟超时，大文本需要更长时间
-                .connect_timeout(std::time::Duration::from_secs(30))  // 连接超时 30 秒
-                .pool_max_idle_per_host(10)  // 连接池：每主机最大空闲连接数
-                .pool_idle_timeout(std::time::Duration::from_secs(90))  // 空闲连接存活时间
-                .build()
-                .expect("Failed to create HTTP client"),
+            client,
             api_key,
             base_url: "https://api.xiaomimimo.com/v1".to_string(),
             rate_limiter: Arc::new(Mutex::new(RateLimiter::new(MAX_RPM))),
@@ -499,12 +516,25 @@ impl MimoClient {
         on_progress: impl Fn(usize, usize) + Send + Sync,
     ) -> Result<Vec<u8>, MimoError> {
         let chunks = split_text_into_chunks(text);
+        self.synthesize_chunked_with_chunks(chunks, model, voice, context, on_progress).await
+    }
+
+    /// 带分片的合成方法（接受预计算的 chunks，避免重复分片）
+    pub async fn synthesize_chunked_with_chunks(
+        &self,
+        chunks: Vec<String>,
+        model: &str,
+        voice: &str,
+        context: Option<&str>,
+        on_progress: impl Fn(usize, usize) + Send + Sync,
+    ) -> Result<Vec<u8>, MimoError> {
         let total_chunks = chunks.len();
+        let total_chars: usize = chunks.iter().map(|c| c.len()).sum();
 
         tracing::info!(
             "Text split into {} chunks for synthesis (total {} chars)",
             total_chunks,
-            text.len()
+            total_chars
         );
 
         let mut audio_chunks = Vec::with_capacity(total_chunks);

@@ -83,10 +83,22 @@ impl TaskManager {
         // 获取任务信息
         let task = match state.get_task(&task_id) {
             Some(t) => t,
-            None => return,
+            None => {
+                tracing::error!("Task {} not found during processing", task_id);
+                return;
+            }
         };
 
-        let voice = task.voice.clone().unwrap();
+        let voice = match task.voice.clone() {
+            Some(v) => v,
+            None => {
+                state.update_task(&task_id, |task| {
+                    task.update_status(TaskStatus::Failed);
+                    task.error = Some("音色未指定".to_string());
+                });
+                return;
+            }
+        };
         let text = task.text.clone();
         let context = task.context.clone();
         let actual_api_key = if api_key.is_empty() {
@@ -113,7 +125,7 @@ impl TaskManager {
         // 调用 MIMO API（支持分片合成）
         let client = MimoClient::new(actual_api_key);
 
-        // 预计算分片信息
+        // 预计算分片信息（传递给 synthesize_chunked 避免重复计算）
         let chunks = split_text_into_chunks(&text);
         let total_chunks = chunks.len();
 
@@ -125,14 +137,14 @@ impl TaskManager {
             task.current_chunk = Some(0);
         });
 
-        // 使用分片合成
+        // 使用分片合成（传入预计算的 chunks）
         let state_clone = state.clone();
         let task_id_clone = task_id.clone();
 
         match client
-            .synthesize_chunked(
+            .synthesize_chunked_with_chunks(
+                chunks,
                 &model,
-                &text,
                 &voice,
                 context.as_deref(),
                 move |current, total| {
