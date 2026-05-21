@@ -9,8 +9,115 @@ permissions:
   contents: write
 
 jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            artifact: mimo-tts-server
+            archive: tar.gz
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            artifact: mimo-tts-server
+            archive: tar.gz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            artifact: mimo-tts-server
+            archive: tar.gz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            artifact: mimo-tts-server.exe
+            archive: zip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cross-compilation tools (Linux)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-x86-64-linux-gnu
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            backend/target/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('backend/Cargo.lock') }}
+
+      - name: Build backend
+        working-directory: backend
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (Unix)
+        if: matrix.archive == 'tar.gz'
+        run: |
+          cd backend/target/${{ matrix.target }}/release
+          tar czf ../../../mimo-tts-server-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+
+      - name: Package (Windows)
+        if: matrix.archive == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path backend/target/${{ matrix.target }}/release/${{ matrix.artifact }} -DestinationPath backend/mimo-tts-server-${{ matrix.target }}.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mimo-tts-server-${{ matrix.target }}
+          path: backend/mimo-tts-server-${{ matrix.target }}.${{ matrix.archive }}
+
+  frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      - name: Package frontend
+        run: |
+          cd frontend/dist
+          tar czf ../../frontend-dist.tar.gz .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist.tar.gz
+
   release:
     name: Create Release
+    needs: [build, frontend]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -18,22 +125,37 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: Build Changelog
         id: changelog
         run: |
-          # 获取上一个 tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           
+          echo "## 🚀 What's Changed" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
           if [ -z "$PREV_TAG" ]; then
-            echo "## What's Changed" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
             git log --pretty=format:"- %s (%h)" HEAD >> CHANGELOG.md
           else
-            echo "## What's Changed" > CHANGELOG.md
-            echo "" >> CHANGELOG.md
             git log --pretty=format:"- %s (%h)" ${PREV_TAG}..HEAD >> CHANGELOG.md
           fi
           
+          echo "" >> CHANGELOG.md
+          echo "---" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "## 📦 Downloads" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          echo "| Platform | Architecture | Download |" >> CHANGELOG.md
+          echo "|----------|--------------|----------|" >> CHANGELOG.md
+          echo "| Linux | x86_64 | \`mimo-tts-server-x86_64-unknown-linux-gnu.tar.gz\` |" >> CHANGELOG.md
+          echo "| macOS | x86_64 (Intel) | \`mimo-tts-server-x86_64-apple-darwin.tar.gz\` |" >> CHANGELOG.md
+          echo "| macOS | aarch64 (Apple Silicon) | \`mimo-tts-server-aarch64-apple-darwin.tar.gz\` |" >> CHANGELOG.md
+          echo "| Windows | x86_64 | \`mimo-tts-server-x86_64-pc-windows-msvc.zip\` |" >> CHANGELOG.md
+          echo "| Frontend | - | \`frontend-dist.tar.gz\` |" >> CHANGELOG.md
           echo "" >> CHANGELOG.md
           echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG:-initial}...${{ github.ref_name }}" >> CHANGELOG.md
 
@@ -43,6 +165,9 @@ jobs:
           body_path: CHANGELOG.md
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
