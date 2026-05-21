@@ -136,25 +136,51 @@ pub fn merge_wav_audio(chunks: Vec<Vec<u8>>) -> Result<Vec<u8>, MimoError> {
         return Ok(chunks.into_iter().next().unwrap());
     }
 
-    // WAV 文件结构：44 字节头 + PCM 数据
+    // WAV 文件标准头：44 字节
     const HEADER_SIZE: usize = 44;
 
-    // 从第一个块读取格式信息
     let first_chunk = &chunks[0];
     if first_chunk.len() < HEADER_SIZE {
         return Err(MimoError::NoAudioData);
     }
 
     let header = &first_chunk[..HEADER_SIZE];
-    let bytes_per_sample = u16::from_le_bytes([header[22], header[23]]) as usize;
+
+    // WAV 头格式（正确解析）：
+    // offset 0-3:   "RIFF"
+    // offset 4-7:   文件大小 - 8
+    // offset 8-11:  "WAVE"
+    // offset 12-15: "fmt "
+    // offset 16-19: fmt chunk size (16 for PCM)
+    // offset 20-21: Audio format (1 = PCM)
+    // offset 22-23: Number of channels
+    // offset 24-27: Sample rate
+    // offset 28-31: Byte rate (sample_rate * channels * bytes_per_sample)
+    // offset 32-33: Block align
+    // offset 34-35: Bits per sample
+    // offset 36-39: "data"
+    // offset 40-43: Data size
+
+    let num_channels = u16::from_le_bytes([header[22], header[23]]) as u32;
     let sample_rate = u32::from_le_bytes([header[24], header[25], header[26], header[27]]);
-    let num_channels = u16::from_le_bytes([header[22], header[23]]) as usize;
+    let bits_per_sample = u16::from_le_bytes([header[34], header[35]]) as u32;
+    let bytes_per_sample = bits_per_sample / 8;
+    let block_align = (num_channels * bytes_per_sample) as u16;
+
+    tracing::info!(
+        "WAV merge: channels={}, sample_rate={}, bits_per_sample={}",
+        num_channels, sample_rate, bits_per_sample
+    );
 
     // 收集所有 PCM 数据
     let mut all_pcm_data = Vec::new();
-    for chunk in &chunks {
+    for (i, chunk) in chunks.iter().enumerate() {
         if chunk.len() > HEADER_SIZE {
-            all_pcm_data.extend_from_slice(&chunk[HEADER_SIZE..]);
+            let pcm_data = &chunk[HEADER_SIZE..];
+            tracing::info!("Chunk {}: {} bytes PCM data", i, pcm_data.len());
+            all_pcm_data.extend_from_slice(pcm_data);
+        } else {
+            tracing::warn!("Chunk {}: no PCM data (header only)", i);
         }
     }
 
@@ -171,20 +197,24 @@ pub fn merge_wav_audio(chunks: Vec<Vec<u8>>) -> Result<Vec<u8>, MimoError> {
 
     // fmt chunk
     wav.extend_from_slice(b"fmt ");
-    wav.extend_from_slice(&16u32.to_le_bytes());  // chunk size
-    wav.extend_from_slice(&1u16.to_le_bytes());   // PCM format
+    wav.extend_from_slice(&16u32.to_le_bytes());          // fmt chunk size
+    wav.extend_from_slice(&1u16.to_le_bytes());           // PCM format
     wav.extend_from_slice(&(num_channels as u16).to_le_bytes());
     wav.extend_from_slice(&sample_rate.to_le_bytes());
-    let byte_rate = sample_rate * num_channels as u32 * bytes_per_sample as u32;
+    let byte_rate = sample_rate * num_channels * bytes_per_sample;
     wav.extend_from_slice(&byte_rate.to_le_bytes());
-    let block_align = num_channels as u16 * bytes_per_sample as u16;
     wav.extend_from_slice(&block_align.to_le_bytes());
-    wav.extend_from_slice(&(bytes_per_sample as u16 * 8).to_le_bytes());  // bits per sample
+    wav.extend_from_slice(&(bits_per_sample as u16).to_le_bytes());
 
     // data chunk
     wav.extend_from_slice(b"data");
     wav.extend_from_slice(&data_size.to_le_bytes());
     wav.extend_from_slice(&all_pcm_data);
+
+    tracing::info!(
+        "WAV merge complete: {} bytes total ({} PCM)",
+        wav.len(), all_pcm_data.len()
+    );
 
     Ok(wav)
 }
