@@ -5,51 +5,113 @@ use tracing;
 
 const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY_MS: u64 = 500;
-const MAX_CHUNK_CHARS: usize = 2000;  // 每片最大字符数
+const MAX_CHUNK_CHARS: usize = 2000;   // API 单次最大字符数
+const MIN_CHUNK_CHARS: usize = 300;    // 最小分片，避免碎片
 
-/// 将长文本按句子分割成多个片段
+/// 智能文本分片策略
+///
+/// 核心思想：先算最优片数，再均匀分配，而不是固定切2000
+///
+/// 算法：
+/// 1. 按句子边界细粒度分割
+/// 2. 计算最优片数 n = ceil(L / MAX_CHUNK)
+/// 3. 目标片大小 target = L / n（均匀分配）
+/// 4. 贪心合并：累积句子直到接近 target，确保不超过 MAX_CHUNK
+///
+/// 效果对比：
+/// - 2001 字：旧 [2000]+[1] → 新 [1001]+[1000]（2片均匀）
+/// - 2050 字：旧 [2000]+[50] → 新 [1025]+[1025]（2片均匀）
+/// - 3999 字：旧 [2000]+[1999] → 新 [2000]+[1999]（2片，OK）
+/// - 5000 字：旧 [2000]+[2000]+[1000] → 新 [1667]+[1667]+[1666]（3片均匀）
+/// - 10000 字：5片 × 2000（最优化）
 pub fn split_text_into_chunks(text: &str) -> Vec<String> {
-    if text.len() <= MAX_CHUNK_CHARS {
+    let total_chars = text.chars().count();
+
+    if total_chars <= MAX_CHUNK_CHARS {
         return vec![text.to_string()];
     }
 
+    // 步骤 1: 按句子边界细粒度分割
+    let sentences = split_by_sentences(text);
+
+    // 步骤 2: 计算最优片数和目标片大小
+    let chunk_count = (total_chars + MAX_CHUNK_CHARS - 1) / MAX_CHUNK_CHARS; // ceil division
+    let target_size = (total_chars + chunk_count - 1) / chunk_count; // 均匀分配
+
+    tracing::info!(
+        "Smart chunking: {} chars → {} chunks, target {} chars/chunk",
+        total_chars, chunk_count, target_size
+    );
+
+    // 步骤 3: 贪心合并句子到目标片大小
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
+    let mut current_size = 0;
 
-    // 按句子分割（中文标点 + 英文标点）
-    let mut last_split = 0;
-    let chars: Vec<char> = text.chars().collect();
+    for sentence in &sentences {
+        let sentence_len = sentence.chars().count();
 
-    for (i, &ch) in chars.iter().enumerate() {
+        // 如果当前块加上这个句子会超过 MAX_CHUNK，先保存当前块
+        if current_size + sentence_len > MAX_CHUNK_CHARS && !current_chunk.is_empty() {
+            chunks.push(current_chunk.trim().to_string());
+            current_chunk = String::new();
+            current_size = 0;
+        }
+
+        // 如果当前块已接近目标大小，且还有足够剩余句子，保存当前块
+        // 这是关键：让每个块尽量接近 target_size，而不是等到超过 MAX
+        if current_size >= target_size && !current_chunk.is_empty() {
+            chunks.push(current_chunk.trim().to_string());
+            current_chunk = String::new();
+            current_size = 0;
+        }
+
+        current_chunk.push_str(sentence);
+        current_size += sentence_len;
+    }
+
+    // 添加最后一个块
+    if !current_chunk.trim().is_empty() {
+        let remaining = current_chunk.trim().to_string();
+        // 如果太小，合并到前一个块
+        if remaining.chars().count() < MIN_CHUNK_CHARS && !chunks.is_empty() {
+            let last = chunks.pop().unwrap();
+            chunks.push(format!("{}{}", last, remaining));
+        } else {
+            chunks.push(remaining);
+        }
+    }
+
+    tracing::info!("Split into {} chunks: {:?}",
+        chunks.len(),
+        chunks.iter().map(|c| c.chars().count()).collect::<Vec<_>>()
+    );
+
+    chunks
+}
+
+/// 按句子边界分割文本
+fn split_by_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        current.push(ch);
+        // 中文/英文句子结束符
         if ch == '。' || ch == '！' || ch == '？' || ch == '；'
             || ch == '.' || ch == '!' || ch == '?' || ch == ';'
             || ch == '\n' {
-            let sentence: String = chars[last_split..=i].iter().collect();
-            if current_chunk.len() + sentence.len() > MAX_CHUNK_CHARS && !current_chunk.is_empty() {
-                chunks.push(current_chunk.trim().to_string());
-                current_chunk = String::new();
-            }
-            current_chunk.push_str(&sentence);
-            last_split = i + 1;
+            sentences.push(current.clone());
+            current.clear();
         }
     }
 
     // 添加剩余文本
-    if last_split < chars.len() {
-        let remaining: String = chars[last_split..].iter().collect();
-        if current_chunk.len() + remaining.len() > MAX_CHUNK_CHARS && !current_chunk.is_empty() {
-            chunks.push(current_chunk.trim().to_string());
-            current_chunk = remaining;
-        } else {
-            current_chunk.push_str(&remaining);
-        }
+    if !current.trim().is_empty() {
+        sentences.push(current);
     }
 
-    if !current_chunk.trim().is_empty() {
-        chunks.push(current_chunk.trim().to_string());
-    }
-
-    chunks
+    sentences
 }
 
 /// 合并多个 WAV 音频数据

@@ -45,9 +45,12 @@
           <span>字符数: {{ charCount }}</span>
           <span>预估 Token: {{ estimatedTokens }}</span>
           <span v-if="estimatedAudioTime" class="text-primary">预估时长: {{ estimatedAudioTime }}</span>
+          <span v-if="charCount > 2000" class="text-blue-500">
+            将自动分 {{ Math.ceil(charCount / 2000) }} 片均匀合成
+          </span>
         </div>
-        <div v-if="charCount > 3000" class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-          ⚠️ 文本较长，合成时间会显著增加。超长文本可能因 API 超时导致合成不完整。
+        <div v-if="charCount > 2000" class="text-xs text-blue-600 dark:text-blue-400 mt-1">
+          ✨ 超长文本将按句子边界智能分片，每片约 {{ Math.ceil(charCount / Math.ceil(charCount / 2000)) }} 字，独立合成后合并为完整音频
         </div>
       </div>
 
