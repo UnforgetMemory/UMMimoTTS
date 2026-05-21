@@ -3,6 +3,7 @@ use actix_web::{middleware, web, App, HttpServer};
 use tracing_subscriber;
 
 mod config;
+mod embed;
 mod models;
 mod routes;
 mod services;
@@ -90,6 +91,8 @@ async fn main() -> std::io::Result<()> {
                     }))
                 }),
             )
+            // 嵌入的前端静态文件（通配路由放在最后）
+            .configure(embed::config_embedded)
     })
     .bind(("0.0.0.0", config.server_port))?
     .run();
