@@ -18,6 +18,7 @@ pub struct TaskResponse {
     pub model: String,
     pub voice: Option<String>,
     pub text: String,
+    pub context: Option<String>,
     pub created_at: String,
     pub completed_at: Option<String>,
     pub error: Option<String>,

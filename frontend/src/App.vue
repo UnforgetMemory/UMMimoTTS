@@ -50,10 +50,12 @@
           </Button>
         </div>
         
-        <div class="flex-1 overflow-y-auto p-3 sm:p-4">
+        <div class="flex-1 overflow-hidden">
           <TaskListSidebar
+            class="h-full"
             @open-player="handleOpenPlayer"
             @reuse-config="handleReuseConfig"
+            @open-text-viewer="handleOpenTextViewer"
           />
         </div>
       </aside>
@@ -76,6 +78,11 @@
       :original-text="getCurrentTaskText()"
     />
 
+    <TextViewerDialog
+      v-model:open="showTextDialog"
+      :task="currentTextTask"
+    />
+
     <Toaster />
   </div>
 </template>
@@ -84,6 +91,7 @@
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
+import type { Task } from '@/api/client'
 import { useThemeStore } from '@/stores/theme'
 import BrandHero from './components/BrandHero.vue'
 import FloatingToolbar from './components/FloatingToolbar.vue'
@@ -92,6 +100,7 @@ import TaskListSidebar from './components/TaskListSidebar.vue'
 import SynthesizeForm from './components/SynthesizeForm.vue'
 import ApiConfigDialog from './components/ApiConfigDialog.vue'
 import AudioPlayerDialog from './components/AudioPlayerDialog.vue'
+import TextViewerDialog from './components/TextViewerDialog.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { X as XIcon } from 'lucide-vue-next'
@@ -104,6 +113,8 @@ const showTaskSidebar = ref(false)
 const sidebarRef = ref<HTMLElement | null>(null)
 const showAudioPlayer = ref(false)
 const currentAudioTaskId = ref<string | null>(null)
+const showTextDialog = ref(false)
+const currentTextTask = ref<Task | null>(null)
 const synthesizeFormRef = ref<InstanceType<typeof SynthesizeForm> | null>(null)
 
 // 键盘事件处理 - ESC 键关闭侧边栏
@@ -127,11 +138,16 @@ function handleOpenPlayer(taskId: string) {
   showAudioPlayer.value = true
 }
 
-function handleReuseConfig(config: { text: string; voice: string | null; model: string }) {
+function handleReuseConfig(config: { text: string; voice: string | null; model: string; context?: string }) {
   // 调用 SynthesizeForm 的 setConfig 方法
   synthesizeFormRef.value?.setConfig(config)
   // 关闭侧边栏以便用户查看填充后的表单
   showTaskSidebar.value = false
+}
+
+function handleOpenTextViewer(task: Task) {
+  currentTextTask.value = task
+  showTextDialog.value = true
 }
 
 // Get current task text for audio player

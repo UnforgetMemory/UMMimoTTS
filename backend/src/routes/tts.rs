@@ -48,9 +48,12 @@ pub async fn synthesize(
         .await
     {
         Ok(mut task) => {
-            // Set custom title if provided
-            if let Some(title) = final_title {
-                task.custom_title = Some(title);
+            // 设置自定义标题（需要更新到 state 中）
+            if let Some(ref title) = final_title {
+                data.update_task(&task.id, |t| {
+                    t.custom_title = Some(title.clone());
+                });
+                task.custom_title = final_title.clone();
             }
             
             let task_id = task.id.clone();

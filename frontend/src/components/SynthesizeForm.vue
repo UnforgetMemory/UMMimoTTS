@@ -405,10 +405,12 @@ onUnmounted(() => {
 })
 
 // 暴露方法供父组件调用（配置复用）
-function setConfig(config: { text: string; voice: string | null; model: string }) {
+function setConfig(config: { text: string; voice: string | null; model: string; context?: string; task_name?: string }) {
   if (config.text) form.value.text = config.text
   if (config.voice) form.value.voice = config.voice
   if (config.model) form.value.model = config.model
+  if (config.context !== undefined) form.value.context = config.context
+  if (config.task_name) form.value.taskName = config.task_name
   updateCounts()
   contextCharCount.value = form.value.context.length
   toast.success('已复用历史配置')

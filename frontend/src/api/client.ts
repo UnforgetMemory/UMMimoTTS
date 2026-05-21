@@ -26,6 +26,7 @@ export interface Task {
   model: string
   voice: string | null
   text: string
+  context?: string | null
   created_at: string
   completed_at: string | null
   error: string | null
