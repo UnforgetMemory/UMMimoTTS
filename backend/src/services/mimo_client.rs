@@ -35,19 +35,15 @@ pub fn split_text_into_chunks(text: &str) -> Vec<String> {
         return vec![text.to_string()];
     }
 
-    // 步骤 1: 按句子边界细粒度分割
     let sentences = split_by_sentences(text);
-
-    // 步骤 2: 计算最优片数和目标片大小
-    let chunk_count = (total_chars + MAX_CHUNK_CHARS - 1) / MAX_CHUNK_CHARS; // ceil division
-    let target_size = (total_chars + chunk_count - 1) / chunk_count; // 均匀分配
+    let chunk_count = (total_chars + MAX_CHUNK_CHARS - 1) / MAX_CHUNK_CHARS;
+    let target_size = (total_chars + chunk_count - 1) / chunk_count;
 
     tracing::info!(
         "Smart chunking: {} chars → {} chunks, target {} chars/chunk",
         total_chars, chunk_count, target_size
     );
 
-    // 步骤 3: 贪心合并句子到目标片大小
     let mut chunks = Vec::new();
     let mut current_chunk = String::new();
     let mut current_size = 0;
@@ -55,32 +51,44 @@ pub fn split_text_into_chunks(text: &str) -> Vec<String> {
     for sentence in &sentences {
         let sentence_len = sentence.chars().count();
 
-        // 如果当前块加上这个句子会超过 MAX_CHUNK，先保存当前块
+        // 关键：先检查加上这个句子后是否会超过限制
+        // 如果会，先保存当前块（不包括这个句子）
         if current_size + sentence_len > MAX_CHUNK_CHARS && !current_chunk.is_empty() {
             chunks.push(current_chunk.trim().to_string());
             current_chunk = String::new();
             current_size = 0;
         }
 
-        // 如果当前块已接近目标大小，且还有足够剩余句子，保存当前块
-        // 这是关键：让每个块尽量接近 target_size，而不是等到超过 MAX
-        if current_size >= target_size && !current_chunk.is_empty() {
+        // 添加当前句子
+        current_chunk.push_str(sentence);
+        current_size += sentence_len;
+
+        // 添加后检查：是否达到目标大小
+        // 如果达到，立即保存（确保不会继续累积超过限制）
+        if current_size >= target_size {
             chunks.push(current_chunk.trim().to_string());
             current_chunk = String::new();
             current_size = 0;
         }
-
-        current_chunk.push_str(sentence);
-        current_size += sentence_len;
     }
 
     // 添加最后一个块
     if !current_chunk.trim().is_empty() {
         let remaining = current_chunk.trim().to_string();
-        // 如果太小，合并到前一个块
-        if remaining.chars().count() < MIN_CHUNK_CHARS && !chunks.is_empty() {
+        let remaining_len = remaining.chars().count();
+        
+        if remaining_len < MIN_CHUNK_CHARS && !chunks.is_empty() {
             let last = chunks.pop().unwrap();
-            chunks.push(format!("{}{}", last, remaining));
+            let last_len = last.chars().count();
+            
+            // 只有合并后不超过 MAX_CHUNK_CHARS 时才合并
+            if last_len + remaining_len <= MAX_CHUNK_CHARS {
+                chunks.push(format!("{}{}", last, remaining));
+            } else {
+                // 合并会超限，直接添加为独立块
+                chunks.push(last);
+                chunks.push(remaining);
+            }
         } else {
             chunks.push(remaining);
         }
@@ -486,5 +494,64 @@ impl MimoClient {
         }
 
         merge_wav_audio(audio_chunks)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_text_completeness() {
+        let test_cases = vec![
+            100, 500, 1000, 1500, 2000, 2001, 2050, 3000, 3999, 5000, 10000,
+        ];
+
+        for len in test_cases {
+            let text = "这是一段测试文本，用于验证分片功能。".repeat(len / 15 + 1);
+            let text: String = text.chars().take(len).collect();
+            
+            let chunks = split_text_into_chunks(&text);
+            let total: usize = chunks.iter().map(|c| c.chars().count()).sum();
+            let original_len = text.chars().count();
+            
+            assert_eq!(
+                total, original_len,
+                "文本长度 {} 字，分片后合计 {} 字，丢失了 {} 字！",
+                original_len, total, original_len - total
+            );
+            
+            for (i, chunk) in chunks.iter().enumerate() {
+                assert!(
+                    chunk.chars().count() <= MAX_CHUNK_CHARS,
+                    "分片 {} 超过 {} 字限制：{} 字",
+                    i, MAX_CHUNK_CHARS, chunk.chars().count()
+                );
+            }
+            
+            println!("✅ {}字 → {}片，完整", original_len, chunks.len());
+        }
+    }
+
+    #[test]
+    fn test_split_no_boundaries() {
+        let text = "这是一段很长的文本没有句号分隔".repeat(200);
+        let chunks = split_text_into_chunks(&text);
+        let total: usize = chunks.iter().map(|c| c.chars().count()).sum();
+        
+        assert_eq!(total, text.chars().count(), "无边界文本丢失内容");
+        println!("✅ 无边界文本 {}字 → {}片，完整", text.chars().count(), chunks.len());
+    }
+
+    #[test]
+    fn test_split_long_sentence() {
+        let long = "这".repeat(3000);
+        let text = format!("{}。这是结尾。", long);
+        
+        let chunks = split_text_into_chunks(&text);
+        let total: usize = chunks.iter().map(|c| c.chars().count()).sum();
+        
+        assert_eq!(total, text.chars().count(), "超长句子文本丢失内容");
+        println!("✅ 超长句子 {}字 → {}片，完整", text.chars().count(), chunks.len());
     }
 }
