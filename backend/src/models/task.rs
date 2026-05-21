@@ -3,20 +3,14 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum TaskStatus {
-    #[serde(rename = "pending")]
     Pending,
-    #[serde(rename = "queued")]
     Queued,
-    #[serde(rename = "synthesizing")]
     Synthesizing,
-    #[serde(rename = "streaming")]
     Streaming,
-    #[serde(rename = "completed")]
     Completed,
-    #[serde(rename = "failed")]
     Failed,
-    #[serde(rename = "cancelled")]
     Cancelled,
 }
 
@@ -53,6 +47,9 @@ pub struct TtsTask {
     pub token_count: usize,
     pub char_count: usize,
     pub audio_duration_secs: Option<f32>,
+    // 分片进度信息
+    pub total_chunks: Option<usize>,
+    pub current_chunk: Option<usize>,
 }
 
 impl TtsTask {
@@ -81,6 +78,8 @@ impl TtsTask {
             token_count: 0,
             char_count,
             audio_duration_secs: None,
+            total_chunks: None,
+            current_chunk: None,
         }
     }
 

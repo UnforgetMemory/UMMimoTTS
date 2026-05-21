@@ -34,6 +34,9 @@ export interface Task {
   char_count: number
   elapsed_secs: number | null
   has_audio: boolean
+  // 分片进度信息
+  total_chunks?: number
+  current_chunk?: number
 }
 
 export interface SynthesizeRequest {

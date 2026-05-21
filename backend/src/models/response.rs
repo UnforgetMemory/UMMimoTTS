@@ -26,6 +26,9 @@ pub struct TaskResponse {
     pub char_count: usize,
     pub elapsed_secs: Option<f64>,
     pub has_audio: bool,
+    // 分片进度信息
+    pub total_chunks: Option<usize>,
+    pub current_chunk: Option<usize>,
 }
 
 #[derive(Debug, Serialize)]

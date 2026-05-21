@@ -1,5 +1,5 @@
 use crate::models::task::{TaskStatus, TtsTask};
-use crate::services::mimo_client::{MimoClient, MimoError};
+use crate::services::mimo_client::{MimoClient, MimoError, split_text_into_chunks};
 use crate::services::token_counter;
 use crate::state::app_state::AppState;
 use actix_web::web::Data;
@@ -110,34 +110,68 @@ impl TaskManager {
             task.progress = 0.1;
         });
 
-        // 更新状态为合成中
-        state.update_task(&task_id, |task| {
-            task.update_status(TaskStatus::Synthesizing);
-            task.progress = 0.3;
-        });
-
-        // 调用 MIMO API
+        // 调用 MIMO API（支持分片合成）
         let client = MimoClient::new(actual_api_key);
 
-        // 更新状态为流式接收
+        // 预计算分片信息
+        let chunks = split_text_into_chunks(&text);
+        let total_chunks = chunks.len();
+
+        // 更新状态为合成中（API 调用前）
         state.update_task(&task_id, |task| {
-            task.update_status(TaskStatus::Streaming);
-            task.progress = 0.6;
+            task.update_status(TaskStatus::Synthesizing);
+            task.progress = 0.2;
+            task.total_chunks = Some(total_chunks);
+            task.current_chunk = Some(0);
         });
 
+        // 使用分片合成
+        let state_clone = state.clone();
+        let task_id_clone = task_id.clone();
+
         match client
-            .synthesize(&model, &text, &voice, context.as_deref())
+            .synthesize_chunked(
+                &model,
+                &text,
+                &voice,
+                context.as_deref(),
+                move |current, total| {
+                    // 更新分片进度
+                    state_clone.update_task(&task_id_clone, |task| {
+                        task.current_chunk = Some(current);
+                        // 进度：0.2 (开始) ~ 0.6 (合成完成)，线性增长
+                        task.progress = 0.2 + (current as f32 / total as f32) * 0.4;
+                    });
+                },
+            )
             .await
         {
             Ok(audio_data) => {
                 tracing::info!(
-                    "Task {} completed successfully, audio size: {} bytes",
+                    "Task {} completed successfully, audio size: {} bytes, chunks: {}",
                     task_id,
-                    audio_data.len()
+                    audio_data.len(),
+                    total_chunks
                 );
 
+                // 音频数据接收完毕，准备完成
                 state.update_task(&task_id, |task| {
                     task.audio_data = Some(audio_data);
+                    task.progress = 0.7;
+                    task.current_chunk = Some(total_chunks);
+                });
+
+                // 短暂延迟让 progress 过渡可见
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                state.update_task(&task_id, |task| {
+                    task.update_status(TaskStatus::Streaming);
+                    task.progress = 0.9;
+                });
+
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                state.update_task(&task_id, |task| {
                     task.update_status(TaskStatus::Completed);
                     task.progress = 1.0;
                 });
@@ -149,6 +183,7 @@ impl TaskManager {
                     MimoError::InvalidApiKey => "API Key 无效，请检查配置".to_string(),
                     MimoError::RateLimitExceeded => "请求频率超限，请稍后重试".to_string(),
                     MimoError::NoAudioData => "API 未返回音频数据".to_string(),
+                    MimoError::RetryExhausted(msg) => msg,
                     MimoError::ApiError { code, message } => {
                         format!("API 错误 ({}): {}", code, message)
                     }
@@ -158,6 +193,7 @@ impl TaskManager {
                 state.update_task(&task_id, |task| {
                     task.update_status(TaskStatus::Failed);
                     task.error = Some(error_msg);
+                    task.progress = 0.0;
                 });
             }
         }

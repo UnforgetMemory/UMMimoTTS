@@ -228,7 +228,12 @@ function formatTime(iso: string): string {
     <div v-if="mode === 'active'" class="px-3 pb-1">
       <div class="flex items-center gap-2 mb-1">
         <Loader2Icon class="w-3 h-3 animate-spin text-primary" />
-        <span class="text-[11px] text-muted-foreground font-medium">{{ Math.round(task.progress * 100) }}%</span>
+        <span class="text-[11px] text-muted-foreground font-medium">
+          {{ Math.round(task.progress * 100) }}%
+          <span v-if="task.total_chunks && task.total_chunks > 1" class="text-primary/60 ml-1">
+            ({{ task.current_chunk || 0 }}/{{ task.total_chunks }} 片)
+          </span>
+        </span>
       </div>
       <Progress :value="task.progress * 100" class="h-1" />
     </div>

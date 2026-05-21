@@ -24,6 +24,8 @@ pub async fn list_tasks(data: web::Data<AppState>) -> impl Responder {
             char_count: task.char_count,
             elapsed_secs: task.elapsed_seconds(),
             has_audio: task.audio_data.is_some(),
+            total_chunks: task.total_chunks,
+            current_chunk: task.current_chunk,
         })
         .collect();
 
@@ -50,6 +52,8 @@ pub async fn get_task(path: web::Path<String>, data: web::Data<AppState>) -> imp
                 char_count: task.char_count,
                 elapsed_secs: task.elapsed_seconds(),
                 has_audio: task.audio_data.is_some(),
+                total_chunks: task.total_chunks,
+                current_chunk: task.current_chunk,
             };
             HttpResponse::Ok().json(response)
         }
@@ -411,6 +415,8 @@ pub async fn update_task_title(
             char_count: task.char_count,
             elapsed_secs: task.elapsed_seconds(),
             has_audio: task.audio_data.is_some(),
+            total_chunks: task.total_chunks,
+            current_chunk: task.current_chunk,
         }),
         None => HttpResponse::NotFound().json(ErrorResponse {
             error: "任务不存在".to_string(),
