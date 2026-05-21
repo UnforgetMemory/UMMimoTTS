@@ -17,7 +17,7 @@ export interface Voice {
   preview_url?: string  // 试听音频 URL
 }
 
-export type TaskStatus = 'pending' | 'queued' | 'synthesizing' | 'streaming' | 'completed' | 'failed'
+export type TaskStatus = 'pending' | 'queued' | 'synthesizing' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 
 export interface Task {
   id: string
@@ -48,6 +48,7 @@ export interface SynthesizeRequest {
 export interface TaskEvent {
   task_id: string
   event_type: 'status_changed' | 'completed' | 'failed'
+  status?: TaskStatus
   progress?: number
   error?: string
 }
@@ -84,18 +85,50 @@ export const api = {
   subscribeToTask(taskId: string, onEvent: (event: TaskEvent) => void): EventSource {
     const eventSource = new EventSource(`/api/v1/sse/tasks/${taskId}`)
     
-    eventSource.onmessage = (event) => {
+    // 处理命名事件（后端用 event: xxx 推送）
+    eventSource.addEventListener('status_changed', (event) => {
       try {
         const data = JSON.parse(event.data)
         onEvent(data)
       } catch (error) {
-        console.error('Failed to parse SSE event:', error)
+        console.error('Failed to parse status_changed event:', error)
+      }
+    })
+    
+    eventSource.addEventListener('completed', (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onEvent(data)
+      } catch (error) {
+        console.error('Failed to parse completed event:', error)
+      }
+    })
+    
+    eventSource.addEventListener('failed', (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onEvent(data)
+      } catch (error) {
+        console.error('Failed to parse failed event:', error)
+      }
+    })
+    
+    // 兼容匿名消息（发送纯 data: 的情况，如 connected）
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        // 只处理匿名消息，命名事件已由 addEventListener 处理
+        if (!data.event_type) {
+          onEvent(data)
+        }
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error)
       }
     }
     
+    // 出错时不 close()，让 EventSource 自动重连
     eventSource.onerror = () => {
-      console.error('SSE connection error for task:', taskId)
-      eventSource.close()
+      console.warn('SSE connection error for task, will auto-reconnect:', taskId)
     }
     
     return eventSource

@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import type { ToasterProps } from 'vue-sonner'
+import { computed } from 'vue'
 
 import {
   CircleCheckIcon,
@@ -13,6 +14,10 @@ import { Toaster as Sonner } from 'vue-sonner'
 import { cn } from '@/lib/utils'
 
 const props = defineProps<ToasterProps>()
+const omittedProps = computed(() => {
+  const { toastOptions, ...rest } = props
+  return rest
+})
 </script>
 
 <template>
@@ -29,7 +34,7 @@ const props = defineProps<ToasterProps>()
         toast: 'rounded-2xl',
       },
     }"
-    v-bind="props"
+    v-bind="omittedProps"
   >
     <template #success-icon>
       <CircleCheckIcon class="size-4" />

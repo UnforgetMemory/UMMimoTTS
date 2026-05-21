@@ -37,13 +37,17 @@
           id="text"
           v-model="form.text"
           placeholder="输入要合成的文本..."
-          rows="4"
+          rows="5"
           class="text-sm sm:text-base"
           @input="updateCounts"
         />
         <div class="text-xs text-muted-foreground flex flex-wrap gap-2 sm:gap-3">
           <span>字符数: {{ charCount }}</span>
           <span>预估 Token: {{ estimatedTokens }}</span>
+          <span v-if="estimatedAudioTime" class="text-primary">预估时长: {{ estimatedAudioTime }}</span>
+        </div>
+        <div v-if="charCount > 3000" class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+          ⚠️ 文本较长，合成时间会显著增加。超长文本可能因 API 超时导致合成不完整。
         </div>
       </div>
 
@@ -100,7 +104,7 @@
                   
                   <!-- 性别 -->
                   <span class="inline-flex items-center gap-1">
-                    <UserIcon v-if="voice.gender === '男声'" class="w-3 h-3" />
+                    <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-3 h-3" />
                     <UserRoundIcon v-else class="w-3 h-3" />
                     {{ voice.gender }}
                   </span>
@@ -135,18 +139,30 @@
 
       <!-- Context Input -->
       <div class="space-y-2">
-        <Label for="context">风格控制 (可选)</Label>
-        <Input
+        <Label for="context">风格控制 <span class="text-muted-foreground">(可选)</span></Label>
+        <Textarea
           id="context"
           v-model="form.context"
-          placeholder="例如：用温柔的语气，语速稍慢"
+          placeholder="例如：用温柔的语气，语速稍慢&#10;支持多行描述，更精细地控制语音风格"
+          rows="3"
+          maxlength="1024"
+          class="text-sm sm:text-base resize-none"
+          @input="updateContextCount"
         />
+        <div class="flex items-center justify-between text-xs">
+          <span class="text-muted-foreground">
+            描述期望的语气、情感和语速风格
+          </span>
+          <span :class="contextCharCount >= 1024 ? 'text-destructive font-medium' : 'text-muted-foreground'">
+            {{ contextCharCount }}/1024
+          </span>
+        </div>
       </div>
 
       <!-- Submit Button -->
       <Button
         @click="handleSubmit"
-        :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.apiKey"
+        :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.hasValidKey"
         class="w-full sm:w-auto text-sm sm:text-base"
       >
         {{ isSubmitting ? '合成中...' : '开始合成' }}
@@ -156,7 +172,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
@@ -196,6 +212,7 @@ const form = ref({
 
 const charCount = ref(0)
 const estimatedTokens = ref(0)
+const contextCharCount = ref(0)
 
 function updateCounts() {
   const text = form.value.text
@@ -216,18 +233,42 @@ function updateCounts() {
   )
 }
 
+function updateContextCount() {
+  contextCharCount.value = form.value.context.length
+}
+
+// 预估音频时长（中文约 3-4 字/秒）
+const estimatedAudioTime = computed(() => {
+  if (charCount.value === 0) return null
+  const seconds = Math.ceil(charCount.value / 3.5) // 保守估计
+  if (seconds < 60) return `${seconds}秒`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`
+  return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`
+})
+
+const FALLBACK_VOICES: Voice[] = [
+  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女' },
+  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声' },
+  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年' },
+  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声' },
+  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl' },
+  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy' },
+  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy' },
+  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle' },
+]
+
 async function loadVoices() {
   voicesLoading.value = true
   try {
     voices.value = await api.getVoices()
+  } catch (error) {
+    console.error('加载音色列表失败，使用默认音色:', error)
+    voices.value = FALLBACK_VOICES
+  } finally {
+    voicesLoading.value = false
     if (voices.value.length > 0 && !form.value.voice) {
       form.value.voice = voices.value[0].id
     }
-  } catch (error) {
-    toast.error('加载音色列表失败')
-    console.error(error)
-  } finally {
-    voicesLoading.value = false
   }
 }
 
@@ -240,8 +281,8 @@ async function handleSubmit() {
     toast.error('请选择音色')
     return
   }
-  if (!configStore.apiKey) {
-    toast.error('请配置 API Key')
+  if (!configStore.hasValidKey) {
+    toast.error('API Key 无效或为环境占位符，请重新配置')
     return
   }
 
@@ -260,6 +301,7 @@ async function handleSubmit() {
     form.value.text = ''
     form.value.context = ''
     updateCounts()
+    contextCharCount.value = 0
   } catch (error: any) {
     toast.error(error.response?.data?.message || error.message || '创建任务失败')
   } finally {
@@ -351,6 +393,7 @@ function clearText() {
 
 onMounted(() => {
   loadVoices()
+  contextCharCount.value = form.value.context.length
   window.addEventListener('keydown', handleKeydown)
 })
 
@@ -364,6 +407,7 @@ function setConfig(config: { text: string; voice: string | null; model: string }
   if (config.voice) form.value.voice = config.voice
   if (config.model) form.value.model = config.model
   updateCounts()
+  contextCharCount.value = form.value.context.length
   toast.success('已复用历史配置')
 }
 

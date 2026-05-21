@@ -26,12 +26,18 @@
 
         <!-- Current Status -->
         <div v-if="configStore.apiKey" class="p-3 rounded-lg border transition-colors"
-             :class="isDark 
-               ? 'bg-green-950/30 border-green-800 text-green-300' 
-               : 'bg-green-50 border-green-200 text-green-700'">
+             :class="configStore.hasValidKey
+               ? (isDark ? 'bg-green-950/30 border-green-800 text-green-300' : 'bg-green-50 border-green-200 text-green-700')
+               : (isDark ? 'bg-yellow-950/30 border-yellow-800 text-yellow-300' : 'bg-yellow-50 border-yellow-200 text-yellow-700')">
           <div class="flex items-center gap-2 text-sm">
-            <CheckIcon class="w-4 h-4" />
-            <span>API Key 已配置</span>
+            <template v-if="configStore.hasValidKey">
+              <CheckIcon class="w-4 h-4" />
+              <span>API Key 已配置</span>
+            </template>
+            <template v-else>
+              <AlertTriangleIcon class="w-4 h-4" />
+              <span>API Key 为环境占位符，请替换为真实 Key</span>
+            </template>
           </div>
         </div>
       </div>
@@ -64,7 +70,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Check as CheckIcon } from 'lucide-vue-next'
+import { Check as CheckIcon, AlertTriangle as AlertTriangleIcon } from 'lucide-vue-next'
 
 interface Props {
   open: boolean

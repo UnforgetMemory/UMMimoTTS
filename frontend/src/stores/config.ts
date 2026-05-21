@@ -1,10 +1,27 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+
+/** 检测是否是 Vercel Gateway 环境变量占位符（未被替换） */
+function isVercelPlaceholder(key: string): boolean {
+  return /^__VG_\w+__$/.test(key)
+}
 
 export const useConfigStore = defineStore('config', () => {
   const apiKey = ref<string>('')
   const selectedVoice = ref<string>('')
   const selectedModel = ref<string>('mimo-v2.5-tts')
+
+  /** API Key 是否有效（非空且非占位符） */
+  const hasValidKey = computed(() => {
+    return apiKey.value.length > 0 && !isVercelPlaceholder(apiKey.value)
+  })
+
+  /** 自动清理已检测到的占位符 Key */
+  function autoClearPlaceholder() {
+    if (apiKey.value && isVercelPlaceholder(apiKey.value)) {
+      clearApiKey()
+    }
+  }
 
   // 从 localStorage 加载
   function loadFromStorage() {
@@ -12,7 +29,14 @@ export const useConfigStore = defineStore('config', () => {
     const storedVoice = localStorage.getItem('mimo_selected_voice')
     const storedModel = localStorage.getItem('mimo_selected_model')
     
-    if (storedApiKey) apiKey.value = storedApiKey
+    if (storedApiKey) {
+      // 检测到 Vercel 占位符 → 自动清除
+      if (isVercelPlaceholder(storedApiKey)) {
+        clearApiKey()
+      } else {
+        apiKey.value = storedApiKey
+      }
+    }
     if (storedVoice) selectedVoice.value = storedVoice
     if (storedModel) selectedModel.value = storedModel
   }
@@ -42,6 +66,8 @@ export const useConfigStore = defineStore('config', () => {
     apiKey,
     selectedVoice,
     selectedModel,
+    hasValidKey,
+    autoClearPlaceholder,
     loadFromStorage,
     saveApiKey,
     clearApiKey,
