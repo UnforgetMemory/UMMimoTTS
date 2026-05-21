@@ -1,5 +1,5 @@
 [package]
-name = "mimo-tts-server"
+name = "um-mimo-tts-server"
 version = "1.0.0"
 edition = "2021"
 authors = ["UnforgetMemory"]
@@ -7,6 +7,10 @@ description = "MIMO v2.5 TTS Web Service - 智能语音合成平台，支持超�
 repository = "https://github.com/UnforgetMemory/UMMimoTTS"
 license = "MIT"
 keywords = ["tts", "mimo", "voice-synthesis", "rust", "vue"]
+
+[[bin]]
+name = "um-mimo-tts-server"
+path = "src/main.rs"
 
 [dependencies]
 actix-web = "4"

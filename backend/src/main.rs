@@ -17,7 +17,7 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("mimo_tts_server=info".parse().unwrap())
+                .add_directive("um_mimo_tts_server=info".parse().unwrap())
                 .add_directive("actix_web=info".parse().unwrap()),
         )
         .init();
@@ -25,7 +25,20 @@ async fn main() -> std::io::Result<()> {
     let config = Config::from_env();
     let app_state = web::Data::new(AppState::new());
 
-    tracing::info!("Starting MIMO TTS Server on port {}", config.server_port);
+    // 启动提示
+    println!();
+    println!("╔════════════════════════════════════════════════════════════╗");
+    println!("║           UM-MIMO-TTS Server v{}                   ║", env!("CARGO_PKG_VERSION"));
+    println!("╠════════════════════════════════════════════════════════════╣");
+    println!("║  🌐 Web UI:  http://localhost:{}                     ║", config.server_port);
+    println!("║  📡 API:     http://localhost:{}/api/v1              ║", config.server_port);
+    println!("║  ❤️  Health:  http://localhost:{}/health              ║", config.server_port);
+    println!("╠════════════════════════════════════════════════════════════╣");
+    println!("║  按 Ctrl+C 停止服务器                                      ║");
+    println!("╚════════════════════════════════════════════════════════════╝");
+    println!();
+
+    tracing::info!("Starting UM-MIMO-TTS Server on port {}", config.server_port);
     tracing::info!("Allowed origins: {:?}", config.allowed_origins);
 
     let server = HttpServer::new(move || {

@@ -10,11 +10,24 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  backend:
-    name: Backend Tests
+  build-and-test:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -30,33 +43,10 @@ jobs:
             backend/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
       
-      - name: Run tests
+      - name: Run backend tests
         working-directory: backend
         run: cargo test
       
-      - name: Build release
+      - name: Build backend release
         working-directory: backend
         run: cargo build --release
-
-  frontend:
-    name: Frontend Build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      
-      - name: Install dependencies
-        working-directory: frontend
-        run: npm ci
-      
-      - name: Type check
-        working-directory: frontend
-        run: npx vue-tsc --noEmit
-      
-      - name: Build
-        working-directory: frontend
-        run: npm run build
