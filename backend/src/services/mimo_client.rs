@@ -1,12 +1,16 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tracing;
 
 const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY_MS: u64 = 500;
 const MAX_CHUNK_CHARS: usize = 2000;   // API 单次最大字符数
 const MIN_CHUNK_CHARS: usize = 300;    // 最小分片，避免碎片
+const CHUNK_DELAY_MS: u64 = 600;       // 分片间延迟，控制 RPM（100次/分钟 ≈ 600ms/次）
+const MAX_RPM: usize = 100;            // 每分钟最大请求数
 
 /// 智能文本分片策略
 ///
@@ -241,6 +245,46 @@ pub struct MimoClient {
     client: Client,
     api_key: String,
     base_url: String,
+    rate_limiter: Arc<Mutex<RateLimiter>>,
+}
+
+/// 速率限制器 - 滑动窗口实现
+struct RateLimiter {
+    request_times: Vec<std::time::Instant>,
+    max_rpm: usize,
+}
+
+impl RateLimiter {
+    fn new(max_rpm: usize) -> Self {
+        Self {
+            request_times: Vec::new(),
+            max_rpm,
+        }
+    }
+
+    /// 检查并等待，直到可以发送请求
+    async fn acquire(&mut self) {
+        let now = std::time::Instant::now();
+        let window = std::time::Duration::from_secs(60);
+
+        // 清理超过 1 分钟的记录
+        self.request_times.retain(|t| now.duration_since(*t) < window);
+
+        // 如果达到限制，等待直到最早的记录过期
+        if self.request_times.len() >= self.max_rpm {
+            if let Some(oldest) = self.request_times.first() {
+                let wait_time = window - now.duration_since(*oldest);
+                tracing::warn!(
+                    "Rate limit reached ({} requests/min), waiting {:?}",
+                    self.max_rpm,
+                    wait_time
+                );
+                tokio::time::sleep(wait_time).await;
+            }
+        }
+
+        self.request_times.push(std::time::Instant::now());
+    }
 }
 
 impl MimoClient {
@@ -255,6 +299,7 @@ impl MimoClient {
                 .expect("Failed to create HTTP client"),
             api_key,
             base_url: "https://api.xiaomimimo.com/v1".to_string(),
+            rate_limiter: Arc::new(Mutex::new(RateLimiter::new(MAX_RPM))),
         }
     }
 
@@ -266,6 +311,12 @@ impl MimoClient {
         context: Option<&str>,
     ) -> Result<Vec<u8>, MimoError> {
         let url = format!("{}/chat/completions", self.base_url);
+
+        // 速率限制：等待直到可以发送请求
+        {
+            let mut limiter = self.rate_limiter.lock().await;
+            limiter.acquire().await;
+        }
 
         // 构建请求体（只需一次）
         let mut messages = Vec::new();
@@ -399,7 +450,8 @@ impl MimoClient {
     }
 
     /// 带分片的合成方法，支持超长文本
-    /// 返回 (total_chunks, current_chunk, audio_data)
+    /// 返回合并后的音频数据
+    /// 内置流控：分片间延迟 CHUNK_DELAY_MS，控制 RPM
     pub async fn synthesize_chunked(
         &self,
         model: &str,
@@ -422,6 +474,12 @@ impl MimoClient {
         for (i, chunk) in chunks.iter().enumerate() {
             tracing::info!("Synthesizing chunk {}/{} ({} chars)", i + 1, total_chunks, chunk.len());
             on_progress(i + 1, total_chunks);
+
+            // 流控：分片间延迟，避免触发 RPM 限制（100次/分钟）
+            if i > 0 {
+                tracing::info!("Rate limit delay: {}ms between chunks", CHUNK_DELAY_MS);
+                tokio::time::sleep(std::time::Duration::from_millis(CHUNK_DELAY_MS)).await;
+            }
 
             let audio = self.synthesize(model, chunk, voice, context).await?;
             audio_chunks.push(audio);
