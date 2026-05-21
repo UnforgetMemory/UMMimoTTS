@@ -1,9 +1,12 @@
 [package]
 name = "mimo-tts-server"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
-authors = ["MIMO TTS Team"]
-description = "MIMO v2.5 TTS Web Service with Actix-web"
+authors = ["UnforgetMemory"]
+description = "MIMO v2.5 TTS Web Service - 智能语音合成平台，支持超长文本分片合成"
+repository = "https://github.com/UnforgetMemory/UMMimoTTS"
+license = "MIT"
+keywords = ["tts", "mimo", "voice-synthesis", "rust", "vue"]
 
 [dependencies]
 actix-web = "4"
@@ -25,3 +28,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 base64 = "0.22"
 parking_lot = "0.12"
 async-stream = "0.3"
+fastrand = "2"
