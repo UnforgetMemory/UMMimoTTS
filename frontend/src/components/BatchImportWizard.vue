@@ -127,105 +127,111 @@
           </div>
         </div>
 
-        <!-- Step 2: Task List with virtual scroll -->
+        <!-- Step 2: Task List with paginated table -->
         <div v-if="currentStep === 2" class="flex flex-col gap-4 flex-1 min-h-0">
           <div v-if="tokenExpired" class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg">
             <AlertCircleIcon class="w-4 h-4 shrink-0" /><span>会话已过期，请重新上传文件</span>
             <Button variant="outline" size="sm" class="ml-auto" @click="resetToUpload">重新上传</Button>
           </div>
-          <div v-if="!tokenExpired" class="flex items-center justify-between shrink-0">
-            <span class="text-sm text-muted-foreground">{{ totalCount.toLocaleString() }} 个任务 · 已加载 {{ allItems.length }}</span>
-            <span v-if="isLoadingMore" class="text-sm text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />加载中...</span>
-            <span v-else-if="!hasMore && allItems.length > 0" class="text-xs text-muted-foreground">已全部加载</span>
+
+          <!-- Loading state -->
+          <div v-if="previewState === 'loading'" class="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2Icon class="w-5 h-5 animate-spin mr-2" />加载任务列表...
           </div>
 
-          <!-- Virtual scroll task list -->
-          <div
-            v-if="!tokenExpired && previewState !== 'error'"
-            ref="scrollContainerRef"
-            class="flex-1 min-h-0 border rounded-lg overflow-y-auto"
-            @scroll="onVirtualScroll"
-          >
-            <div v-if="previewState === 'loading'" class="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2Icon class="w-5 h-5 animate-spin mr-2" />加载任务列表...
+          <!-- Main content: table + pagination -->
+          <template v-else-if="previewState === 'loaded' && !tokenExpired">
+            <div class="flex items-center justify-between shrink-0">
+              <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
             </div>
-            <template v-else>
-              <div
-                :style="{ height: `${virtualizer.getTotalSize()}px` }"
-                class="relative w-full"
-              >
-                <div
-                  v-for="vRow in virtualizer.getVirtualItems()"
-                  :key="vRow.key"
-                  :data-index="vRow.index"
-                  :ref="(el: any) => { if (el) virtualizer.measureElement(el) }"
-                  class="absolute left-0 w-full"
-                  :style="{ transform: `translateY(${vRow.start}px)` }"
-                >
-                  <!-- Task row: inline edit for voice / model / title -->
-                  <div class="border-b border-border/50">
-                    <div class="flex items-center gap-3 px-3 py-2">
-                      <!-- Index + source file -->
-                      <div class="shrink-0 w-16 text-xs text-muted-foreground font-mono">
-                        #{{ allItems[vRow.index].index + 1 }}
-                      </div>
-                      <!-- Text preview -->
-                      <div class="flex-1 min-w-0">
-                        <div class="text-sm truncate">{{ allItems[vRow.index].text_preview }}</div>
-                        <div class="text-[10px] text-muted-foreground/70 mt-0.5">
-                          {{ allItems[vRow.index].source_filename }} · {{ allItems[vRow.index].char_count }} 字符
+
+            <!-- Paginated table -->
+            <div class="border rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead class="w-14">#</TableHead>
+                    <TableHead>任务名</TableHead>
+                    <TableHead class="w-44">风格</TableHead>
+                    <TableHead class="w-36">音色</TableHead>
+                    <TableHead class="w-24 text-right">Token</TableHead>
+                    <TableHead class="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <template v-for="item in currentPageItems" :key="item.index">
+                    <TableRow>
+                      <TableCell class="font-mono text-xs text-muted-foreground">{{ item.index + 1 }}</TableCell>
+                      <TableCell>
+                        <div class="text-sm truncate max-w-[200px]">{{ item.title || item.text_preview }}</div>
+                      </TableCell>
+                      <TableCell>
+                        <span class="text-sm text-muted-foreground">{{ item.context || '默认' }}</span>
+                      </TableCell>
+                      <TableCell>
+                        <span class="text-sm">{{ getVoiceName(item.voice || '') || '默认' }}</span>
+                      </TableCell>
+                      <TableCell class="text-right text-sm">{{ item.token_count?.toLocaleString() || '…' }}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="icon-sm" @click="toggleEditItem(item.index)">
+                          <PencilIcon class="w-3 h-3" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    <!-- Inline edit form row -->
+                    <TableRow v-if="editingItemIndex === item.index">
+                      <TableCell colspan="6" class="bg-muted/5 p-3">
+                        <div class="flex flex-wrap items-end gap-3">
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">任务名</Label>
+                            <Input v-model="editForm.title" class="h-7 text-xs w-44" placeholder="默认" />
+                          </div>
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">风格</Label>
+                            <Input v-model="editForm.context" class="h-7 text-xs w-44" placeholder="默认" />
+                          </div>
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">音色</Label>
+                            <Select v-model="editForm.voice">
+                              <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="">默认</SelectItem>
+                                <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div class="flex items-center gap-1.5">
+                            <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
+                            <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
+                            <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
+                            <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
+                            <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(item)">保存</Button>
+                          </div>
                         </div>
-                      </div>
-                      <!-- Edit toggle -->
-                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click.stop="toggleEditItem(allItems[vRow.index].index)">
-                        <PencilIcon class="w-3 h-3" />
-                      </Button>
-                    </div>
-                    <!-- Inline edit form -->
-                    <div v-if="editingItemIndex === allItems[vRow.index].index" class="px-3 pb-3 pt-1 bg-muted/10 space-y-2">
-                      <div class="flex items-center gap-2">
-                        <Label class="text-xs w-14 shrink-0">音色</Label>
-                        <Select v-model="editForm.voice" class="z-[9999]">
-                          <SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
-                          <SelectContent class="z-[9999]">
-                            <SelectItem value="">默认</SelectItem>
-                            <SelectItem v-for="voice in voices" :key="voice.id" :value="voice.id">{{ voice.name }}</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <Label class="text-xs w-14 shrink-0">模型</Label>
-                        <Select v-model="editForm.model">
-                          <SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
-                          <SelectContent class="z-[9999]">
-                            <SelectItem value="">默认</SelectItem>
-                            <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div class="flex items-center gap-2">
-                        <Label class="text-xs w-14 shrink-0">标题</Label>
-                        <Input v-model="editForm.title" class="h-7 text-xs flex-1" placeholder="默认" />
-                      </div>
-                      <div class="flex items-center justify-end gap-1.5 pt-1">
-                        <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
-                        <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
-                        <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
-                        <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
-                        <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(allItems[vRow.index])">保存</Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                      </TableCell>
+                    </TableRow>
+                  </template>
+                </TableBody>
+              </Table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="flex items-center justify-between shrink-0">
+              <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
+              <div class="flex items-center gap-2">
+                <Button variant="outline" size="sm" :disabled="currentPage === 0" @click="goToPage(currentPage - 1)">上一页</Button>
+                <span class="text-sm text-muted-foreground">第 {{ currentPage + 1 }} / {{ totalPages }} 页</span>
+                <Button variant="outline" size="sm" :disabled="currentPage >= totalPages - 1" @click="goToPage(currentPage + 1)">下一页</Button>
               </div>
-              <div v-if="isLoadingMore" class="flex items-center justify-center py-4 text-sm text-muted-foreground"><Loader2Icon class="w-4 h-4 animate-spin mr-2" />加载更多...</div>
-              <div v-if="!hasMore && allItems.length > 0 && !isLoadingMore" class="flex items-center justify-center py-4 text-xs text-muted-foreground">共 {{ totalCount.toLocaleString() }} 个任务，已全部加载</div>
-            </template>
-          </div>
+            </div>
+          </template>
+
+          <!-- Error state -->
           <div v-if="previewState === 'error' && !tokenExpired" class="flex items-center justify-center py-12 gap-2 text-destructive">
             <AlertCircleIcon class="w-4 h-4" />{{ previewError }}
-            <Button variant="outline" size="sm" @click="loadNextPage">重试</Button>
+            <Button variant="outline" size="sm" @click="loadPage(currentPage)">重试</Button>
           </div>
+          <!-- Empty state -->
           <div v-if="previewState === 'loaded' && totalCount === 0 && !tokenExpired" class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
             <FileTextIcon class="w-12 h-12" /><p class="text-sm">没有可导入的任务</p>
           </div>
@@ -289,8 +295,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted, shallowRef } from 'vue'
-import { useVirtualizer } from '@tanstack/vue-virtual'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+
 import { api, type ParsedItem, type FileStat, type Voice } from '@/api/client'
 import { useTaskStore } from '@/stores/task'
 import { useBatchStore } from '@/stores/batch'
@@ -302,6 +308,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { UploadIcon, XIcon, ChevronDownIcon, FileTextIcon, AlertCircleIcon, CheckCircleIcon, TrashIcon, ArrowUpDownIcon, Loader2Icon, PencilIcon } from 'lucide-vue-next'
 
@@ -347,7 +354,14 @@ const totalFileItems = computed(() => fileStats.value.reduce((s, f) => s + f.ite
 async function removeFile(filename: string) {
   if (!importToken.value) return
   removingFile.value = filename
-  try { await api.removeBatchImportFile(importToken.value, filename); fileStats.value = fileStats.value.filter(f => f.filename !== filename); allItems.value = []; loadedPageSet.value = new Set(); totalCount.value = fileStats.value.reduce((s, f) => s + f.item_count, 0) }
+  try {
+    await api.removeBatchImportFile(importToken.value, filename)
+    fileStats.value = fileStats.value.filter(f => f.filename !== filename)
+    totalCount.value = fileStats.value.reduce((s, f) => s + f.item_count, 0)
+    cancelEditItem()
+    currentPage.value = 0
+    await loadPage(0)
+  }
   catch (err) { console.error('Failed to remove file:', err) }
   finally { removingFile.value = '' }
 }
@@ -357,62 +371,23 @@ const importToken = ref('')
 const totalCount = ref(0)
 const uploadedFileList = ref<string[]>([])
 
-// Preview state (infinite scroll)
+// Preview state (paginated)
 type PreviewState = 'idle' | 'loading' | 'loaded' | 'error'
 const previewState = ref<PreviewState>('idle')
 const previewError = ref('')
-const allItems = ref<ParsedItem[]>([])
-const loadedPageSet = ref(new Set<number>())
-const isLoadingMore = ref(false)
+const currentPageItems = ref<ParsedItem[]>([])
+const currentPage = ref(0)
 const tokenExpired = ref(false)
-// expandedGroup removed — no longer grouping by file
-const hasMore = computed(() => allItems.value.length < totalCount.value)
-
-// ── Virtual scroll (flat list, one row per ParsedItem) ──────────
-const TASK_ROW_HEIGHT = 56       // base row height (text preview only)
-const EDIT_FORM_HEIGHT = 170     // edit form expanded height
-
-function estimateRowHeight(index: number): number {
-  const item = allItems.value[index]
-  if (!item) return TASK_ROW_HEIGHT
-  if (editingItemIndex.value === item.index) return TASK_ROW_HEIGHT + EDIT_FORM_HEIGHT
-  return TASK_ROW_HEIGHT
-}
-
-// @tanstack/vue-virtual — flat list, count = allItems.length
-const virtualizer = computed(() => {
-  return useVirtualizer({
-    count: allItems.value.length,
-    getScrollElement: () => scrollContainerRef.value,
-    estimateSize: (index) => estimateRowHeight(index),
-    overscan: 10,
-  })
-})
-
-// Manual scroll-to-bottom detection (only fires on user scroll, not list growth)
-let scrollBottomCooldown = false
-function onVirtualScroll() {
-  const el = scrollContainerRef.value
-  if (!el || scrollBottomCooldown) return
-  const threshold = 120
-  const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-  if (distanceToBottom < threshold && hasMore.value && !isLoadingMore.value) {
-    scrollBottomCooldown = true
-    loadNextPage().finally(() => { scrollBottomCooldown = false })
-  }
-}
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PER_PAGE)))
 
 function toggleEditItem(itemIndex: number) {
   if (editingItemIndex.value === itemIndex) {
     cancelEditItem()
   } else {
-    const item = allItems.value.find(i => i.index === itemIndex)
+    const item = currentPageItems.value.find(i => i.index === itemIndex)
     if (item) startEditItem(item)
   }
 }
-
-// Voice helpers
-function getVoiceName(voiceId: string): string { return voices.value.find(v => v.id === voiceId)?.name || voiceId }
 
 // Inline item edit state
 const editingItemIndex = ref<number | null>(null)
@@ -423,14 +398,14 @@ function hasItemOverride(item: ParsedItem): boolean { return !!(item.voice || it
 
 function startEditItem(item: ParsedItem) {
   editingItemIndex.value = item.index; editSaveStatus.value = 'idle'
-  editForm.value = { voice: item.voice || '', model: item.model || '', title: item.title || '', context: '' }
+  editForm.value = { voice: item.voice || '', model: item.model || '', title: item.title || '', context: item.context || '' }
 }
 
 function cancelEditItem() { editingItemIndex.value = null; editSaveStatus.value = 'idle' }
 
 function getEditingItem(): ParsedItem | null {
   if (editingItemIndex.value === null) return null
-  return allItems.value.find(i => i.index === editingItemIndex.value) || null
+  return currentPageItems.value.find(i => i.index === editingItemIndex.value) || null
 }
 
 async function handleSaveEdit(item: ParsedItem | null) {
@@ -443,35 +418,38 @@ async function handleSaveEdit(item: ParsedItem | null) {
     if (editForm.value.title) ov.custom_title = editForm.value.title
     if (editForm.value.context) ov.context = editForm.value.context
     const updated = await api.updateBatchImportItem(importToken.value, item.index, ov as any)
-    const idx = allItems.value.findIndex(i => i.index === item.index)
-    if (idx !== -1) allItems.value[idx] = updated
+    const idx = currentPageItems.value.findIndex(i => i.index === item.index)
+    if (idx !== -1) currentPageItems.value[idx] = updated
     editSaveStatus.value = 'success'
     setTimeout(() => { if (editingItemIndex.value === item.index) cancelEditItem() }, 1500)
   } catch (err: unknown) { editSaveStatus.value = 'error'; console.error('[BatchImport] Save edit failed:', err) }
 }
 
-// Scroll container ref for useInfiniteScroll
-const scrollContainerRef = ref<HTMLDivElement | null>(null)
+// Voice helpers
+function getVoiceName(voiceId: string): string { return voices.value.find(v => v.id === voiceId)?.name || voiceId }
 
-// loadNextPage - fetches next page of preview items
-async function loadNextPage() {
-  if (!importToken.value || isLoadingMore.value || !hasMore.value) return
-  const nextPage = loadedPageSet.value.size
-  isLoadingMore.value = true
-  if (previewState.value !== 'loaded') previewState.value = 'loading'
+// loadPage - fetches a specific page of preview items
+async function loadPage(page: number) {
+  if (!importToken.value) return
+  previewState.value = 'loading'
   try {
-    const result = await api.getBatchImportPreview(importToken.value, nextPage, PER_PAGE)
-    const existingKeys = new Set(allItems.value.map(i => i.index))
-    const fresh = result.items.filter(i => !existingKeys.has(i.index))
-    allItems.value = [...allItems.value, ...fresh]
-    loadedPageSet.value = loadedPageSet.value.add(nextPage)
+    const result = await api.getBatchImportPreview(importToken.value, page, PER_PAGE)
+    currentPageItems.value = result.items
     totalCount.value = result.total
+    currentPage.value = page
     previewState.value = 'loaded'
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '加载预览失败'
     if (msg.includes('410') || msg.includes('404') || msg.includes('expired') || msg.includes('not found')) { tokenExpired.value = true; previewState.value = 'idle' }
     else { previewState.value = 'error'; previewError.value = msg }
-  } finally { isLoadingMore.value = false }
+  }
+}
+
+function goToPage(page: number) {
+  if (page < 0 || page >= totalPages.value) return
+  editSaveStatus.value = 'idle'
+  cancelEditItem()
+  loadPage(page)
 }
 
 // Session extend timer
@@ -492,7 +470,7 @@ const submitError = ref('')
 const submitResult = ref({ group_id: '', task_count: 0 })
 
 // Step transitions
-function startPreview() { loadNextPage(); startExtendTimer() }
+function startPreview() { loadPage(0); startExtendTimer() }
 function handleStartPreview() { startPreview(); currentStep.value = 2 }
 
 async function handleSubmit() {
@@ -511,12 +489,13 @@ async function handleSubmit() {
 }
 
 function resetToUpload() {
-  stopExtendTimer(); importToken.value = ''; totalCount.value = 0; allItems.value = []
-  loadedPageSet.value = new Set(); uploadState.value = 'idle'; uploadProgress.value = 0
+  stopExtendTimer(); importToken.value = ''; totalCount.value = 0
+  currentPageItems.value = []; currentPage.value = 0
+  uploadState.value = 'idle'; uploadProgress.value = 0
   uploadError.value = ''; uploadedFileList.value = []; fileStats.value = []
   fileStatsSort.value = { key: 'filename', dir: 'asc' }; removingFile.value = ''
   previewState.value = 'idle'; previewError.value = ''; tokenExpired.value = false
-  isLoadingMore.value = false; submitError.value = ''; currentStep.value = 0
+  submitError.value = ''; currentStep.value = 0
 }
 
 function onDialogClose() { stopExtendTimer(); emit('update:open', false) }
@@ -593,13 +572,12 @@ async function uploadFile(file: File) {
   } catch (err: unknown) { uploadState.value = 'error'; uploadError.value = err instanceof Error ? err.message : '上传失败，请重试' }
 }
 
-// Remeasure virtualizer when edit state changes (row height changes)
-watch(editingItemIndex, () => {
-  virtualizer.value?.measure()
+onMounted(() => {
+  loadVoices()
 })
 
-onMounted(() => {
-  if (props.open) loadVoices()
+watch(() => props.open, (isOpen) => {
+  if (isOpen) loadVoices()
 })
 
 onUnmounted(() => { stopExtendTimer() })
