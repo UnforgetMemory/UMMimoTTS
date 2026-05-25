@@ -193,7 +193,7 @@
                           <Select v-model="editForm.voice">
                             <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="">默认</SelectItem>
+                              <SelectItem value="__default__">默认</SelectItem>
                               <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
                             </SelectContent>
                           </Select>
@@ -407,7 +407,7 @@ function hasItemOverride(item: ParsedItem): boolean { return !!(item.voice || it
 
 function startEditItem(item: ParsedItem) {
   editingItemIndex.value = item.index; editSaveStatus.value = 'idle'
-  editForm.value = { voice: item.voice || '', model: item.model || '', title: item.title || '', context: item.context || '' }
+  editForm.value = { voice: item.voice || '__default__', model: item.model || '', title: item.title || '', context: item.context || '' }
 }
 
 function cancelEditItem() { editingItemIndex.value = null; editSaveStatus.value = 'idle' }
@@ -417,7 +417,7 @@ async function handleSaveEdit(item: ParsedItem | null) {
   editSaveStatus.value = 'saving'
   try {
     const ov: Record<string, string> = {}
-    if (editForm.value.voice) ov.voice = editForm.value.voice
+    if (editForm.value.voice && editForm.value.voice !== '__default__') ov.voice = editForm.value.voice
     if (editForm.value.model) ov.model = editForm.value.model
     if (editForm.value.title) ov.custom_title = editForm.value.title
     if (editForm.value.context) ov.context = editForm.value.context
