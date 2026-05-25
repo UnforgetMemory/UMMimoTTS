@@ -159,58 +159,55 @@
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <template v-for="item in currentPageItems" :key="item.index">
-                    <TableRow>
-                      <TableCell class="font-mono text-xs text-muted-foreground">{{ item.index + 1 }}</TableCell>
+                  <TableRow v-for="row in flattenedItems" :key="row.key">
+                    <template v-if="row.type === 'data'">
+                      <TableCell class="font-mono text-xs text-muted-foreground">{{ row.item.index + 1 }}</TableCell>
                       <TableCell>
-                        <div class="text-sm truncate max-w-[200px]">{{ item.title || item.text_preview }}</div>
+                        <div class="text-sm truncate max-w-[200px]">{{ row.item.title || row.item.text_preview }}</div>
                       </TableCell>
                       <TableCell>
-                        <span class="text-sm text-muted-foreground">{{ item.context || '默认' }}</span>
+                        <span class="text-sm text-muted-foreground">{{ row.item.context || '默认' }}</span>
                       </TableCell>
                       <TableCell>
-                        <span class="text-sm">{{ getVoiceName(item.voice || '') || '默认' }}</span>
+                        <span class="text-sm">{{ getVoiceName(row.item.voice || '') || '默认' }}</span>
                       </TableCell>
-                      <TableCell class="text-right text-sm">{{ item.token_count?.toLocaleString() || '…' }}</TableCell>
+                      <TableCell class="text-right text-sm">{{ row.item.token_count?.toLocaleString() || '…' }}</TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon-sm" @click="toggleEditItem(item.index)">
+                        <Button variant="ghost" size="icon-sm" @click="toggleEditItem(row.item.index)">
                           <PencilIcon class="w-3 h-3" />
                         </Button>
                       </TableCell>
-                    </TableRow>
-                    <!-- Inline edit form row -->
-                    <TableRow v-if="editingItemIndex === item.index">
-                      <TableCell colspan="6" class="bg-muted/5 p-3">
-                        <div class="flex flex-wrap items-end gap-3">
-                          <div class="flex flex-col gap-1.5">
-                            <Label class="text-xs">任务名</Label>
-                            <Input v-model="editForm.title" class="h-7 text-xs w-44" placeholder="默认" />
-                          </div>
-                          <div class="flex flex-col gap-1.5">
-                            <Label class="text-xs">风格</Label>
-                            <Input v-model="editForm.context" class="h-7 text-xs w-44" placeholder="默认" />
-                          </div>
-                          <div class="flex flex-col gap-1.5">
-                            <Label class="text-xs">音色</Label>
-                            <Select v-model="editForm.voice">
-                              <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="">默认</SelectItem>
-                                <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div class="flex items-center gap-1.5">
-                            <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
-                            <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
-                            <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
-                            <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
-                            <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(item)">保存</Button>
-                          </div>
+                    </template>
+                    <TableCell v-else colspan="6" class="bg-muted/5 p-3">
+                      <div class="flex flex-wrap items-end gap-3">
+                        <div class="flex flex-col gap-1.5">
+                          <Label class="text-xs">任务名</Label>
+                          <Input v-model="editForm.title" class="h-7 text-xs w-44" placeholder="默认" />
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  </template>
+                        <div class="flex flex-col gap-1.5">
+                          <Label class="text-xs">风格</Label>
+                          <Input v-model="editForm.context" class="h-7 text-xs w-44" placeholder="默认" />
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                          <Label class="text-xs">音色</Label>
+                          <Select v-model="editForm.voice">
+                            <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="">默认</SelectItem>
+                              <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                          <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
+                          <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
+                          <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
+                          <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
+                          <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(row.item)">保存</Button>
+                        </div>
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 </TableBody>
               </Table>
             </div>
@@ -380,6 +377,18 @@ const currentPage = ref(0)
 const tokenExpired = ref(false)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PER_PAGE)))
 
+type TableRowType = { key: string; type: 'data'; item: ParsedItem } | { key: string; type: 'edit'; item: ParsedItem }
+const flattenedItems = computed<TableRowType[]>(() => {
+  const rows: TableRowType[] = []
+  for (const item of currentPageItems.value) {
+    rows.push({ key: `d-${item.index}`, type: 'data', item })
+    if (editingItemIndex.value === item.index) {
+      rows.push({ key: `e-${item.index}`, type: 'edit', item })
+    }
+  }
+  return rows
+})
+
 function toggleEditItem(itemIndex: number) {
   if (editingItemIndex.value === itemIndex) {
     cancelEditItem()
@@ -402,11 +411,6 @@ function startEditItem(item: ParsedItem) {
 }
 
 function cancelEditItem() { editingItemIndex.value = null; editSaveStatus.value = 'idle' }
-
-function getEditingItem(): ParsedItem | null {
-  if (editingItemIndex.value === null) return null
-  return currentPageItems.value.find(i => i.index === editingItemIndex.value) || null
-}
 
 async function handleSaveEdit(item: ParsedItem | null) {
   if (!importToken.value || !item) return
