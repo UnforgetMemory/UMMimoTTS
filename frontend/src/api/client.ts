@@ -243,6 +243,7 @@ export interface ParsedItem {
   voice?: string | null
   model?: string | null
   title?: string | null
+  context?: string | null
   char_count: number
   has_error: boolean
   error: string | null
