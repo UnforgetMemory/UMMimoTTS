@@ -419,14 +419,18 @@ async function handleSaveEdit(item: ParsedItem | null) {
     const ov: Record<string, string> = {}
     if (editForm.value.voice && editForm.value.voice !== '__default__') ov.voice = editForm.value.voice
     if (editForm.value.model) ov.model = editForm.value.model
-    if (editForm.value.title) ov.custom_title = editForm.value.title
+    if (editForm.value.title) ov.title = editForm.value.title
     if (editForm.value.context) ov.context = editForm.value.context
     const updated = await api.updateBatchImportItem(importToken.value, item.index, ov as any)
     const idx = currentPageItems.value.findIndex(i => i.index === item.index)
     if (idx !== -1) currentPageItems.value[idx] = updated
     editSaveStatus.value = 'success'
     setTimeout(() => { if (editingItemIndex.value === item.index) cancelEditItem() }, 1500)
-  } catch (err: unknown) { editSaveStatus.value = 'error'; console.error('[BatchImport] Save edit failed:', err) }
+  } catch (err: unknown) {
+    editSaveStatus.value = 'error'
+    const respData = (err as any)?.response?.data
+    console.error('[BatchImport] Save edit failed:', err, respData ?? '')
+  }
 }
 
 // Voice helpers

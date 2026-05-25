@@ -256,8 +256,7 @@ export interface ItemOverride {
   voice?: string
   model?: string
   context?: string
-  custom_title?: string
-  text?: string
+  title?: string
 }
 
 /** Batch submit payload */
