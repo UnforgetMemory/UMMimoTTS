@@ -403,8 +403,6 @@ const editingItemIndex = ref<number | null>(null)
 const editSaveStatus = ref<'idle' | 'saving' | 'success' | 'error'>('idle')
 const editForm = ref({ voice: '', model: '', title: '', context: '' })
 
-function hasItemOverride(item: ParsedItem): boolean { return !!(item.voice || item.model || item.title) }
-
 function startEditItem(item: ParsedItem) {
   editingItemIndex.value = item.index; editSaveStatus.value = 'idle'
   editForm.value = { voice: item.voice || '__default__', model: item.model || '', title: item.title || '', context: item.context || '' }
