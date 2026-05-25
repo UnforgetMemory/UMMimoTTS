@@ -127,19 +127,19 @@
           </div>
         </div>
 
-        <!-- Step 2: File Group View + Custom Task Edit (virtual scroll) -->
+        <!-- Step 2: Task List with virtual scroll -->
         <div v-if="currentStep === 2" class="flex flex-col gap-4 flex-1 min-h-0">
           <div v-if="tokenExpired" class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg">
             <AlertCircleIcon class="w-4 h-4 shrink-0" /><span>会话已过期，请重新上传文件</span>
             <Button variant="outline" size="sm" class="ml-auto" @click="resetToUpload">重新上传</Button>
           </div>
           <div v-if="!tokenExpired" class="flex items-center justify-between shrink-0">
-            <span class="text-sm text-muted-foreground">{{ fileGroups.length }} 个文件 · {{ totalCount.toLocaleString() }} 条目</span>
+            <span class="text-sm text-muted-foreground">{{ totalCount.toLocaleString() }} 个任务 · 已加载 {{ allItems.length }}</span>
             <span v-if="isLoadingMore" class="text-sm text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />加载中...</span>
-            <span v-else-if="!hasMore && fileGroups.length > 0" class="text-xs text-muted-foreground">已全部加载</span>
+            <span v-else-if="!hasMore && allItems.length > 0" class="text-xs text-muted-foreground">已全部加载</span>
           </div>
 
-          <!-- Virtual scroll container -->
+          <!-- Virtual scroll task list -->
           <div
             v-if="!tokenExpired && previewState !== 'error'"
             ref="scrollContainerRef"
@@ -147,7 +147,7 @@
             @scroll="onVirtualScroll"
           >
             <div v-if="previewState === 'loading'" class="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2Icon class="w-5 h-5 animate-spin mr-2" />加载文件列表...
+              <Loader2Icon class="w-5 h-5 animate-spin mr-2" />加载任务列表...
             </div>
             <template v-else>
               <div
@@ -162,57 +162,49 @@
                   class="absolute left-0 w-full"
                   :style="{ transform: `translateY(${vRow.start}px)` }"
                 >
-                  <!-- Group header row -->
-                  <template v-if="getVirtualRowType(vRow.index) === 'header'">
-                    <div
-                      class="flex items-center gap-3 p-3 hover:bg-muted/30 cursor-pointer transition-colors select-none border-b border-border/50"
-                      @click="toggleGroupExpanded(getGroupByRowIndex(vRow.index).filename)"
-                    >
-                      <ChevronDownIcon class="w-4 h-4 shrink-0 text-muted-foreground transition-transform duration-200"
-                        :class="{ 'rotate-180': expandedGroup === getGroupByRowIndex(vRow.index).filename }" />
-                      <FileTextIcon class="w-4 h-4 shrink-0 text-muted-foreground" />
-                      <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2">
-                          <span class="text-sm font-medium truncate">{{ getGroupByRowIndex(vRow.index).filename }}</span>
-                          <Badge variant="outline" class="shrink-0 text-xs h-5 px-2 rounded-full">{{ getGroupByRowIndex(vRow.index).items.length }} 条目</Badge>
-                        </div>
-                        <div class="text-xs text-muted-foreground mt-0.5">{{ getGroupByRowIndex(vRow.index).charCount.toLocaleString() }} 字符 · {{ getGroupByRowIndex(vRow.index).tokenCount.toLocaleString() }} Tokens</div>
+                  <!-- Task row: inline edit for voice / model / title -->
+                  <div class="border-b border-border/50">
+                    <div class="flex items-center gap-3 px-3 py-2">
+                      <!-- Index + source file -->
+                      <div class="shrink-0 w-16 text-xs text-muted-foreground font-mono">
+                        #{{ allItems[vRow.index].index + 1 }}
                       </div>
-                    </div>
-                  </template>
-                  <!-- Item row -->
-                  <template v-else-if="getVirtualRowType(vRow.index) === 'item'">
-                    <div class="flex items-start gap-2 px-4 py-2 text-xs hover:bg-muted/20 transition-colors border-b border-border/30 bg-muted/5">
-                      <Badge v-if="hasItemOverride(getItemByRowIndex(vRow.index))" variant="secondary" class="shrink-0 text-[10px] h-4 px-1.5 mt-0.5">自定义</Badge>
-                      <span v-else class="shrink-0 w-4 mt-0.5" />
+                      <!-- Text preview -->
                       <div class="flex-1 min-w-0">
-                        <span class="text-muted-foreground font-mono shrink-0 mr-1">#{{ getItemByRowIndex(vRow.index).index + 1 }}</span>
-                        <span class="text-foreground/80 truncate inline-block max-w-[280px] align-bottom">{{ getItemByRowIndex(vRow.index).text_preview }}</span>
+                        <div class="text-sm truncate">{{ allItems[vRow.index].text_preview }}</div>
                         <div class="text-[10px] text-muted-foreground/70 mt-0.5">
-                          <span>{{ getItemByRowIndex(vRow.index).char_count }} 字符</span><span> · </span><span>{{ getItemByRowIndex(vRow.index).token_count || 0 }} Tokens</span>
-                          <template v-if="getItemByRowIndex(vRow.index).voice"><span> · </span><span>音色: {{ getVoiceName(getItemByRowIndex(vRow.index).voice) }}</span></template>
+                          {{ allItems[vRow.index].source_filename }} · {{ allItems[vRow.index].char_count }} 字符
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click.stop="startEditItem(getItemByRowIndex(vRow.index))"><PencilIcon class="w-3 h-3" /></Button>
+                      <!-- Edit toggle -->
+                      <Button variant="ghost" size="icon-sm" class="shrink-0" @click.stop="toggleEditItem(allItems[vRow.index].index)">
+                        <PencilIcon class="w-3 h-3" />
+                      </Button>
                     </div>
-                  </template>
-                  <!-- Edit form row -->
-                  <template v-else>
-                    <div class="px-4 py-2 border-b border-border/50 bg-muted/10 space-y-2">
+                    <!-- Inline edit form -->
+                    <div v-if="editingItemIndex === allItems[vRow.index].index" class="px-3 pb-3 pt-1 bg-muted/10 space-y-2">
                       <div class="flex items-center gap-2">
-                        <Label class="text-xs w-12 shrink-0">音色</Label>
-                        <Select v-model="editForm.voice"><SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
-                          <SelectContent class="z-[9999]"><SelectItem value="">默认</SelectItem><SelectItem v-for="voice in voices" :key="voice.id" :value="voice.id">{{ voice.name }}</SelectItem></SelectContent>
+                        <Label class="text-xs w-14 shrink-0">音色</Label>
+                        <Select v-model="editForm.voice" class="z-[9999]">
+                          <SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
+                          <SelectContent class="z-[9999]">
+                            <SelectItem value="">默认</SelectItem>
+                            <SelectItem v-for="voice in voices" :key="voice.id" :value="voice.id">{{ voice.name }}</SelectItem>
+                          </SelectContent>
                         </Select>
                       </div>
                       <div class="flex items-center gap-2">
-                        <Label class="text-xs w-12 shrink-0">模型</Label>
-                        <Select v-model="editForm.model"><SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
-                          <SelectContent class="z-[9999]"><SelectItem value="">默认</SelectItem><SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts</SelectItem></SelectContent>
+                        <Label class="text-xs w-14 shrink-0">模型</Label>
+                        <Select v-model="editForm.model">
+                          <SelectTrigger class="h-7 text-xs flex-1"><SelectValue placeholder="默认" /></SelectTrigger>
+                          <SelectContent class="z-[9999]">
+                            <SelectItem value="">默认</SelectItem>
+                            <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts</SelectItem>
+                          </SelectContent>
                         </Select>
                       </div>
                       <div class="flex items-center gap-2">
-                        <Label class="text-xs w-12 shrink-0">标题</Label>
+                        <Label class="text-xs w-14 shrink-0">标题</Label>
                         <Input v-model="editForm.title" class="h-7 text-xs flex-1" placeholder="默认" />
                       </div>
                       <div class="flex items-center justify-end gap-1.5 pt-1">
@@ -220,14 +212,14 @@
                         <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
                         <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
                         <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
-                        <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(getEditingItem())">保存</Button>
+                        <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(allItems[vRow.index])">保存</Button>
                       </div>
                     </div>
-                  </template>
+                  </div>
                 </div>
               </div>
               <div v-if="isLoadingMore" class="flex items-center justify-center py-4 text-sm text-muted-foreground"><Loader2Icon class="w-4 h-4 animate-spin mr-2" />加载更多...</div>
-              <div v-if="!hasMore && totalCount > 0 && !isLoadingMore" class="flex items-center justify-center py-4 text-xs text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条目 · {{ fileGroups.length }} 个文件</div>
+              <div v-if="!hasMore && allItems.length > 0 && !isLoadingMore" class="flex items-center justify-center py-4 text-xs text-muted-foreground">共 {{ totalCount.toLocaleString() }} 个任务，已全部加载</div>
             </template>
           </div>
           <div v-if="previewState === 'error' && !tokenExpired" class="flex items-center justify-center py-12 gap-2 text-destructive">
@@ -235,7 +227,7 @@
             <Button variant="outline" size="sm" @click="loadNextPage">重试</Button>
           </div>
           <div v-if="previewState === 'loaded' && totalCount === 0 && !tokenExpired" class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-            <FileTextIcon class="w-12 h-12" /><p class="text-sm">没有可导入的条目</p>
+            <FileTextIcon class="w-12 h-12" /><p class="text-sm">没有可导入的任务</p>
           </div>
         </div>
 
@@ -373,108 +365,49 @@ const allItems = ref<ParsedItem[]>([])
 const loadedPageSet = ref(new Set<number>())
 const isLoadingMore = ref(false)
 const tokenExpired = ref(false)
-const expandedGroup = ref<string | null>(null)
+// expandedGroup removed — no longer grouping by file
 const hasMore = computed(() => allItems.value.length < totalCount.value)
 
-// File groups (computed from loaded items)
-interface FileGroup {
-  filename: string
-  items: ParsedItem[]
-  charCount: number
-  tokenCount: number
-  textPreview: string
+// ── Virtual scroll (flat list, one row per ParsedItem) ──────────
+const TASK_ROW_HEIGHT = 56       // base row height (text preview only)
+const EDIT_FORM_HEIGHT = 170     // edit form expanded height
+
+function estimateRowHeight(index: number): number {
+  const item = allItems.value[index]
+  if (!item) return TASK_ROW_HEIGHT
+  if (editingItemIndex.value === item.index) return TASK_ROW_HEIGHT + EDIT_FORM_HEIGHT
+  return TASK_ROW_HEIGHT
 }
 
-const fileGroups = computed<FileGroup[]>(() => {
-  const groups: Record<string, ParsedItem[]> = {}
-  for (const item of allItems.value) { const key = item.source_filename || 'unknown'; if (!groups[key]) groups[key] = []; groups[key].push(item) }
-  return Object.entries(groups).map(([filename, items]) => ({
-    filename, items,
-    charCount: items.reduce((s, i) => s + i.char_count, 0),
-    tokenCount: items.reduce((s, i) => s + (i.token_count || 0), 0),
-    textPreview: items.slice(0, 3).map(i => i.text_preview).filter(Boolean).join('\n'),
-  }))
-})
-
-// ── Virtual scroll row mapping ──────────────────────────────────
-// Each group contributes: 1 header row + N item rows (if expanded)
-// Rows layout: [header0, item0_0, item0_1, ..., header1, item1_0, ...]
-const GROUP_HEADER_HEIGHT = 52
-const ITEM_ROW_HEIGHT = 48
-const EDIT_FORM_HEIGHT = 160
-
-interface VirtualRowInfo {
-  type: 'header' | 'item' | 'edit'
-  groupIndex: number
-  itemIndex: number // index within group.items (for item rows), or item.index for edit rows
-  item: ParsedItem | null
-  group: FileGroup | null
-}
-
-const virtualRows = computed<VirtualRowInfo[]>(() => {
-  const rows: VirtualRowInfo[] = []
-  for (let gi = 0; gi < fileGroups.value.length; gi++) {
-    const g = fileGroups.value[gi]
-    rows.push({ type: 'header', groupIndex: gi, itemIndex: -1, item: null, group: g })
-    if (expandedGroup.value === g.filename) {
-      for (let ii = 0; ii < g.items.length; ii++) {
-        const item = g.items[ii]
-        rows.push({ type: 'item', groupIndex: gi, itemIndex: ii, item, group: g })
-        // Insert edit form row after the item being edited
-        if (editingItemIndex.value === item.index) {
-          rows.push({ type: 'edit', groupIndex: gi, itemIndex: ii, item, group: g })
-        }
-      }
-    }
-  }
-  return rows
-})
-
-const rowCount = computed(() => virtualRows.value.length)
-
-const getVirtualRowType = (index: number): 'header' | 'item' | 'edit' => {
-  return virtualRows.value[index]?.type || 'header'
-}
-
-const getGroupByRowIndex = (index: number): FileGroup => {
-  return virtualRows.value[index]?.group || fileGroups.value[0]
-}
-
-const getItemByRowIndex = (index: number): ParsedItem => {
-  return virtualRows.value[index]?.item || allItems.value[0]
-}
-
-const toggleGroupExpanded = (filename: string) => {
-  expandedGroup.value = expandedGroup.value === filename ? null : filename
-}
-
-// @tanstack/vue-virtual
+// @tanstack/vue-virtual — flat list, count = allItems.length
 const virtualizer = computed(() => {
   return useVirtualizer({
-    count: rowCount.value,
+    count: allItems.value.length,
     getScrollElement: () => scrollContainerRef.value,
-    estimateSize: (index) => {
-      const row = virtualRows.value[index]
-      if (row?.type === 'header') return GROUP_HEADER_HEIGHT
-      if (row?.type === 'edit') return EDIT_FORM_HEIGHT
-      return ITEM_ROW_HEIGHT
-    },
+    estimateSize: (index) => estimateRowHeight(index),
     overscan: 10,
   })
 })
 
-// Manual scroll-to-bottom detection (not triggered by list growth)
+// Manual scroll-to-bottom detection (only fires on user scroll, not list growth)
 let scrollBottomCooldown = false
 function onVirtualScroll() {
   const el = scrollContainerRef.value
   if (!el || scrollBottomCooldown) return
-  const threshold = 120 // px from bottom
+  const threshold = 120
   const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight
   if (distanceToBottom < threshold && hasMore.value && !isLoadingMore.value) {
     scrollBottomCooldown = true
-    loadNextPage().finally(() => {
-      scrollBottomCooldown = false
-    })
+    loadNextPage().finally(() => { scrollBottomCooldown = false })
+  }
+}
+
+function toggleEditItem(itemIndex: number) {
+  if (editingItemIndex.value === itemIndex) {
+    cancelEditItem()
+  } else {
+    const item = allItems.value.find(i => i.index === itemIndex)
+    if (item) startEditItem(item)
   }
 }
 
@@ -660,8 +593,8 @@ async function uploadFile(file: File) {
   } catch (err: unknown) { uploadState.value = 'error'; uploadError.value = err instanceof Error ? err.message : '上传失败，请重试' }
 }
 
-// Remeasure virtualizer when row structure changes (expand/collapse/edit)
-watch([expandedGroup, editingItemIndex], () => {
+// Remeasure virtualizer when edit state changes (row height changes)
+watch(editingItemIndex, () => {
   virtualizer.value?.measure()
 })
 
