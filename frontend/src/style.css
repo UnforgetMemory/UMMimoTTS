@@ -45,6 +45,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-secondary: var(--secondary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-light: var(--primary-light);
+  --color-primary-hover: var(--primary-hover);
   --color-primary: var(--primary);
   --color-popover-foreground: var(--popover-foreground);
   --color-popover: var(--popover);
@@ -176,4 +178,91 @@ html {
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Collapsible animations */
+@keyframes collapsible-down {
+  from { height: 0; }
+  to { height: var(--reka-collapsible-content-height); }
+}
+
+@keyframes collapsible-up {
+  from { height: var(--reka-collapsible-content-height); }
+  to { height: 0; }
+}
+
+.animate-collapsible-down {
+  animation: collapsible-down 200ms ease-out;
+}
+
+.animate-collapsible-up {
+  animation: collapsible-up 200ms ease-out;
+}
+
+/* ===== Unified Scrollbar Styles ===== */
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.556 0 0 / 30%) transparent;
+}
+
+.dark * {
+  scrollbar-color: oklch(1 0 0 / 20%) transparent;
+}
+
+/* Chrome / Safari / Edge */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: oklch(0.556 0 0 / 25%);
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(0.556 0 0 / 40%);
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: oklch(1 0 0 / 15%);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: oklch(1 0 0 / 25%);
+}
+
+/* Hide scrollbar when not hovering the scrollable area */
+.scrollbar-auto {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-auto:hover {
+  scrollbar-color: oklch(0.556 0 0 / 30%) transparent;
+}
+
+.scrollbar-auto::-webkit-scrollbar-thumb {
+  background-color: transparent;
+}
+
+.scrollbar-auto:hover::-webkit-scrollbar-thumb {
+  background-color: oklch(0.556 0 0 / 25%);
+}
+
+.dark .scrollbar-auto {
+  scrollbar-color: transparent transparent;
+}
+
+.dark .scrollbar-auto:hover {
+  scrollbar-color: oklch(1 0 0 / 20%) transparent;
+}
+
+.dark .scrollbar-auto:hover::-webkit-scrollbar-thumb {
+  background-color: oklch(1 0 0 / 15%);
 }

@@ -123,7 +123,7 @@ impl TaskManager {
         });
 
         // 调用 MIMO API（支持分片合成）
-        let client = MimoClient::new(actual_api_key);
+        let client = MimoClient::new(actual_api_key, state.rate_limiter.clone());
 
         // 预计算分片信息（传递给 synthesize_chunked 避免重复计算）
         let chunks = split_text_into_chunks(&text);
@@ -165,6 +165,18 @@ impl TaskManager {
                     audio_data.len(),
                     total_chunks
                 );
+
+                // 保存音频到磁盘
+                let output_dir = state.output_dir.clone();
+                let output_path = format!("{}/{}.wav", output_dir, task_id);
+                if let Some(parent) = std::path::Path::new(&output_path).parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if std::fs::write(&output_path, &audio_data).is_ok() {
+                    state.update_task(&task_id, |task| {
+                        task.audio_path = Some(output_path);
+                    });
+                }
 
                 // 音频数据接收完毕，准备完成
                 state.update_task(&task_id, |task| {

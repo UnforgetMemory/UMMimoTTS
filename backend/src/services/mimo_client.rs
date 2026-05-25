@@ -2,9 +2,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use std::collections::VecDeque;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tracing;
+
+use crate::services::rate_limiter::GlobalRateLimiter;
 
 const MAX_RETRIES: u32 = 3;
 const BASE_RETRY_DELAY_MS: u64 = 500;
@@ -289,56 +289,19 @@ pub struct MimoClient {
     client: Client,
     api_key: String,
     base_url: String,
-    rate_limiter: Arc<Mutex<RateLimiter>>,
+    rate_limiter: GlobalRateLimiter,
 }
 
-/// 速率限制器 - 滑动窗口实现（使用 VecDeque 优化）
-struct RateLimiter {
+// DEPRECATED: Per-instance rate limiter replaced by GlobalRateLimiter.
+// Kept for reference only. Will be removed in a future cleanup.
+#[allow(dead_code)]
+struct _DeprecatedRateLimiter {
     request_times: VecDeque<std::time::Instant>,
     max_rpm: usize,
 }
 
-impl RateLimiter {
-    fn new(max_rpm: usize) -> Self {
-        Self {
-            request_times: VecDeque::with_capacity(max_rpm),
-            max_rpm,
-        }
-    }
-
-    /// 检查并等待，直到可以发送请求
-    async fn acquire(&mut self) {
-        let now = std::time::Instant::now();
-        let window = std::time::Duration::from_secs(60);
-
-        // 清理超过 1 分钟的记录（从队列前端移除）
-        while let Some(front) = self.request_times.front() {
-            if now.duration_since(*front) >= window {
-                self.request_times.pop_front();
-            } else {
-                break;
-            }
-        }
-
-        // 如果达到限制，等待直到最早的记录过期
-        if self.request_times.len() >= self.max_rpm {
-            if let Some(oldest) = self.request_times.front() {
-                let wait_time = window - now.duration_since(*oldest);
-                tracing::warn!(
-                    "Rate limit reached ({} requests/min), waiting {:?}",
-                    self.max_rpm,
-                    wait_time
-                );
-                tokio::time::sleep(wait_time).await;
-            }
-        }
-
-        self.request_times.push_back(std::time::Instant::now());
-    }
-}
-
 impl MimoClient {
-    pub fn new(api_key: String) -> Self {
+    pub fn new(api_key: String, rate_limiter: GlobalRateLimiter) -> Self {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(300))
             .connect_timeout(std::time::Duration::from_secs(30))
@@ -354,7 +317,7 @@ impl MimoClient {
             client,
             api_key,
             base_url: "https://api.xiaomimimo.com/v1".to_string(),
-            rate_limiter: Arc::new(Mutex::new(RateLimiter::new(MAX_RPM))),
+            rate_limiter,
         }
     }
 
@@ -367,11 +330,10 @@ impl MimoClient {
     ) -> Result<Vec<u8>, MimoError> {
         let url = format!("{}/chat/completions", self.base_url);
 
-        // 速率限制：等待直到可以发送请求
-        {
-            let mut limiter = self.rate_limiter.lock().await;
-            limiter.acquire().await;
-        }
+        // Global rate limiting: acquire request slot and token budget
+        self.rate_limiter.acquire_request_slot().await;
+        let token_count = estimate_token_count(text);
+        self.rate_limiter.acquire_token_budget(token_count).await;
 
         // 构建请求体（只需一次）
         let mut messages = Vec::new();
@@ -555,6 +517,12 @@ impl MimoClient {
 
         merge_wav_audio(audio_chunks)
     }
+}
+
+/// Estimate token count for rate limiting purposes.
+/// Rough estimate: ~1 token per 4 bytes (works for both Chinese and English text).
+fn estimate_token_count(text: &str) -> usize {
+    text.len() / 4
 }
 
 #[cfg(test)]

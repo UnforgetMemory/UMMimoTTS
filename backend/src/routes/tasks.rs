@@ -1,36 +1,27 @@
-use crate::models::response::{ErrorResponse, TaskResponse};
+use crate::models::response::{ErrorResponse, PaginatedResponse, TaskListQuery, TaskSummary, TaskResponse};
+use crate::models::task::TtsTask;
 use crate::state::app_state::AppState;
 use actix_web::http::header;
 use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use serde::Deserialize;
 
-pub async fn list_tasks(data: web::Data<AppState>) -> impl Responder {
-    let tasks = data.list_tasks();
+pub async fn list_tasks(
+    query: web::Query<TaskListQuery>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let page = query.page.unwrap_or(0);
+    let per_page = query.per_page.unwrap_or(50).min(200);
+    let status = query.status.as_deref();
+    let search = query.search.as_deref();
+    let sort = query.sort.as_deref();
+    let group_id = query.group_id.as_deref();
 
-    let task_responses: Vec<TaskResponse> = tasks
-        .into_iter()
-        .map(|task| TaskResponse {
-            id: task.id.clone(),
-            custom_title: task.custom_title.clone(),
-            status: task.status.clone(),
-            model: task.model.clone(),
-            voice: task.voice.clone(),
-            text: task.text.clone(),
-            context: task.context.clone(),
-            created_at: task.created_at.to_rfc3339(),
-            completed_at: task.completed_at.map(|t| t.to_rfc3339()),
-            error: task.error.clone(),
-            progress: task.progress,
-            token_count: task.token_count,
-            char_count: task.char_count,
-            elapsed_secs: task.elapsed_seconds(),
-            has_audio: task.audio_data.is_some(),
-            total_chunks: task.total_chunks,
-            current_chunk: task.current_chunk,
-        })
-        .collect();
+    let (tasks, total) = data.list_tasks_paginated(page, per_page, status, search, sort, group_id);
 
-    HttpResponse::Ok().json(task_responses)
+    let summaries: Vec<TaskSummary> = tasks.into_iter().map(|t| t.to_summary()).collect();
+    let response = PaginatedResponse::new(summaries, total, page, per_page);
+
+    HttpResponse::Ok().json(response)
 }
 
 pub async fn get_task(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
@@ -53,15 +44,92 @@ pub async fn get_task(path: web::Path<String>, data: web::Data<AppState>) -> imp
                 token_count: task.token_count,
                 char_count: task.char_count,
                 elapsed_secs: task.elapsed_seconds(),
+            has_audio: task.audio_data.is_some(),
+            total_chunks: task.total_chunks,
+            current_chunk: task.current_chunk,
+            group_id: task.group_id.clone(),
+        };
+        HttpResponse::Ok().json(response)
+        }
+        None => HttpResponse::NotFound().json(ErrorResponse {
+            error: "任务不存在".to_string(),
+            message: format!("任务 ID: {}", task_id),
+            code: Some("TASK_NOT_FOUND".to_string()),
+        }),
+    }
+}
+
+/// GET /api/v1/tasks/{task_id}/detail - Return full task details (for detail panel lazy load)
+pub async fn get_task_detail(path: web::Path<String>, data: web::Data<AppState>) -> impl Responder {
+    let task_id = path.into_inner();
+
+    match data.get_task(&task_id) {
+        Some(task) => {
+            let response = TaskResponse {
+                id: task.id.clone(),
+                custom_title: task.custom_title.clone(),
+                status: task.status.clone(),
+                model: task.model.clone(),
+                voice: task.voice.clone(),
+                text: task.text.clone(),
+                context: task.context.clone(),
+                created_at: task.created_at.to_rfc3339(),
+                completed_at: task.completed_at.map(|t| t.to_rfc3339()),
+                error: task.error.clone(),
+                progress: task.progress,
+                token_count: task.token_count,
+                char_count: task.char_count,
+                elapsed_secs: task.elapsed_seconds(),
                 has_audio: task.audio_data.is_some(),
                 total_chunks: task.total_chunks,
                 current_chunk: task.current_chunk,
+                group_id: task.group_id.clone(),
             };
             HttpResponse::Ok().json(response)
         }
         None => HttpResponse::NotFound().json(ErrorResponse {
             error: "任务不存在".to_string(),
             message: format!("任务 ID: {}", task_id),
+            code: Some("TASK_NOT_FOUND".to_string()),
+        }),
+    }
+}
+
+/// GET /api/v1/tasks/{task_id}/download - Download single completed task audio as attachment
+pub async fn download_task_audio(
+    path: web::Path<String>,
+    data: web::Data<AppState>,
+) -> impl Responder {
+    let task_id = path.into_inner();
+
+    match data.get_task(&task_id) {
+        Some(task) => {
+            let audio = read_audio_from_disk(&task).or(task.audio_data.clone());
+            if let Some(audio_data) = audio {
+                let filename = if let Some(title) = &task.custom_title {
+                    format!("{}.wav", sanitize_filename::sanitize(title))
+                } else {
+                    format!("tts_{}.wav", task_id)
+                };
+
+                HttpResponse::Ok()
+                    .content_type("audio/wav")
+                    .insert_header((
+                        "Content-Disposition",
+                        format!("attachment; filename=\"{}\"", filename),
+                    ))
+                    .body(audio_data)
+            } else {
+                HttpResponse::NotFound().json(ErrorResponse {
+                    error: "音频不可用".to_string(),
+                    message: "任务尚未完成或合成失败".to_string(),
+                    code: Some("AUDIO_NOT_AVAILABLE".to_string()),
+                })
+            }
+        }
+        None => HttpResponse::NotFound().json(ErrorResponse {
+            error: "任务不存在".to_string(),
+            message: format!("任务 {} 不存在", task_id),
             code: Some("TASK_NOT_FOUND".to_string()),
         }),
     }
@@ -84,6 +152,12 @@ pub async fn delete_task(path: web::Path<String>, data: web::Data<AppState>) -> 
     }
 }
 
+fn read_audio_from_disk(task: &TtsTask) -> Option<Vec<u8>> {
+    task.audio_path
+        .as_ref()
+        .and_then(|path| std::fs::read(path).ok())
+}
+
 pub async fn get_audio(
     req: HttpRequest,
     path: web::Path<String>,
@@ -93,7 +167,10 @@ pub async fn get_audio(
 
     match data.get_task(&task_id) {
         Some(task) => {
-            if let Some(audio_data) = task.audio_data {
+            // Try disk first, then fall back to in-memory audio_data
+            let audio = read_audio_from_disk(&task).or(task.audio_data.clone());
+
+            if let Some(audio_data) = audio {
                 let audio_len = audio_data.len() as u64;
 
                 // Parse Range header: "bytes=start-end", "bytes=start-", or "bytes=-suffix"
@@ -152,13 +229,15 @@ pub async fn get_audio(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db;
     use crate::models::task::TtsTask;
     use crate::state::app_state::AppState;
     use actix_web::test as actix_test;
     use actix_web::App;
 
     fn setup_app_with_state() -> (web::Data<AppState>, String) {
-        let state = AppState::new();
+        let pool = db::init_db_pool_in_memory();
+        let state = AppState::new_with_pool(pool, "./data/output".to_string());
         let task_id = "test-audio-001".to_string();
         let mut task = TtsTask::new(
             "test-model".into(),
@@ -270,7 +349,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_get_audio_nonexistent() {
-        let state = AppState::new();
+        let state = AppState::new("./data/output".to_string());
         let data = web::Data::new(state);
         let app = actix_test::init_service(
             App::new()
@@ -420,6 +499,7 @@ pub async fn update_task_title(
             has_audio: task.audio_data.is_some(),
             total_chunks: task.total_chunks,
             current_chunk: task.current_chunk,
+            group_id: task.group_id.clone(),
         }),
         None => HttpResponse::NotFound().json(ErrorResponse {
             error: "任务不存在".to_string(),

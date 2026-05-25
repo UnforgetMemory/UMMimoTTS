@@ -18,7 +18,7 @@
       
       <!-- GitHub Link -->
       <a 
-        href="https://github.com/your-username/UMMimoTTS" 
+        href="https://github.com/UnforgetMemory/UMMimoTTS" 
         target="_blank" 
         rel="noopener noreferrer"
         class="hover:text-primary transition-colors flex items-center gap-1"

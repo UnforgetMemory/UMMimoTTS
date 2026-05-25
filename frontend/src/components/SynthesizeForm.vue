@@ -180,7 +180,7 @@ import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
 import { api, type Voice } from '@/api/client'
-import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
@@ -237,7 +237,7 @@ function updateCounts() {
 }
 
 function updateContextCount() {
-  contextCharCount.value = form.value.context.length
+  contextCharCount.value = (form.value.context ?? '').length
 }
 
 // 预估音频时长（中文约 3-4 字/秒）
@@ -269,7 +269,7 @@ async function loadVoices() {
     voices.value = FALLBACK_VOICES
   } finally {
     voicesLoading.value = false
-    if (voices.value.length > 0 && !form.value.voice) {
+    if (voices.value && voices.value.length > 0 && !form.value.voice) {
       form.value.voice = voices.value[0].id
     }
   }
@@ -396,7 +396,7 @@ function clearText() {
 
 onMounted(() => {
   loadVoices()
-  contextCharCount.value = form.value.context.length
+  contextCharCount.value = (form.value.context ?? '').length
   window.addEventListener('keydown', handleKeydown)
 })
 
@@ -412,7 +412,7 @@ function setConfig(config: { text: string; voice: string | null; model: string; 
   if (config.context !== undefined) form.value.context = config.context
   if (config.task_name) form.value.taskName = config.task_name
   updateCounts()
-  contextCharCount.value = form.value.context.length
+  contextCharCount.value = (form.value.context ?? '').length
   toast.success('已复用历史配置')
 }
 

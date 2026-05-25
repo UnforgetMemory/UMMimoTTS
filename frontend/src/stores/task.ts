@@ -1,53 +1,111 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import { api, type Task, type TaskEvent } from '@/api/client'
+import { ref, computed, shallowRef, type ShallowRef } from 'vue'
+import { api, type Task, type TaskSummary, type TaskStatus, type TaskEvent, type TaskListParams } from '@/api/client'
 
 export const useTaskStore = defineStore('task', () => {
-  const tasks = ref<Task[]>([])
+  // ── Task Map (shallowRef for large-scale performance) ──────────
+  const taskMap: ShallowRef<Map<string, TaskSummary>> = shallowRef(new Map())
+
   const loading = ref(false)
   const refreshing = ref(false)
   const error = ref<string | null>(null)
-  
-  // SSE 连接管理
-  const eventSources = new Map<string, EventSource>()
 
-  // 计算属性
-  const completedTasks = computed(() => tasks.value.filter(t => t.status === 'completed'))
-  const failedTasks = computed(() => tasks.value.filter(t => t.status === 'failed'))
-  const pendingTasks = computed(() => tasks.value.filter(t => 
-    ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
-  ))
+  // ── Pagination state ──────────────────────────────────────────
+  const currentPage = ref(0)
+  const perPage = ref(50)
+  const totalCount = ref(0)
+  const hasMore = computed(() => {
+    const totalPages = Math.ceil(totalCount.value / perPage.value)
+    return currentPage.value < totalPages - 1
+  })
 
-  // 将 API 数据合并到现有任务对象中，保持 Vue 响应式引用稳定
-  function mergeTasks(apiData: Task[]) {
-    const sorted = apiData.sort((a, b) => 
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  // ── Search / Filter state ─────────────────────────────────────
+  const activeSearch = ref('')
+  const activeStatus = ref<TaskStatus | undefined>(undefined)
+  const activeGroupFilter = ref<string | undefined>(undefined)
+
+  // ── Detail cache (non-reactive) ───────────────────────────────
+  const taskDetailCache = new Map<string, Task>()
+  const detailLoading = ref(false)
+
+  // ── Computed: all tasks as array ──────────────────────────────
+  const allTasks = computed(() => Array.from(taskMap.value.values()))
+
+  /** Tasks not belonging to any batch group */
+  const standaloneTasks = computed(() =>
+    allTasks.value.filter(t => !t.group_id)
+  )
+
+  const completedTasks = computed(() =>
+    allTasks.value.filter(t => t.status === 'completed')
+  )
+
+  const failedTasks = computed(() =>
+    allTasks.value.filter(t => t.status === 'failed')
+  )
+
+  const pendingTasks = computed(() =>
+    allTasks.value.filter(t =>
+      ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
     )
-    const existingMap = new Map(tasks.value.map(t => [t.id, t]))
-    const merged: Task[] = []
+  )
 
-    for (const item of sorted) {
-      const existing = existingMap.get(item.id)
-      if (existing) {
-        Object.assign(existing, item)
-        merged.push(existing)
-      } else {
-        merged.push(item)
-      }
+  // ── Paginated loading ────────────────────────────────────────
+
+  /**
+   * Load a specific page from the paginated API and merge into taskMap.
+   * Resets accumulated tasks if page === 0.
+   */
+  async function loadPage(page = 0) {
+    const params: TaskListParams = {
+      page,
+      per_page: perPage.value,
     }
+    if (activeSearch.value) params.search = activeSearch.value
+    if (activeStatus.value) params.status = activeStatus.value
+    if (activeGroupFilter.value) params.group_id = activeGroupFilter.value
 
-    tasks.value = merged
+    try {
+      const result = await api.getTasksPaginated(params)
+
+      const newMap = page === 0 ? new Map<string, TaskSummary>() : new Map(taskMap.value)
+
+      for (const item of result.items) {
+        newMap.set(item.id, item)
+      }
+
+      taskMap.value = newMap
+      currentPage.value = page
+      totalCount.value = result.total
+    } catch (err: any) {
+      error.value = err.message || '加载任务失败'
+      console.error('Failed to load tasks page:', err)
+    }
   }
 
-  // 加载任务列表
+  /**
+   * Load the next page if more results are available.
+   */
+  async function loadMore() {
+    if (!hasMore.value || loading.value) return
+    loading.value = true
+    try {
+      await loadPage(currentPage.value + 1)
+    } finally {
+      loading.value = false
+    }
+  }
+
+  /**
+   * Initial load of the first page.
+   */
   async function loadTasks() {
     const MIN_DURATION = 300
     const start = Date.now()
     refreshing.value = true
     error.value = null
     try {
-      const data = await api.getTasks()
-      mergeTasks(data)
+      await loadPage(0)
     } catch (err: any) {
       error.value = err.message || '加载任务失败'
       console.error('Failed to load tasks:', err)
@@ -60,24 +118,76 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  // 创建任务
+  // ── Detail fetching ───────────────────────────────────────────
+
+  /**
+   * Get detailed Task (with text/context/model) by ID.
+   * Uses a non-reactive cache to avoid memory bloat.
+   */
+  async function getTaskDetail(id: string): Promise<Task> {
+    // Check detail cache first
+    const cached = taskDetailCache.get(id)
+    if (cached) return cached
+
+    detailLoading.value = true
+    try {
+      const task = await api.getTask(id)
+      taskDetailCache.set(id, task)
+      return task
+    } finally {
+      detailLoading.value = false
+    }
+  }
+
+  // ── Search / Filter ───────────────────────────────────────────
+
+  async function searchTasks(query: string) {
+    activeSearch.value = query
+    activeStatus.value = undefined
+    await loadPage(0)
+  }
+
+  async function filterByStatus(status: TaskStatus | undefined) {
+    activeStatus.value = status
+    await loadPage(0)
+  }
+
+  async function filterByGroup(groupId: string | undefined) {
+    activeGroupFilter.value = groupId
+    await loadPage(0)
+  }
+
+  // ── Update single task in map (for SSE) ───────────────────────
+
+  function updateTaskInMap(taskId: string, updates: Partial<TaskSummary>) {
+    const existing = taskMap.value.get(taskId)
+    if (existing) {
+      const newMap = new Map(taskMap.value)
+      newMap.set(taskId, { ...existing, ...updates })
+      taskMap.value = newMap
+    }
+  }
+
+  // ── CRUD ──────────────────────────────────────────────────────
+
   async function createTask(request: {
     text: string
     voice: string
     model: string
     context?: string
-    task_name?: string  // Optional custom task name
+    task_name?: string
     api_key?: string
   }) {
     loading.value = true
     error.value = null
     try {
       const result = await api.synthesize(request)
-      await loadTasks()
-      
+      // Use lightweight page reload instead of full loadTasks
+      await loadPage(0)
+
       // 订阅该任务的 SSE 事件
       subscribeToTaskEvents(result.task_id)
-      
+
       return result.task_id
     } catch (err: any) {
       error.value = err.response?.data?.message || err.message || '创建任务失败'
@@ -87,11 +197,13 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  // 删除任务
   async function removeTask(taskId: string) {
     try {
       await api.deleteTask(taskId)
-      tasks.value = tasks.value.filter(t => t.id !== taskId)
+      const newMap = new Map(taskMap.value)
+      newMap.delete(taskId)
+      taskMap.value = newMap
+      taskDetailCache.delete(taskId)
     } catch (err: any) {
       error.value = err.message || '删除任务失败'
       console.error('Failed to delete task:', err)
@@ -99,66 +211,54 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  // 更新单个任务状态
-  function updateTaskStatus(taskId: string, updates: Partial<Task>) {
-    const task = tasks.value.find(t => t.id === taskId)
-    if (task) {
-      Object.assign(task, updates)
-    }
-  }
+  // ── SSE subscription ──────────────────────────────────────────
 
-  // 订阅任务 SSE 事件
+  const eventSources = new Map<string, EventSource>()
+
   function subscribeToTaskEvents(taskId: string) {
     // 如果已经订阅过，先关闭旧的连接
     if (eventSources.has(taskId)) {
       eventSources.get(taskId)?.close()
     }
-    
+
     const eventSource = api.subscribeToTask(taskId, (event: TaskEvent) => {
       console.log('SSE Event received:', event)
-      
+
       switch (event.event_type) {
         case 'status_changed':
-          updateTaskStatus(taskId, { 
+          updateTaskInMap(taskId, {
             status: event.status,
-            progress: event.progress ?? 0 
+            progress: event.progress ?? 0,
           })
           break
         case 'completed':
-          updateTaskStatus(taskId, { 
+          updateTaskInMap(taskId, {
             status: 'completed',
-            progress: 1.0 
+            progress: 1.0,
           })
           // 完成后关闭连接
           eventSources.delete(taskId)
           eventSource.close()
-          // 刷新任务列表以获取最新数据
-          loadTasks()
+          // Lightweight page reload instead of full loadTasks
+          loadPage(0)
           break
         case 'failed':
-          updateTaskStatus(taskId, { 
+          updateTaskInMap(taskId, {
             status: 'failed',
-            error: event.error || '未知错误'
           })
           // 失败后关闭连接
           eventSources.delete(taskId)
           eventSource.close()
-          loadTasks()
+          loadPage(0)
           break
       }
     })
-    
+
     eventSources.set(taskId, eventSource)
   }
 
-  // 清理所有 SSE 连接和轮询
-  function cleanup() {
-    eventSources.forEach(es => es.close())
-    eventSources.clear()
-    stopPolling()
-  }
+  // ── Polling fallback ──────────────────────────────────────────
 
-  // 轮询定时器（SSE 失败时的兜底）
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
   function startPolling() {
@@ -175,7 +275,33 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
-  // 初始化时加载任务
+  // ── Reset ────────────────────────────────────────────────────
+
+  /** Clears all state — useful on logout or full refresh */
+  function resetStore() {
+    taskMap.value = new Map()
+    taskDetailCache.clear()
+    currentPage.value = 0
+    totalCount.value = 0
+    activeSearch.value = ''
+    activeStatus.value = undefined
+    activeGroupFilter.value = undefined
+    error.value = null
+    loading.value = false
+    refreshing.value = false
+  }
+
+  // ── Cleanup ───────────────────────────────────────────────────
+
+  function cleanup() {
+    eventSources.forEach(es => es.close())
+    eventSources.clear()
+    stopPolling()
+    taskDetailCache.clear()
+  }
+
+  // ── Init ──────────────────────────────────────────────────────
+
   function init() {
     const MIN_DURATION = 300
     const start = Date.now()
@@ -192,19 +318,48 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   return {
-    tasks,
+    // State
+    taskMap,
+    allTasks,
     loading,
     refreshing,
     error,
+    currentPage,
+    perPage,
+    totalCount,
+    hasMore,
+    activeSearch,
+
+    // Computed
     completedTasks,
     failedTasks,
     pendingTasks,
+    standaloneTasks,
+
+    // Paginated load
     loadTasks,
+    loadPage,
+    loadMore,
+
+    // Detail
+    getTaskDetail,
+    detailLoading,
+    taskDetailCache,
+
+    // Search / Filter
+    searchTasks,
+    filterByStatus,
+    filterByGroup,
+
+    // CRUD
     createTask,
     removeTask,
-    updateTaskStatus,
+
+    // SSE
+    updateTaskInMap,
     init,
     cleanup,
+    resetStore,
     startPolling,
     stopPolling,
   }

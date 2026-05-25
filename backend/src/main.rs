@@ -3,13 +3,23 @@ use actix_web::{middleware, web, App, HttpServer};
 use tracing_subscriber;
 
 mod config;
+mod db;
 mod embed;
 mod models;
 mod routes;
 mod services;
 mod state;
+// Test modules declared in their respective module files:
+//   test_utils, db_tests → main.rs #[cfg(test)]
+//   stats_cache_tests → services/mod.rs #[cfg(test)]
+//   response_tests → models/mod.rs #[cfg(test)]
+#[cfg(test)]
+pub mod test_utils;
+#[cfg(test)]
+pub mod db_tests;
 
 use config::Config;
+use services::batch_queue::BatchQueue;
 use state::app_state::AppState;
 
 /// 查找可用端口，如果指定端口被占用则自动递增
@@ -48,7 +58,17 @@ async fn main() -> std::io::Result<()> {
         .init();
 
     let mut config = Config::from_args();
-    let app_state = web::Data::new(AppState::new());
+    let app_state = web::Data::new(AppState::new(config.output_dir.clone()));
+    let batch_queue = BatchQueue::new(app_state.rate_limiter.clone(), config.max_concurrent_tasks);
+    let batch_queue = web::Data::new(batch_queue);
+
+    // Start batch task consumer workers
+    batch_queue.start_consumer(app_state.clone());
+
+    // Start cleanup task for old audio files
+    let cleanup_data = app_state.clone();
+    let cleanup_config = config.clone();
+    services::cleanup::spawn_cleanup_task(cleanup_data, cleanup_config);
 
     // 尝试绑定端口，如果被占用则自动查找可用端口
     let port = find_available_port(config.server_port);
@@ -74,12 +94,13 @@ async fn main() -> std::io::Result<()> {
     let mut bind_port = config.server_port;
     let server = loop {
         let app_state_clone = app_state.clone();
+        let batch_queue_clone = batch_queue.clone();
         match HttpServer::new(move || {
             let cors = Cors::default()
                 .allowed_origin_fn(|origin, _req_head| {
                     origin.as_bytes().starts_with(b"http://localhost:")
                 })
-                .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+                .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
                 .allowed_headers(vec![
                     actix_web::http::header::AUTHORIZATION,
                     actix_web::http::header::ACCEPT,
@@ -95,6 +116,7 @@ async fn main() -> std::io::Result<()> {
 
             App::new()
                 .app_data(app_state_clone.clone())
+                .app_data(batch_queue_clone.clone())
                 .wrap(cors)
                 .wrap(middleware::Logger::default())
                 .route(
@@ -115,6 +137,14 @@ async fn main() -> std::io::Result<()> {
                     web::get().to(routes::tasks::get_audio),
                 )
                 .route(
+                    "/api/v1/tasks/{task_id}/detail",
+                    web::get().to(routes::tasks::get_task_detail),
+                )
+                .route(
+                    "/api/v1/tasks/{task_id}/download",
+                    web::get().to(routes::tasks::download_task_audio),
+                )
+                .route(
                     "/api/v1/tasks/{task_id}/title",
                     web::patch().to(routes::tasks::update_task_title),
                 )
@@ -126,6 +156,93 @@ async fn main() -> std::io::Result<()> {
                 .route(
                     "/api/v1/sse/tasks/{task_id}",
                     web::get().to(routes::sse::sse_task_events),
+                )
+                .route(
+                    "/api/v1/sse/groups/{group_id}",
+                    web::get().to(routes::sse::sse_group_events),
+                )
+                // Batch import
+                .route(
+                    "/api/v1/batch/import",
+                    web::post().to(routes::batch::import_batch),
+                )
+                // Batch Import v2 (token-based backend cache)
+                .route(
+                    "/api/v1/batch/upload",
+                    web::post().to(routes::batch_import::upload_file),
+                )
+                .route(
+                    "/api/v1/batch/preview",
+                    web::get().to(routes::batch_import::get_preview),
+                )
+                .route(
+                    "/api/v1/batch/extend",
+                    web::post().to(routes::batch_import::extend_ttl),
+                )
+                .route(
+                    "/api/v1/batch/items/{index}",
+                    web::put().to(routes::batch_import::update_item),
+                )
+                .route(
+                    "/api/v1/batch/submit",
+                    web::post().to(routes::batch_import::submit),
+                )
+                .route(
+                    "/api/v1/batch/files",
+                    web::get().to(routes::batch_import::get_file_stats),
+                )
+                .route(
+                    "/api/v1/batch/files/{filename}",
+                    web::delete().to(routes::batch_import::delete_file),
+                )
+                // Group management
+                .route(
+                    "/api/v1/groups",
+                    web::get().to(routes::groups::list_groups),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}",
+                    web::get().to(routes::groups::get_group),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}",
+                    web::delete().to(routes::groups::delete_group),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}",
+                    web::patch().to(routes::groups::update_group),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/pause",
+                    web::post().to(routes::groups::pause_group),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/resume",
+                    web::post().to(routes::groups::resume_group),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/retry-failed",
+                    web::post().to(routes::groups::retry_failed),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/tasks",
+                    web::get().to(routes::groups::get_group_tasks),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/stats",
+                    web::get().to(routes::stats::group_stats),
+                )
+                .route(
+                    "/api/v1/groups/{group_id}/download",
+                    web::get().to(routes::groups::download_group_audio),
+                )
+                .route(
+                    "/api/v1/stats/summary",
+                    web::get().to(routes::stats::stats_summary),
+                )
+                .route(
+                    "/api/v1/stats/groups",
+                    web::get().to(routes::stats::stats_groups),
                 )
                 .route(
                     "/health",
@@ -166,3 +283,4 @@ async fn main() -> std::io::Result<()> {
 
     server.run().await
 }
+ 

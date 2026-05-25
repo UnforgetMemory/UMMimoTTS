@@ -8,14 +8,19 @@
         </DialogDescription>
       </DialogHeader>
 
+      <form @submit.prevent="handleSave">
       <div class="space-y-4 py-4">
+        <!-- Hidden username field for Chrome password accessibility -->
+        <input type="text" autocomplete="username" class="hidden" aria-hidden="true" tabindex="-1" />
+
         <!-- API Key Input -->
         <div class="space-y-2">
           <Label for="api-key" class="text-sm">API Key</Label>
           <Input
             id="api-key"
-            v-model="apiKey"
+            v-model="apiKeyInput"
             type="password"
+            autocomplete="new-password"
             placeholder="输入 MIMO API Key"
             class="text-sm focus-visible:ring-2 focus-visible:ring-primary/50"
           />
@@ -46,16 +51,17 @@
         <Button variant="outline" @click="handleClear" :disabled="!configStore.apiKey" class="w-full sm:w-auto text-sm">
           清除
         </Button>
-        <Button @click="handleSave" :disabled="!apiKey" class="w-full sm:w-auto text-sm">
+        <Button @click="handleSave" :disabled="!apiKeyInput.trim()" class="w-full sm:w-auto text-sm">
           保存
         </Button>
       </DialogFooter>
+      </form>
     </DialogContent>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, watch, computed } from 'vue'
 import { toast } from 'vue-sonner'
 import { useConfigStore } from '@/stores/config'
 import { useThemeStore } from '@/stores/theme'
@@ -76,7 +82,7 @@ interface Props {
   open: boolean
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 defineEmits<{
   'update:open': [value: boolean]
 }>()
@@ -84,22 +90,29 @@ defineEmits<{
 const configStore = useConfigStore()
 const themeStore = useThemeStore()
 const isDark = computed(() => themeStore.actualTheme === 'dark')
-const apiKey = computed({
-  get: () => configStore.apiKey,
-  set: (value) => configStore.apiKey = value,
+
+// Local input value — NOT synced to store until save
+const apiKeyInput = ref('')
+
+// When dialog opens, populate input from store's current value
+watch(() => props.open, (isOpen) => {
+  if (isOpen) {
+    apiKeyInput.value = configStore.apiKey
+  }
 })
 
 function handleSave() {
-  if (!apiKey.value.trim()) {
+  if (!apiKeyInput.value.trim()) {
     toast.error('请输入 API Key')
     return
   }
-  configStore.saveApiKey(apiKey.value.trim())
+  configStore.saveApiKey(apiKeyInput.value.trim())
   toast.success('API Key 已保存')
 }
 
 function handleClear() {
   configStore.clearApiKey()
+  apiKeyInput.value = ''
   toast.success('API Key 已清除')
 }
 </script>

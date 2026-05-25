@@ -6,9 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "@tanstack/vue-table": "^8.21.3",
     "@tanstack/vue-virtual": "^3.13.25",
     "@vueuse/core": "^12.8.2",
@@ -26,12 +29,16 @@
     "vue-sonner": "^2.0.9"
   },
   "devDependencies": {
+    "@pinia/testing": "^0.1.7",
     "@tailwindcss/vite": "^4.0.0",
     "@types/node": "^25.9.0",
     "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/test-utils": "^2.4.10",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4.0.0",
     "typescript": "~5.7.2",
     "vite": "^6.1.0",
+    "vitest": "^4.1.7",
     "vue-tsc": "^2.2.0"
   }
 }

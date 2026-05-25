@@ -14,7 +14,7 @@
       <!-- Virtual Scrolled Text Lines -->
       <div
         ref="scrollContainerRef"
-        class="flex-1 overflow-y-auto min-h-0 mx-4 mb-4 p-4 bg-muted/30 rounded-lg border"
+        class="flex-1 overflow-y-auto scrollbar-auto min-h-0 mx-4 mb-4 p-4 bg-muted/30 rounded-lg border"
       >
         <div
           :style="{ height: `${virtualizer.getTotalSize()}px` }"

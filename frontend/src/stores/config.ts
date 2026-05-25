@@ -40,6 +40,8 @@ export const useConfigStore = defineStore('config', () => {
     if (storedVoice) selectedVoice.value = storedVoice
     if (storedModel) selectedModel.value = storedModel
   }
+  // 初始化时从 localStorage 加载
+  loadFromStorage()
 
   // 保存到 localStorage
   function saveApiKey(key: string) {

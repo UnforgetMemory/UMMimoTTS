@@ -92,11 +92,7 @@
       </div>
 
       <!-- Scrollable Original Text Section -->
-      <div class="flex-1 overflow-y-auto p-4 space-y-3 [&::-webkit-scrollbar]:w-1.5
-        [&::-webkit-scrollbar-track]:bg-transparent
-        [&::-webkit-scrollbar-thumb]:bg-muted-foreground/20
-        [&::-webkit-scrollbar-thumb]:rounded-full
-        [&::-webkit-scrollbar-thumb]:hover:bg-muted-foreground/40">
+      <div class="flex-1 overflow-y-auto p-4 space-y-3">
         <div class="flex items-center justify-between">
           <h3 class="text-sm font-semibold text-muted-foreground">原文文本</h3>
           <span class="text-[11px] text-muted-foreground/50 font-mono tabular-nums">

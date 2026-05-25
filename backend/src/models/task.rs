@@ -14,6 +14,33 @@ pub enum TaskStatus {
     Cancelled,
 }
 
+impl TaskStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "pending",
+            TaskStatus::Queued => "queued",
+            TaskStatus::Synthesizing => "synthesizing",
+            TaskStatus::Streaming => "streaming",
+            TaskStatus::Completed => "completed",
+            TaskStatus::Failed => "failed",
+            TaskStatus::Cancelled => "cancelled",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "pending" => Some(TaskStatus::Pending),
+            "queued" => Some(TaskStatus::Queued),
+            "synthesizing" => Some(TaskStatus::Synthesizing),
+            "streaming" => Some(TaskStatus::Streaming),
+            "completed" => Some(TaskStatus::Completed),
+            "failed" => Some(TaskStatus::Failed),
+            "cancelled" => Some(TaskStatus::Cancelled),
+            _ => None,
+        }
+    }
+}
+
 impl std::fmt::Display for TaskStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -47,9 +74,16 @@ pub struct TtsTask {
     pub token_count: usize,
     pub char_count: usize,
     pub audio_duration_secs: Option<f32>,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub audio_path: Option<String>,
     // 分片进度信息
     pub total_chunks: Option<usize>,
     pub current_chunk: Option<usize>,
+    // 批量处理
+    pub group_id: Option<String>,
+    /// 存储的 API key，批量任务需要在异步处理时使用
+    #[serde(skip_serializing, skip_deserializing)]
+    pub api_key: Option<String>,
 }
 
 impl TtsTask {
@@ -78,8 +112,11 @@ impl TtsTask {
             token_count: 0,
             char_count,
             audio_duration_secs: None,
+            audio_path: None,
             total_chunks: None,
             current_chunk: None,
+            group_id: None,
+            api_key: None,
         }
     }
 
@@ -103,6 +140,26 @@ impl TtsTask {
             (Some(start), Some(end)) => Some((end - start).num_milliseconds() as f64 / 1000.0),
             (Some(start), None) => Some((Utc::now() - start).num_milliseconds() as f64 / 1000.0),
             _ => None,
+        }
+    }
+
+    /// Convert to lightweight TaskSummary for list endpoints
+    pub fn to_summary(&self) -> super::response::TaskSummary {
+        super::response::TaskSummary {
+            id: self.id.clone(),
+            custom_title: self.custom_title.clone(),
+            status: self.status.clone(),
+            voice: self.voice.clone(),
+            char_count: self.char_count,
+            token_count: self.token_count,
+            progress: self.progress,
+            has_audio: self.audio_data.is_some(),
+            group_id: self.group_id.clone(),
+            created_at: self.created_at.to_rfc3339(),
+            completed_at: self.completed_at.map(|t| t.to_rfc3339()),
+            elapsed_secs: self.elapsed_seconds(),
+            current_chunk: self.current_chunk,
+            total_chunks: self.total_chunks,
         }
     }
 }

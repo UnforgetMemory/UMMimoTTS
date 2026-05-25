@@ -8,6 +8,7 @@ pub struct Config {
     pub allowed_origins: Vec<String>,
     pub max_concurrent_tasks: usize,
     pub task_cleanup_hours: u64,
+    pub output_dir: String,
 }
 
 impl Config {
@@ -34,12 +35,16 @@ impl Config {
             .and_then(|n| n.parse().ok())
             .unwrap_or(24);
 
+        let output_dir = std::env::var("OUTPUT_DIR")
+            .unwrap_or_else(|_| "./data/output".to_string());
+
         Self {
             mimo_api_key,
             server_port,
             allowed_origins,
             max_concurrent_tasks,
             task_cleanup_hours,
+            output_dir,
         }
     }
 
@@ -56,6 +61,12 @@ impl Config {
                         if let Ok(port) = port_str.parse::<u16>() {
                             config.server_port = port;
                         }
+                    }
+                    i += 2;
+                }
+                "--output-dir" => {
+                    if let Some(dir) = args.get(i + 1) {
+                        config.output_dir = dir.clone();
                     }
                     i += 2;
                 }
@@ -115,19 +126,23 @@ impl Config {
         println!("  um-mimo-tts-server [OPTIONS]");
         println!();
         println!("OPTIONS:");
-        println!("  -p, --port <PORT>    Server port (default: 30231)");
-        println!("  -h, --help           Print help");
+        println!("  -p, --port <PORT>       Server port (default: 30231)");
+        println!("  --output-dir <DIR>      Audio output directory (default: ./data/output)");
+        println!("  -h, --help              Print help");
         println!();
         println!("ENVIRONMENT VARIABLES:");
         println!("  MIMO_API_KEY            MIMO API key");
         println!("  SERVER_PORT             Server port (can also use --port)");
+        println!("  OUTPUT_DIR              Audio output directory (default: ./data/output)");
         println!("  MAX_CONCURRENT_TASKS    Max concurrent tasks (default: 5)");
+        println!("  TASK_CLEANUP_HOURS      Auto-cleanup completed tasks after N hours (default: 24, 0=disabled)");
         println!("  RUST_LOG                Log level (default: info)");
         println!();
         println!("EXAMPLES:");
-        println!("  um-mimo-tts-server                    # Start on default port 30231");
-        println!("  um-mimo-tts-server --port 8080        # Start on port 8080");
-        println!("  um-mimo-tts-server -p 3000            # Start on port 3000");
+        println!("  um-mimo-tts-server                        # Start on default port 30231");
+        println!("  um-mimo-tts-server --port 8080            # Start on port 8080");
+        println!("  um-mimo-tts-server -p 3000                # Start on port 3000");
+        println!("  um-mimo-tts-server --output-dir /data/tts # Custom output directory");
         println!();
         println!("If the specified port is in use, the server will automatically");
         println!("find the next available port.");

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
@@ -13,38 +13,41 @@ import {
   Copy as CopyIcon,
   Download as DownloadIcon,
   Trash as TrashIcon,
-  Loader2 as Loader2Icon,
   Clock as ClockIcon,
   Mic as MicIcon,
   Hash as HashIcon,
   AlertCircle as AlertCircleIcon,
 } from 'lucide-vue-next'
 import { api, type Task, type TaskStatus } from '@/api/client'
+import type { TaskSummary } from '@/api/client'
+import { startTracking, stopTracking, getElapsed } from '@/composables/useElapsedTimer'
+import { useTaskStore } from '@/stores/task'
 
 import type { BadgeVariants } from '@/components/ui/badge'
 
+// Only lightweight TaskSummary — full detail fetched lazily on demand
 const props = defineProps<{
-  task: Task
+  task: TaskSummary
   mode: 'active' | 'completed' | 'failed'
 }>()
 
 const emit = defineEmits<{
-  play: [taskId: string]
+  play: [task: Task]
   reuse: [task: Task]
   editTitle: [taskId: string, newTitle: string]
   delete: [taskId: string]
   'view-text': [task: Task]
 }>()
 
+const taskStore = useTaskStore()
+
 // ─── Title editing ────────────────────────────
 const isEditingTitle = ref(false)
 const editingTitle = ref('')
-const titleInputRef = ref<HTMLInputElement>()
 
 function startEditTitle() {
   editingTitle.value = props.task.custom_title || ''
   isEditingTitle.value = true
-  nextTick(() => titleInputRef.value?.focus())
 }
 
 function saveTitle() {
@@ -59,46 +62,24 @@ function cancelEditTitle() {
   isEditingTitle.value = false
 }
 
-// ─── Elapsed timer (active tasks) ─────────────
-const currentElapsed = ref(0)
-let timer: ReturnType<typeof setInterval> | null = null
-
-function calcElapsed(): number {
-  if (!props.task.created_at) return 0
-  const start = new Date(props.task.created_at).getTime()
-  const end = props.task.completed_at
-    ? new Date(props.task.completed_at).getTime()
-    : Date.now()
-  return Math.max(0, Math.floor((end - start) / 1000))
-}
-
-function startTimer() {
-  currentElapsed.value = calcElapsed()
-  timer = setInterval(() => {
-    currentElapsed.value = calcElapsed()
-  }, 1000)
-}
-
-function stopTimer() {
-  if (timer) {
-    clearInterval(timer)
-    timer = null
-  }
-}
-
+// ─── Elapsed timer via composable ─────────────
 onMounted(() => {
-  if (props.mode === 'active') startTimer()
+  if (props.mode === 'active') {
+    startTracking(props.task.id, props.task.created_at, props.task.completed_at)
+  }
 })
 
 onUnmounted(() => {
-  stopTimer()
+  stopTracking(props.task.id)
 })
+
+const taskElapsed = getElapsed(props.task.id)
 
 // ─── Computed ─────────────────────────────────
 const displayTime = computed(() => {
-  const seconds = currentElapsed.value > 0
-    ? currentElapsed.value
-    : props.task.elapsed_secs || 0
+  const seconds = taskElapsed.value > 0
+    ? taskElapsed.value
+    : (props.task.elapsed_secs ?? 0)
   if (seconds < 60) return `${Math.floor(seconds)}s`
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
@@ -148,6 +129,35 @@ function formatTime(iso: string): string {
     return iso
   }
 }
+
+/** Fetch full Task detail when needed (for play / view-text / reuse) */
+async function withFullTask(action: (task: Task) => void) {
+  try {
+    const full = await taskStore.getTaskDetail(props.task.id)
+    action(full)
+  } catch (err) {
+    console.error('Failed to load task detail:', err)
+  }
+}
+
+function handlePlay() {
+  withFullTask((task) => emit('play', task))
+}
+
+function handleReuse() {
+  withFullTask((task) => emit('reuse', task))
+}
+
+function handleViewText() {
+  withFullTask((task) => emit('view-text', task))
+}
+
+function downloadAudio(taskId: string) {
+  const a = window.document.createElement('a')
+  a.href = api.getAudioUrl(taskId)
+  a.download = ''
+  a.click()
+}
 </script>
 
 <template>
@@ -163,7 +173,6 @@ function formatTime(iso: string): string {
       <div class="flex-1 min-w-0">
         <div v-if="isEditingTitle" class="flex items-center">
           <input
-            ref="titleInputRef"
             v-model="editingTitle"
             class="flex-1 text-sm font-medium bg-transparent border-b border-primary focus:outline-none min-w-0"
             @blur="saveTitle"
@@ -206,88 +215,100 @@ function formatTime(iso: string): string {
       </span>
     </div>
 
-    <!-- ===== Text Preview ===== -->
+    <!-- ===== Text Preview / View Text ===== -->
     <CardContent class="!pt-1.5">
-      <p
-        class="text-xs text-muted-foreground/80 line-clamp-2 cursor-pointer hover:text-foreground transition-colors leading-relaxed"
-        @click="$emit('view-text', task)"
-        title="点击查看全文"
-      >
-        {{ task.text }}
-      </p>
       <button
-        v-if="task.text.length > 100"
-        class="text-[10px] text-primary/70 hover:text-primary hover:underline mt-1 transition-colors"
-        @click.stop="$emit('view-text', task)"
+        class="text-xs text-muted-foreground/80 hover:text-foreground transition-colors leading-relaxed cursor-pointer"
+        @click="handleViewText"
+        title="点击查看原文"
       >
-        展开全文
+        查看原文
       </button>
     </CardContent>
 
-    <!-- ===== Progress (active only) ===== -->
-    <div v-if="mode === 'active'" class="px-3 pb-1">
-      <div class="flex items-center gap-2 mb-1">
-        <Loader2Icon class="w-3 h-3 animate-spin text-primary" />
-        <span class="text-[11px] text-muted-foreground font-medium">
-          {{ Math.round(task.progress * 100) }}%
-          <span v-if="task.total_chunks && task.total_chunks > 1" class="text-primary/60 ml-1">
-            ({{ task.current_chunk || 0 }}/{{ task.total_chunks }} 片)
-          </span>
+    <!-- ===== Chunk Progress Indicator ===== -->
+    <div v-if="task.total_chunks && task.total_chunks > 1" class="px-3 pt-1">
+      <div class="flex items-center gap-2">
+        <Progress
+          v-if="task.total_chunks"
+          :model-value="((task.current_chunk ?? 0) / task.total_chunks) * 100"
+          class="h-1 flex-1"
+        />
+        <span class="text-[10px] text-muted-foreground/60 shrink-0">
+          第 {{ task.current_chunk ?? 0 }}/{{ task.total_chunks }} 片
         </span>
       </div>
-      <Progress :value="task.progress * 100" class="h-1" />
     </div>
 
-    <!-- ===== Footer: Actions ===== -->
-    <CardFooter class="gap-1 flex-wrap justify-end">
-      <Button
-        v-if="task.has_audio && mode !== 'active'"
-        size="sm"
-        variant="outline"
-        class="h-7 px-2.5 text-xs gap-1"
-        @click="$emit('play', task.id)"
-      >
-        <PlayIcon class="w-3 h-3" />
-        播放
-      </Button>
+    <!-- ===== Progress Bar (active tasks) ===== -->
+    <div v-if="mode === 'active'" class="px-3 pt-1">
+      <Progress :model-value="task.progress * 100" class="h-1" />
+    </div>
 
-      <Button
-        size="sm"
-        variant="ghost"
-        class="h-7 px-2 text-xs"
-        @click="$emit('reuse', task)"
-      >
-        <CopyIcon class="w-3 h-3" />
-        复用
-      </Button>
+    <!-- ===== Error Message (failed mode — detail fetched lazily) ===== -->
+    <div v-if="mode === 'failed'" class="px-3 pt-1">
+      <div class="flex items-start gap-1">
+        <AlertCircleIcon class="w-3 h-3 text-destructive shrink-0 mt-0.5" />
+        <p class="text-[11px] text-destructive/80">任务执行失败</p>
+      </div>
+    </div>
 
-      <a
-        v-if="task.has_audio"
-        :href="api.getAudioUrl(task.id)"
-        download
-      >
-        <Button size="sm" variant="ghost" class="h-7 w-7 p-0">
-          <DownloadIcon class="w-3.5 h-3.5" />
+    <!-- ===== Footer Actions ===== -->
+    <CardFooter class="px-2 pt-1 pb-2">
+      <div class="flex items-center gap-0.5 w-full">
+        <!-- Play Audio -->
+        <Button
+          v-if="task.has_audio && mode !== 'active'"
+          variant="ghost"
+          size="sm"
+          class="h-7 w-7 p-0"
+          title="播放音频"
+          @click="handlePlay"
+        >
+          <PlayIcon class="w-3.5 h-3.5" />
         </Button>
-      </a>
 
-      <Button
-        size="sm"
-        variant="ghost"
-        class="h-7 w-7 p-0 text-destructive/70 hover:text-destructive hover:bg-destructive/10"
-        @click="$emit('delete', task.id)"
-      >
-        <TrashIcon class="w-3.5 h-3.5" />
-      </Button>
+        <!-- Audio Download + Copy for completed -->
+        <template v-if="mode === 'completed'">
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-7 w-7 p-0"
+            title="下载音频"
+            @click="downloadAudio(task.id)"
+          >
+            <DownloadIcon class="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="h-7 w-7 p-0"
+            title="复用配置"
+            @click="handleReuse"
+          >
+            <CopyIcon class="w-3.5 h-3.5" />
+          </Button>
+        </template>
+
+        <!-- Spacer -->
+        <div class="flex-1" />
+
+        <!-- Char/Token Count -->
+        <span class="text-[10px] text-muted-foreground/40 hidden sm:inline">
+          {{ task.char_count }}字 · {{ task.token_count }} tokens
+        </span>
+
+        <!-- Delete -->
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-7 w-7 p-0 text-muted-foreground/40 hover:text-destructive"
+          title="删除任务"
+          @click="$emit('delete', task.id)"
+        >
+          <TrashIcon class="w-3.5 h-3.5" />
+        </Button>
+      </div>
     </CardFooter>
-
-    <!-- ===== Error ===== -->
-    <div
-      v-if="task.error"
-      class="mx-3 mb-3 flex items-start gap-2 text-xs text-destructive bg-destructive/5 border border-destructive/20 rounded-lg p-2.5"
-    >
-      <AlertCircleIcon class="w-4 h-4 shrink-0 mt-0.5" />
-      <span class="break-words">{{ task.error }}</span>
-    </div>
   </Card>
 </template>

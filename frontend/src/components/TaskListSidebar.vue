@@ -8,6 +8,7 @@
           v-model="searchQuery"
           placeholder="搜索任务名称或ID..."
           class="pl-9 text-sm"
+          @input="onSearchInput"
         />
       </div>
       <Button 
@@ -23,20 +24,20 @@
     </div>
 
     <!-- Loading State (仅首次加载) -->
-    <div v-if="taskStore.loading && taskStore.tasks.length === 0" class="space-y-2 shrink-0">
+    <div v-if="taskStore.loading && taskStore.standaloneTasks.length === 0" class="space-y-2 shrink-0">
       <Skeleton class="h-20 w-full" />
       <Skeleton class="h-20 w-full" />
       <Skeleton class="h-20 w-full" />
     </div>
 
-    <!-- Scroll Container: all sections virtualized (pending + completed + failed) -->
+    <!-- Scroll Container -->
     <div
       ref="scrollContainerRef"
-      class="flex-1 overflow-y-auto min-h-0"
-      v-if="taskStore.tasks.length > 0 && !(taskStore.loading && taskStore.tasks.length === 0)"
+      class="flex-1 overflow-y-auto scrollbar-auto min-h-0"
+      v-else-if="taskStore.standaloneTasks.length > 0 || taskStore.totalCount > 0"
     >
-      <!-- Virtual Scroller for All Sections -->
-      <div v-if="flatItems.length > 0" class="pb-3">
+      <!-- Virtual Scroller -->
+      <div v-if="virtualRows.length > 0" class="pb-3">
         <div :style="{ height: `${virtualizer.getTotalSize()}px` }" class="relative w-full">
           <div
             v-for="virtualRow in virtualizer.getVirtualItems()"
@@ -48,44 +49,45 @@
               transform: `translateY(${virtualRow.start}px)`,
             }"
           >
-            <!-- Section Header -->
-            <div
-              v-if="flatItems[virtualRow.index]?.type === 'section-header'"
-              class="flex items-center gap-2 py-2 cursor-pointer select-none group"
-              @click="toggleCollapsed(flatItems[virtualRow.index].section)"
-            >
-              <ChevronRightIcon
-                class="w-4 h-4 transition-transform duration-200 shrink-0"
-                :class="{ 'rotate-90': expandedSection === flatItems[virtualRow.index].section }"
-              />
-              <template v-if="flatItems[virtualRow.index].section === 'pending'">
-                <Loader2Icon
-                  v-if="expandedSection === 'pending'"
-                  class="w-4 h-4 animate-spin text-primary shrink-0"
+            <template v-if="getRowType(virtualRow.index) === 'section-header'">
+              <!-- Section Header -->
+              <div
+                class="flex items-center gap-2 py-2 cursor-pointer select-none group"
+                @click="toggleCollapsed(getRowSection(virtualRow.index))"
+              >
+                <ChevronRightIcon
+                  class="w-4 h-4 transition-transform duration-200 shrink-0"
+                  :class="{ 'rotate-90': openSections.has(getRowSection(virtualRow.index)) }"
                 />
-                <span class="text-sm font-semibold text-primary">
-                  进行中 ({{ filteredPendingTasks.length }})
+                <template v-if="getRowSection(virtualRow.index) === 'pending'">
+                  <Loader2Icon
+                    v-if="openSections.has('pending')"
+                    class="w-4 h-4 animate-spin text-primary shrink-0"
+                  />
+                  <span class="text-sm font-semibold text-primary">
+                    进行中 ({{ pendingCount }})
+                  </span>
+                </template>
+                <span
+                  v-else-if="getRowSection(virtualRow.index) === 'completed'"
+                  class="text-sm font-semibold text-muted-foreground group-hover:text-foreground transition-colors"
+                >
+                  已完成 ({{ completedCount }})
                 </span>
-              </template>
-              <span
-                v-else-if="flatItems[virtualRow.index].section === 'completed'"
-                class="text-sm font-semibold text-muted-foreground group-hover:text-foreground transition-colors"
-              >
-                已完成 ({{ filteredCompletedTasks.length }})
-              </span>
-              <span
-                v-else
-                class="text-sm font-semibold text-destructive group-hover:text-destructive/80 transition-colors"
-              >
-                失败 ({{ filteredFailedTasks.length }})
-              </span>
-            </div>
+                <span
+                  v-else
+                  class="text-sm font-semibold text-destructive group-hover:text-destructive/80 transition-colors"
+                >
+                  失败 ({{ failedCount }})
+                </span>
+              </div>
+            </template>
 
             <!-- Task Item -->
-            <template v-else-if="flatItems[virtualRow.index]?.type === 'task'">
+            <template v-else-if="getRowType(virtualRow.index) === 'task'">
               <TaskItem
-                :task="flatItems[virtualRow.index].task"
-                :mode="flatItems[virtualRow.index].mode"
+                :task="(getRowTask(virtualRow.index) as any)"
+                :mode="getRowMode(virtualRow.index)"
                 @play="handleOpenPlayer"
                 @reuse="handleReuseConfig"
                 @edit-title="handleEditTitle"
@@ -93,31 +95,45 @@
                 @view-text="handleViewText"
               />
             </template>
+
+            <!-- Loading skeleton -->
+            <Skeleton
+              v-else-if="getRowType(virtualRow.index) === 'skeleton'"
+              class="h-20 w-full my-1"
+            />
           </div>
         </div>
       </div>
 
-      <!-- Empty virtual area message -->
+      <!-- Empty state -->
       <div
-        v-if="flatItems.length === 0 && taskStore.tasks.length > 0"
+        v-if="virtualRows.length === 0 && taskStore.standaloneTasks.length > 0"
         class="py-8 text-center text-muted-foreground"
       >
         <p class="text-sm">所有任务已完成</p>
       </div>
 
-      <!-- Bottom refresh (inside scroll container so it scrolls naturally) -->
-      <div class="pt-2">
+      <!-- Load more button -->
+      <div v-if="taskStore.hasMore" class="pt-2">
         <Button 
           variant="outline" 
           size="sm" 
           class="w-full"
-          @click="taskStore.loadTasks" 
-          :disabled="taskStore.refreshing"
+          @click="taskStore.loadMore" 
+          :disabled="taskStore.loading"
         >
-          <Loader2Icon v-if="taskStore.refreshing" class="w-4 h-4 animate-spin mr-2" />
-          刷新列表
+          <Loader2Icon v-if="taskStore.loading" class="w-4 h-4 animate-spin mr-2" />
+          加载更多
         </Button>
       </div>
+    </div>
+
+    <!-- Empty state (no tasks at all) -->
+    <div
+      v-else
+      class="flex-1 flex items-center justify-center text-muted-foreground text-sm"
+    >
+      暂无任务
     </div>
 
     <!-- Delete Confirmation Dialog -->
@@ -143,11 +159,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, unref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
-import { api, type Task } from '@/api/client'
+import { api, type Task, type TaskSummary } from '@/api/client'
 import { handleApiError } from '@/utils/errorHandler'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -170,135 +186,215 @@ import {
 // ─── Types ──────────────────────────────────────────
 type VirtualRow =
   | { type: 'section-header'; section: 'pending' | 'completed' | 'failed' }
-  | { type: 'task'; task: Task; mode: 'active' | 'completed' | 'failed' }
+  | { type: 'task'; task: TaskSummary; mode: 'active' | 'completed' | 'failed' }
+  | { type: 'skeleton' }
 
 // ─── Store ──────────────────────────────────────────
 const taskStore = useTaskStore()
 const searchQuery = ref('')
 const deleteTargetId = ref<string | null>(null)
-const expandedSection = ref<string | null>('pending')
+const openSections = ref<Set<string>>(new Set(['pending']))
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-// ─── Computed: Filtered Tasks ──────────────────────
-const pendingTasks = computed(() => 
-  taskStore.tasks.filter(t => 
+// ─── Computed: Standalone (non-group) tasks ──────────
+const filteredStandaloneTasks = computed(() => {
+  const tasks = taskStore.standaloneTasks
+  if (!searchQuery.value) return tasks
+  const query = searchQuery.value.toLowerCase()
+  return tasks.filter(t => 
+    t.custom_title?.toLowerCase().includes(query) ||
+    t.id.toLowerCase().includes(query)
+  )
+})
+
+// ─── Group tasks by status ──────────────────────────
+const pendingTasks = computed(() =>
+  filteredStandaloneTasks.value.filter(t =>
     ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
   )
 )
 
-const completedTasks = computed(() => 
-  taskStore.tasks.filter(t => t.status === 'completed')
+const completedTasks = computed(() =>
+  filteredStandaloneTasks.value.filter(t => t.status === 'completed')
 )
 
-const failedTasks = computed(() => 
-  taskStore.tasks.filter(t => t.status === 'failed')
+const failedTasks = computed(() =>
+  filteredStandaloneTasks.value.filter(t => t.status === 'failed')
 )
 
-const filteredPendingTasks = computed(() => {
-  if (!searchQuery.value) return pendingTasks.value
-  const query = searchQuery.value.toLowerCase()
-  return pendingTasks.value.filter(t => 
-    t.custom_title?.toLowerCase().includes(query) ||
-    t.id.toLowerCase().includes(query)
-  )
-})
+// ─── Virtual Rows ──────────────────────────────────
+// ─── Counts for section headers ────────────────────
+const pendingCount = computed(() =>
+  filteredStandaloneTasks.value.filter(t =>
+    ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
+  ).length
+)
 
-const filteredCompletedTasks = computed(() => {
-  if (!searchQuery.value) return completedTasks.value
-  const query = searchQuery.value.toLowerCase()
-  return completedTasks.value.filter(t => 
-    t.custom_title?.toLowerCase().includes(query) ||
-    t.id.toLowerCase().includes(query)
-  )
-})
+const completedCount = computed(() =>
+  filteredStandaloneTasks.value.filter(t => t.status === 'completed').length
+)
 
-const filteredFailedTasks = computed(() => {
-  if (!searchQuery.value) return failedTasks.value
-  const query = searchQuery.value.toLowerCase()
-  return failedTasks.value.filter(t => 
-    t.custom_title?.toLowerCase().includes(query) ||
-    t.id.toLowerCase().includes(query)
-  )
-})
+const failedCount = computed(() =>
+  filteredStandaloneTasks.value.filter(t => t.status === 'failed').length
+)
 
-// ─── Flattened Virtual Items ───────────────────────
-const virtualItems = computed<VirtualRow[]>(() => {
-  const items: VirtualRow[] = []
+// ─── Type-safe row accessors ──────────────────────
+function getRowType(index: number): VirtualRow['type'] | undefined {
+  return virtualRows.value[index]?.type
+}
 
-  if (filteredPendingTasks.value.length > 0) {
-    items.push({ type: 'section-header', section: 'pending' })
-    if (expandedSection.value === 'pending') {
-      filteredPendingTasks.value.forEach(task => {
-        items.push({ type: 'task', task, mode: 'active' })
-      })
+function getRowSection(index: number): 'pending' | 'completed' | 'failed' {
+  const row = virtualRows.value[index]
+  if (row?.type === 'section-header') return row.section
+  return 'pending'
+}
+
+function getRowTask(index: number): TaskSummary | undefined {
+  const row = virtualRows.value[index]
+  if (row?.type === 'task') return row.task
+  return undefined
+}
+
+function getRowMode(index: number): 'active' | 'completed' | 'failed' {
+  const row = virtualRows.value[index]
+  if (row?.type === 'task') return row.mode
+  return 'active'
+}
+
+const virtualRows = computed<VirtualRow[]>(() => {
+  const rows: VirtualRow[] = []
+
+  if (pendingTasks.value.length > 0) {
+    rows.push({ type: 'section-header', section: 'pending' })
+    if (openSections.value.has('pending')) {
+      for (const task of pendingTasks.value) {
+        rows.push({ type: 'task', task, mode: 'active' })
+      }
     }
   }
 
-  if (filteredCompletedTasks.value.length > 0) {
-    items.push({ type: 'section-header', section: 'completed' })
-    if (expandedSection.value === 'completed') {
-      filteredCompletedTasks.value.forEach(task => {
-        items.push({ type: 'task', task, mode: 'completed' })
-      })
+  if (completedTasks.value.length > 0) {
+    rows.push({ type: 'section-header', section: 'completed' })
+    if (openSections.value.has('completed')) {
+      for (const task of completedTasks.value) {
+        rows.push({ type: 'task', task, mode: 'completed' })
+      }
     }
   }
 
-  if (filteredFailedTasks.value.length > 0) {
-    items.push({ type: 'section-header', section: 'failed' })
-    if (expandedSection.value === 'failed') {
-      filteredFailedTasks.value.forEach(task => {
-        items.push({ type: 'task', task, mode: 'failed' })
-      })
+  if (failedTasks.value.length > 0) {
+    rows.push({ type: 'section-header', section: 'failed' })
+    if (openSections.value.has('failed')) {
+      for (const task of failedTasks.value) {
+        rows.push({ type: 'task', task, mode: 'failed' })
+      }
     }
   }
 
-  return items
+  return rows
 })
-
-// Flattened as any[] for template use (avoids discriminated union narrowing issues)
-const flatItems = computed(() => virtualItems.value as any[])
 
 // ─── Virtualizer ───────────────────────────────────
 const scrollContainerRef = ref<HTMLElement | null>(null)
 
 const virtualizer = useVirtualizer({
-  get count() { return virtualItems.value.length },
+  get count() { return virtualRows.value.length },
   getScrollElement: () => scrollContainerRef.value as Element | null,
   estimateSize: (index: number) => {
-    const item = virtualItems.value[index]
-    return item?.type === 'section-header' ? 40 : 200
+    const item = virtualRows.value[index]
+    if (!item) return 200
+    if (item.type === 'section-header') return 40
+    if (item.type === 'skeleton') return 84
+    return 200
   },
   measureElement: (el: Element) => Math.max(el.getBoundingClientRect().height, 40),
   overscan: 5,
 })
 
+// ─── Infinite scroll: load more when near bottom ──
+watch(
+  () => unref(virtualizer).getVirtualItems(),
+  (items) => {
+    if (items.length === 0) return
+    const lastItem = items[items.length - 1]
+    if (lastItem && lastItem.index >= virtualRows.value.length - 3) {
+      if (taskStore.hasMore && !taskStore.loading) {
+        taskStore.loadMore()
+      }
+    }
+  },
+  { deep: true }
+)
+
 // ─── Collapse Toggle ──────────────────────────────
 function toggleCollapsed(section: 'pending' | 'completed' | 'failed') {
-  expandedSection.value = expandedSection.value === section ? null : section
+  const newSet = new Set(openSections.value)
+  if (newSet.has(section)) {
+    newSet.delete(section)
+  } else {
+    newSet.add(section)
+  }
+  openSections.value = newSet
+}
+
+// ─── Search ────────────────────────────────────────
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    taskStore.searchTasks(searchQuery.value)
+  }, 300)
 }
 
 // ─── Emits ─────────────────────────────────────────
 const emit = defineEmits<{
-  'open-player': [taskId: string]
+  'open-player': [task: Task]
   'reuse-config': [config: { text: string; voice: string | null; model: string; context?: string }]
   'open-text-viewer': [task: Task]
 }>()
 
 // ─── Handlers ─────────────────────────────────────
-function handleOpenPlayer(taskId: string) {
-  emit('open-player', taskId)
+async function handleOpenPlayer(task: Task | TaskSummary) {
+  const t = task as Task
+  if ('text' in t && typeof t.text === 'string') {
+    emit('open-player', t)
+  } else {
+    try {
+      const full = await taskStore.getTaskDetail(task.id)
+      emit('open-player', full)
+    } catch (error) {
+      handleApiError(error, '加载任务详情失败')
+    }
+  }
 }
 
-function handleReuseConfig(task: Task) {
-  emit('reuse-config', {
-    text: task.text,
-    voice: task.voice,
-    model: task.model,
-    context: task.context || '',
-  })
+async function handleReuseConfig(task: Task | TaskSummary) {
+  try {
+    const full = 'text' in (task as Task) && typeof (task as Task).text === 'string'
+      ? (task as Task)
+      : await taskStore.getTaskDetail(task.id)
+    emit('reuse-config', {
+      text: full.text,
+      voice: full.voice,
+      model: full.model,
+      context: full.context || '',
+    })
+  } catch (error) {
+    handleApiError(error, '加载任务详情失败')
+  }
 }
 
-function handleViewText(task: Task) {
-  emit('open-text-viewer', task)
+async function handleViewText(task: Task | TaskSummary) {
+  const t = task as Task
+  if ('text' in t && typeof t.text === 'string') {
+    emit('open-text-viewer', t)
+  } else {
+    try {
+      const full = await taskStore.getTaskDetail(task.id)
+      emit('open-text-viewer', full)
+    } catch (error) {
+      handleApiError(error, '加载任务详情失败')
+    }
+  }
 }
 
 async function handleEditTitle(taskId: string, newTitle: string) {
