@@ -1,0 +1,303 @@
+//! E2E integration tests for task endpoints.
+//!
+//! Tests cover task CRUD, enqueue, and continue operations.
+
+#![allow(dead_code)]
+
+use actix_web::{test, web, App, http::StatusCode};
+use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::Duration;
+
+use um_mimo_tts_server_v3::infra::persistence::db::create_test_pool;
+use um_mimo_tts_server_v3::infra::persistence::migrate::run_migrations;
+use um_mimo_tts_server_v3::infra::persistence::task_repo::SqliteTaskRepo;
+use um_mimo_tts_server_v3::infra::persistence::chunk_repo::SqliteChunkRepo;
+use um_mimo_tts_server_v3::infra::persistence::batch_repo::SqliteBatchRepo;
+use um_mimo_tts_server_v3::infra::persistence::group_repo::SqliteGroupRepo;
+use um_mimo_tts_server_v3::infra::persistence::batch_repo::BatchRepo;
+use um_mimo_tts_server_v3::infra::persistence::chunk_repo::ChunkRepo;
+use um_mimo_tts_server_v3::infra::persistence::task_repo::TaskRepo;
+use um_mimo_tts_server_v3::infra::persistence::group_repo::GroupRepo;
+use um_mimo_tts_server_v3::infra::queue::task_queue::TaskQueue;
+use um_mimo_tts_server_v3::infra::queue::chunk_queue::ChunkQueue;
+use um_mimo_tts_server_v3::infra::queue::rate_limiter::TokenBucket;
+use um_mimo_tts_server_v3::infra::mimo::chunker::MimoChunker;
+use um_mimo_tts_server_v3::infra::mimo::client::MimoClient;
+use um_mimo_tts_server_v3::infra::cache::Cache;
+use um_mimo_tts_server_v3::infra::sse_bus::SseBus;
+use um_mimo_tts_server_v3::domain::events::DomainEvent;
+use um_mimo_tts_server_v3::service::task_service::TaskService;
+use um_mimo_tts_server_v3::service::batch_service::BatchService;
+use um_mimo_tts_server_v3::service::group_service::GroupService;
+use um_mimo_tts_server_v3::routes::AppState;
+
+// ---------------------------------------------------------------------------
+// Macro: build a fully-wired actix-web test app
+// ---------------------------------------------------------------------------
+macro_rules! build_app {
+    ($base_url:expr) => {{
+        let pool = create_test_pool();
+        let conn = pool.get().unwrap();
+        run_migrations(&conn).unwrap();
+
+        let task_repo: Arc<dyn TaskRepo> =
+            Arc::new(SqliteTaskRepo::new(pool.clone()));
+        let chunk_repo: Arc<dyn ChunkRepo> =
+            Arc::new(SqliteChunkRepo::new(pool.clone()));
+        let batch_repo: Arc<dyn BatchRepo> =
+            Arc::new(SqliteBatchRepo::new(pool.clone()));
+        let group_repo: Arc<dyn GroupRepo> =
+            Arc::new(SqliteGroupRepo::new(pool.clone()));
+
+        let sse_bus = Arc::new(SseBus::new());
+
+        let base_url: String = $base_url.to_string();
+
+        let chunker = MimoChunker::new(&base_url, 2000, 5000);
+
+        let (event_tx, _event_rx) =
+            tokio::sync::broadcast::channel::<DomainEvent>(256);
+
+        let client = Arc::new(MimoClient::new("test-key", &base_url));
+        let cache = Arc::new(Cache::new(
+            std::path::PathBuf::from("/tmp/test-cache"),
+            Duration::from_secs(3600),
+            100,
+        ));
+        let rate_limiter = Arc::new(TokenBucket::new(100));
+
+        let chunk_queue = Arc::new(ChunkQueue::new(
+            pool.clone(),
+            chunk_repo.clone(),
+            client,
+            cache,
+            rate_limiter,
+            event_tx.clone(),
+            1,
+            Duration::from_secs(30),
+            std::path::PathBuf::from("/tmp/test-cache"),
+        ));
+
+        let task_queue = Arc::new(TaskQueue::new(
+            pool.clone(),
+            task_repo.clone(),
+            chunk_repo.clone(),
+            chunk_queue,
+            event_tx.clone(),
+            chunker,
+        ));
+
+        let task_service = Arc::new(TaskService::new(task_repo, task_queue));
+
+        let group_service = Arc::new(GroupService::new(group_repo));
+
+        let batch_service = Arc::new(BatchService::new(
+            batch_repo,
+            task_service.clone(),
+            sse_bus.clone(),
+        ));
+
+        let app_state = AppState {
+            batch_service,
+            task_service,
+            group_service,
+            sse_bus,
+        };
+
+        test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state))
+                .configure(um_mimo_tts_server_v3::routes::configure),
+        )
+        .await
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Macro: create a task and return its id
+// ---------------------------------------------------------------------------
+macro_rules! create_task {
+    ($app:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v2/tasks")
+            .set_json(&json!({
+                "content": "Hello world",
+                "title": "Test task",
+                "voice": "female-1"
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), StatusCode::CREATED);
+        let val: Value = body_json(resp).await;
+        val["id"].as_str().unwrap().to_string()
+    }};
+}
+
+// ---------------------------------------------------------------------------
+// Helper: extract JSON body from a service response
+// ---------------------------------------------------------------------------
+async fn body_json(resp: actix_web::dev::ServiceResponse) -> Value {
+    let bytes = actix_web::body::to_bytes(resp.into_body()).await.unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[actix_web::test]
+async fn test_create_task() {
+    let app = build_app!("http://localhost:1");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v2/tasks")
+        .set_json(&json!({
+            "content": "Hello world",
+            "title": "Test task",
+            "voice": "female-1"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let body: Value = body_json(resp).await;
+    assert_eq!(body["title"], "Test task");
+    assert_eq!(body["voice"], "female-1");
+    assert_eq!(body["status"], "Pending");
+    assert_eq!(body["model"], "tts-1");
+    assert!((body["speed"].as_f64().unwrap() - 1.0).abs() < 1e-9);
+    assert!(body["id"].is_string());
+}
+
+#[actix_web::test]
+async fn test_create_task_defaults() {
+    let app = build_app!("http://localhost:1");
+
+    // Only required fields
+    let req = test::TestRequest::post()
+        .uri("/api/v2/tasks")
+        .set_json(&json!({
+            "content": "Hello world",
+            "title": "Defaults test",
+            "voice": "male-1"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let body: Value = body_json(resp).await;
+    assert_eq!(body["model"], "tts-1");
+    assert!((body["speed"].as_f64().unwrap() - 1.0).abs() < 1e-9);
+}
+
+#[actix_web::test]
+async fn test_get_task() {
+    let app = build_app!("http://localhost:1");
+    let task_id = create_task!(&app);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v2/tasks/{}", task_id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: Value = body_json(resp).await;
+    assert_eq!(body["id"].as_str().unwrap(), task_id);
+    assert_eq!(body["title"], "Test task");
+    assert_eq!(body["status"], "Pending");
+}
+
+#[actix_web::test]
+async fn test_get_task_not_found() {
+    let app = build_app!("http://localhost:1");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v2/tasks/nonexistent-id")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[actix_web::test]
+async fn test_list_tasks() {
+    let app = build_app!("http://localhost:1");
+
+    // Create two tasks
+    let _id1 = create_task!(&app);
+    let _id2 = create_task!(&app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v2/tasks")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: Value = body_json(resp).await;
+    assert!(body.is_array());
+    assert!(body.as_array().unwrap().len() >= 2);
+}
+
+#[actix_web::test]
+async fn test_enqueue_task_with_mock() {
+    // Start wiremock for the tokenize endpoint
+    let ms = wiremock::MockServer::start().await;
+
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/tokenize"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "sentences": [
+                {"text": "Hello world", "token_count": 5, "char_count": 11}
+            ]
+        })))
+        .mount(&ms)
+        .await;
+
+    let app = build_app!(ms.uri());
+    let task_id = create_task!(&app);
+
+    // Enqueue the task
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v2/tasks/{}/enqueue", task_id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: Value = body_json(resp).await;
+    assert_eq!(body["ok"], true);
+}
+
+#[actix_web::test]
+async fn test_continue_task() {
+    // Start wiremock for the tokenize endpoint (needed for enqueue)
+    let ms = wiremock::MockServer::start().await;
+
+    wiremock::Mock::given(wiremock::matchers::method("POST"))
+        .and(wiremock::matchers::path("/v1/tokenize"))
+        .respond_with(wiremock::ResponseTemplate::new(200).set_body_json(json!({
+            "sentences": [
+                {"text": "Hello world", "token_count": 5, "char_count": 11}
+            ]
+        })))
+        .mount(&ms)
+        .await;
+
+    let app = build_app!(ms.uri());
+    let task_id = create_task!(&app);
+
+    // Enqueue first to create chunks in the DB
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v2/tasks/{}/enqueue", task_id))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+
+    // Now continue the task (re-enqueues existing chunks)
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v2/tasks/{}/continue", task_id))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let body: Value = body_json(resp).await;
+    assert_eq!(body["ok"], true);
+}

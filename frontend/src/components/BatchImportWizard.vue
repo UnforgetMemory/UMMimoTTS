@@ -82,7 +82,7 @@
                     <td class="px-3 py-2 text-right">{{ stat.char_count.toLocaleString() }}</td>
                     <td class="px-3 py-2 text-right">{{ stat.token_count.toLocaleString() }}</td>
                     <td class="px-3 py-2 text-right">
-                      <Button variant="ghost" size="icon-sm" :disabled="removingFile === stat.filename" @click="removeFile(stat.filename)">
+                      <Button variant="ghost" size="icon-sm" @click="removeFile(stat.filename)">
                         <TrashIcon class="w-3 h-3" />
                       </Button>
                     </td>
@@ -129,18 +129,13 @@
 
         <!-- Step 2: Task List with paginated table -->
         <div v-if="currentStep === 2" class="flex flex-col gap-4 flex-1 min-h-0">
-          <div v-if="tokenExpired" class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg">
-            <AlertCircleIcon class="w-4 h-4 shrink-0" /><span>会话已过期，请重新上传文件</span>
-            <Button variant="outline" size="sm" class="ml-auto" @click="resetToUpload">重新上传</Button>
-          </div>
-
           <!-- Loading state -->
           <div v-if="previewState === 'loading'" class="flex items-center justify-center py-12 text-muted-foreground">
-            <Loader2Icon class="w-5 h-5 animate-spin mr-2" />加载任务列表...
+            <Loader2Icon class="w-5 h-5 animate-spin mr-2" />处理中...
           </div>
 
           <!-- Main content: table + pagination -->
-          <template v-else-if="previewState === 'loaded' && !tokenExpired">
+          <template v-else-if="previewState === 'loaded'">
             <div class="flex items-center justify-between shrink-0">
               <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
             </div>
@@ -224,12 +219,12 @@
           </template>
 
           <!-- Error state -->
-          <div v-if="previewState === 'error' && !tokenExpired" class="flex items-center justify-center py-12 gap-2 text-destructive">
+          <div v-if="previewState === 'error'" class="flex items-center justify-center py-12 gap-2 text-destructive">
             <AlertCircleIcon class="w-4 h-4" />{{ previewError }}
             <Button variant="outline" size="sm" @click="loadPage(currentPage)">重试</Button>
           </div>
           <!-- Empty state -->
-          <div v-if="previewState === 'loaded' && totalCount === 0 && !tokenExpired" class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+          <div v-if="previewState === 'loaded' && totalCount === 0" class="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
             <FileTextIcon class="w-12 h-12" /><p class="text-sm">没有可导入的任务</p>
           </div>
         </div>
@@ -253,6 +248,31 @@
               <Separator />
               <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">总 Tokens</span><span class="font-medium">{{ totalTokens.toLocaleString() }}</span></div>
             </div>
+
+            <!-- ===== File Grouping Preview ===== -->
+            <div class="border rounded-lg p-4 flex flex-col gap-3">
+              <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">文件任务分组</h4>
+              <div class="flex flex-col divide-y">
+                <div class="flex items-center gap-4 py-2 text-xs text-muted-foreground font-medium">
+                  <span class="flex-1 min-w-0">文件名</span>
+                  <span class="w-16 text-right">条目数</span>
+                  <span class="w-20 text-right">字符数</span>
+                  <span class="w-14 text-right">任务数</span>
+                </div>
+                <div v-for="f in fileStats" :key="f.filename" class="flex items-center gap-4 py-2 text-sm">
+                  <span class="flex-1 min-w-0 truncate" :title="f.filename">{{ f.filename }}</span>
+                  <span class="w-16 text-right text-muted-foreground">{{ f.item_count }}</span>
+                  <span class="w-20 text-right text-muted-foreground">{{ f.char_count.toLocaleString() }}</span>
+                  <span class="w-14 text-right font-medium">1</span>
+                </div>
+              </div>
+              <Separator />
+              <div class="flex items-center justify-between text-xs text-muted-foreground">
+                <span>共 <strong>{{ fileStats.length }}</strong> 个文件 → <strong>{{ fileStats.length }}</strong> 个合成任务</span>
+                <span>总计 {{ totalChars.toLocaleString() }} 字符</span>
+              </div>
+            </div>
+
             <div v-if="submitError" class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg">
               <AlertCircleIcon class="w-4 h-4" />{{ submitError }}
             </div>
@@ -280,7 +300,7 @@
             <Button variant="outline" @click="onDialogClose">{{ currentStep === 4 ? '关闭' : '取消' }}</Button>
             <Button v-if="currentStep === 0" :disabled="uploadState !== 'success' || fileStats.length === 0" @click="currentStep = 1">下一步</Button>
             <Button v-if="currentStep === 1" :disabled="!submitConfig.default_voice" @click="handleStartPreview">下一步</Button>
-            <Button v-if="currentStep === 2" :disabled="tokenExpired || totalCount === 0" @click="currentStep = 3">下一步</Button>
+            <Button v-if="currentStep === 2" :disabled="totalCount === 0" @click="currentStep = 3">下一步</Button>
             <Button v-if="currentStep === 3" :disabled="!submitConfig.default_voice || submitBusy" @click="handleSubmit">
               <Loader2Icon v-if="submitBusy" class="w-4 h-4 animate-spin mr-1" />创建任务
             </Button>
@@ -294,20 +314,43 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 
-import { api, type ParsedItem, type FileStat, type Voice } from '@/api/client'
+import { type Voice } from '@/api/client'
 import { useTaskStore } from '@/stores/task'
 import { useBatchStore } from '@/stores/batch'
+
+/** Client-side parsed segment — extends preview data with full text */
+interface ParsedSegment {
+  index: number
+  text: string
+  text_preview: string
+  title: string | null
+  voice: string | null
+  model: string | null
+  context: string | null
+  char_count: number
+  token_count: number
+  has_error: boolean
+  error: string | null
+  source_filename: string | null
+}
+
+/** Internal file stat tracked locally */
+interface LocalFileStat {
+  filename: string
+  item_count: number
+  char_count: number
+  token_count: number
+}
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { UploadIcon, XIcon, ChevronDownIcon, FileTextIcon, AlertCircleIcon, CheckCircleIcon, TrashIcon, ArrowUpDownIcon, Loader2Icon, PencilIcon } from 'lucide-vue-next'
+import { UploadIcon, XIcon, FileTextIcon, AlertCircleIcon, CheckCircleIcon, TrashIcon, ArrowUpDownIcon, Loader2Icon, PencilIcon } from 'lucide-vue-next'
 
 interface Props { open: boolean }
 interface Emits { (e: 'update:open', v: boolean): void; (e: 'imported', g: string): void }
@@ -317,11 +360,10 @@ const emit = defineEmits<Emits>()
 const taskStore = useTaskStore()
 const batchStore = useBatchStore()
 
-const EXTEND_INTERVAL_MS = 240_000
 const PER_PAGE = 50
 const steps = [{ title: '上传文件' }, { title: '分组设置' }, { title: '自定义任务' }, { title: '确认提交' }]
 
-// Upload state
+// ── Upload state (client-side) ─────────────────────────────────────
 const currentStep = ref(0)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isDragging = ref(false)
@@ -329,9 +371,23 @@ type UploadState = 'idle' | 'uploading' | 'success' | 'error'
 const uploadState = ref<UploadState>('idle')
 const uploadProgress = ref(0)
 const uploadError = ref('')
-const fileStats = ref<FileStat[]>([])
+
+/** All parsed segments from file(s) — client-side only */
+const parsedSegments = ref<ParsedSegment[]>([])
+
+/** Local file stats derived from parsed segments */
+const fileStats = ref<LocalFileStat[]>([])
 const fileStatsSort = ref<{ key: string; dir: 'asc' | 'desc' }>({ key: 'filename', dir: 'asc' })
-const removingFile = ref('')
+function removeFile(filename: string) {
+  // Remove all segments belonging to this file
+  const remaining = parsedSegments.value.filter(s => s.source_filename !== filename)
+  parsedSegments.value = remaining.map((seg, idx) => ({ ...seg, index: idx }))
+  fileStats.value = fileStats.value.filter(f => f.filename !== filename)
+  if (currentPage.value >= totalPages.value) {
+    currentPage.value = Math.max(0, totalPages.value - 1)
+  }
+  cancelEditItem()
+}
 
 function toggleSort(key: string) {
   if (fileStatsSort.value.key === key) { fileStatsSort.value.dir = fileStatsSort.value.dir === 'asc' ? 'desc' : 'asc' }
@@ -339,45 +395,28 @@ function toggleSort(key: string) {
 }
 const sortedFileStats = computed(() => {
   const sorted = [...fileStats.value]
-  const key = fileStatsSort.value.key as keyof FileStat
+  const key = fileStatsSort.value.key as keyof LocalFileStat
   const dir = fileStatsSort.value.dir === 'asc' ? 1 : -1
-  sorted.sort((a, b) => { const av = a[key]; const bv = b[key]; if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv) * dir; return ((av as number) - (bv as number)) * dir })
+  sorted.sort((a, b) => { const av = a[key] as number | string; const bv = b[key] as number | string; if (typeof av === 'string' && typeof bv === 'string') return av.localeCompare(bv) * dir; return ((av as number) - (bv as number)) * dir })
   return sorted
 })
 const totalTokens = computed(() => fileStats.value.reduce((s, f) => s + f.token_count, 0))
 const totalChars = computed(() => fileStats.value.reduce((s, f) => s + f.char_count, 0))
 const totalFileItems = computed(() => fileStats.value.reduce((s, f) => s + f.item_count, 0))
 
-async function removeFile(filename: string) {
-  if (!importToken.value) return
-  removingFile.value = filename
-  try {
-    await api.removeBatchImportFile(importToken.value, filename)
-    fileStats.value = fileStats.value.filter(f => f.filename !== filename)
-    totalCount.value = fileStats.value.reduce((s, f) => s + f.item_count, 0)
-    cancelEditItem()
-    currentPage.value = 0
-    await loadPage(0)
-  }
-  catch (err) { console.error('Failed to remove file:', err) }
-  finally { removingFile.value = '' }
-}
-
-// Token / session state
-const importToken = ref('')
-const totalCount = ref(0)
-const uploadedFileList = ref<string[]>([])
-
-// Preview state (paginated)
+// Preview state (local pagination)
 type PreviewState = 'idle' | 'loading' | 'loaded' | 'error'
 const previewState = ref<PreviewState>('idle')
 const previewError = ref('')
-const currentPageItems = ref<ParsedItem[]>([])
 const currentPage = ref(0)
-const tokenExpired = ref(false)
+const totalCount = computed(() => parsedSegments.value.length)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / PER_PAGE)))
+const currentPageItems = computed(() => {
+  const start = currentPage.value * PER_PAGE
+  return parsedSegments.value.slice(start, start + PER_PAGE)
+})
 
-type TableRowType = { key: string; type: 'data'; item: ParsedItem } | { key: string; type: 'edit'; item: ParsedItem }
+type TableRowType = { key: string; type: 'data'; item: ParsedSegment } | { key: string; type: 'edit'; item: ParsedSegment }
 const flattenedItems = computed<TableRowType[]>(() => {
   const rows: TableRowType[] = []
   for (const item of currentPageItems.value) {
@@ -393,7 +432,7 @@ function toggleEditItem(itemIndex: number) {
   if (editingItemIndex.value === itemIndex) {
     cancelEditItem()
   } else {
-    const item = currentPageItems.value.find(i => i.index === itemIndex)
+    const item = parsedSegments.value.find(i => i.index === itemIndex)
     if (item) startEditItem(item)
   }
 }
@@ -403,52 +442,47 @@ const editingItemIndex = ref<number | null>(null)
 const editSaveStatus = ref<'idle' | 'saving' | 'success' | 'error'>('idle')
 const editForm = ref({ voice: '', model: '', title: '', context: '' })
 
-function startEditItem(item: ParsedItem) {
+function startEditItem(item: ParsedSegment) {
   editingItemIndex.value = item.index; editSaveStatus.value = 'idle'
   editForm.value = { voice: item.voice || '__default__', model: item.model || '', title: item.title || '', context: item.context || '' }
 }
 
 function cancelEditItem() { editingItemIndex.value = null; editSaveStatus.value = 'idle' }
 
-async function handleSaveEdit(item: ParsedItem | null) {
-  if (!importToken.value || !item) return
+function handleSaveEdit(item: ParsedSegment | null) {
+  if (!item) return
+  const idx = parsedSegments.value.findIndex(s => s.index === item.index)
+  if (idx === -1) return
   editSaveStatus.value = 'saving'
   try {
-    const ov: Record<string, string> = {}
-    if (editForm.value.voice && editForm.value.voice !== '__default__') ov.voice = editForm.value.voice
-    if (editForm.value.model) ov.model = editForm.value.model
-    if (editForm.value.title) ov.title = editForm.value.title
-    if (editForm.value.context) ov.context = editForm.value.context
-    const updated = await api.updateBatchImportItem(importToken.value, item.index, ov as any)
-    const idx = currentPageItems.value.findIndex(i => i.index === item.index)
-    if (idx !== -1) currentPageItems.value[idx] = updated
+    const updated = { ...parsedSegments.value[idx] }
+    if (editForm.value.voice && editForm.value.voice !== '__default__') updated.voice = editForm.value.voice
+    else updated.voice = null
+    if (editForm.value.model) updated.model = editForm.value.model
+    else updated.model = null
+    if (editForm.value.title) updated.title = editForm.value.title
+    else updated.title = null
+    if (editForm.value.context) updated.context = editForm.value.context
+    else updated.context = null
+    const newSegments = [...parsedSegments.value]
+    newSegments[idx] = updated
+    parsedSegments.value = newSegments
     editSaveStatus.value = 'success'
     setTimeout(() => { if (editingItemIndex.value === item.index) cancelEditItem() }, 1500)
   } catch (err: unknown) {
     editSaveStatus.value = 'error'
-    const respData = (err as any)?.response?.data
-    console.error('[BatchImport] Save edit failed:', err, respData ?? '')
+    console.error('[BatchImport] Save edit failed:', err)
   }
 }
 
 // Voice helpers
 function getVoiceName(voiceId: string): string { return voices.value.find(v => v.id === voiceId)?.name || voiceId }
 
-// loadPage - fetches a specific page of preview items
-async function loadPage(page: number) {
-  if (!importToken.value) return
-  previewState.value = 'loading'
-  try {
-    const result = await api.getBatchImportPreview(importToken.value, page, PER_PAGE)
-    currentPageItems.value = result.items
-    totalCount.value = result.total
-    currentPage.value = page
-    previewState.value = 'loaded'
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : '加载预览失败'
-    if (msg.includes('410') || msg.includes('404') || msg.includes('expired') || msg.includes('not found')) { tokenExpired.value = true; previewState.value = 'idle' }
-    else { previewState.value = 'error'; previewError.value = msg }
-  }
+// loadPage - pagination over client-side parsedSegments
+function loadPage(page: number) {
+  currentPage.value = page
+  previewState.value = 'loaded'
+  cancelEditItem()
 }
 
 function goToPage(page: number) {
@@ -458,17 +492,6 @@ function goToPage(page: number) {
   loadPage(page)
 }
 
-// Session extend timer
-let extendTimer: ReturnType<typeof setInterval> | null = null
-function startExtendTimer() {
-  stopExtendTimer()
-  extendTimer = setInterval(async () => {
-    if (!importToken.value || tokenExpired.value) return
-    try { await api.extendBatchImportSession(importToken.value) } catch { tokenExpired.value = true; stopExtendTimer() }
-  }, EXTEND_INTERVAL_MS)
-}
-function stopExtendTimer() { if (extendTimer !== null) { clearInterval(extendTimer); extendTimer = null } }
-
 // Submit state
 const submitConfig = reactive({ group_name: '', default_voice: '', default_model: 'mimo-v2.5-tts', default_context: '' })
 const submitBusy = ref(false)
@@ -476,43 +499,128 @@ const submitError = ref('')
 const submitResult = ref({ group_id: '', task_count: 0 })
 
 // Step transitions
-function startPreview() { loadPage(0); startExtendTimer() }
-function handleStartPreview() { startPreview(); currentStep.value = 2 }
+function handleStartPreview() { loadPage(0); currentStep.value = 2 }
 
 async function handleSubmit() {
-  if (!importToken.value || !submitConfig.default_voice) return
+  if (parsedSegments.value.length === 0 || !submitConfig.default_voice) return
   submitBusy.value = true; submitError.value = ''
   try {
-    const result = await api.submitBatchImport(importToken.value, {
-      default_voice: submitConfig.default_voice, default_model: submitConfig.default_model,
-      default_context: submitConfig.default_context, group_name: submitConfig.group_name,
+    // Step 1 – Create batch group
+    const group = await batchStore.createGroup({
+      name: submitConfig.group_name || undefined,
+      voice: submitConfig.default_voice,
+      model: submitConfig.default_model,
+      context: submitConfig.default_context || undefined,
     })
-    submitResult.value = result; currentStep.value = 4; stopExtendTimer()
-    // Refresh BOTH task list AND batch group list so new tasks appear immediately
-    taskStore.loadTasks(); batchStore.loadGroups()
-  } catch (err: unknown) { const msg = err instanceof Error ? err.message : '提交失败'; submitError.value = msg; console.error('[BatchImport] Submit failed:', msg) }
-  finally { submitBusy.value = false }
+    const groupId = group.id
+
+    // Step 2 – Add each parsed segment as a task item
+    const taskIds: string[] = []
+    for (const seg of parsedSegments.value) {
+      const taskId = await taskStore.createTask({
+        text: seg.text,
+        voice: seg.voice || submitConfig.default_voice,
+        model: seg.model || submitConfig.default_model,
+        context: seg.context || submitConfig.default_context || undefined,
+        task_name: seg.title || undefined,
+      })
+      taskIds.push(taskId)
+    }
+
+    // Step 3 – Submit / enqueue the batch for processing
+    await batchStore.submitGroup(groupId)
+
+    submitResult.value = { group_id: groupId, task_count: taskIds.length }
+    currentStep.value = 4
+    // Refresh task + group lists
+    taskStore.loadTasks()
+    batchStore.loadGroups()
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : '提交失败'
+    submitError.value = msg
+    console.error('[BatchImport] Submit failed:', msg)
+  } finally {
+    submitBusy.value = false
+  }
 }
 
 function resetToUpload() {
-  stopExtendTimer(); importToken.value = ''; totalCount.value = 0
-  currentPageItems.value = []; currentPage.value = 0
-  uploadState.value = 'idle'; uploadProgress.value = 0
-  uploadError.value = ''; uploadedFileList.value = []; fileStats.value = []
-  fileStatsSort.value = { key: 'filename', dir: 'asc' }; removingFile.value = ''
-  previewState.value = 'idle'; previewError.value = ''; tokenExpired.value = false
-  submitError.value = ''; currentStep.value = 0
+  parsedSegments.value = []
+  fileStats.value = []
+  fileStatsSort.value = { key: 'filename', dir: 'asc' }
+  currentPage.value = 0
+  uploadState.value = 'idle'
+  uploadProgress.value = 0
+  uploadError.value = ''
+  previewState.value = 'idle'
+  previewError.value = ''
+  submitError.value = ''
+  currentStep.value = 0
 }
 
-function onDialogClose() { stopExtendTimer(); emit('update:open', false) }
+function onDialogClose() { resetToUpload(); emit('update:open', false) }
 
 // Voices
+const FALLBACK_VOICES: Voice[] = [
+  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女' },
+  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声' },
+  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年' },
+  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声' },
+  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl' },
+  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy' },
+  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy' },
+  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle' },
+]
 const voices = ref<Voice[]>([])
-async function loadVoices() { try { voices.value = await api.getVoices() } catch { /* non-critical */ } }
+async function loadVoices() {
+  voices.value = FALLBACK_VOICES
+}
 
-// File handling
+// ── File reading helpers ───────────────────────────────────────────
+
+/** Parse text content into segment blocks (split by blank lines) */
+function parseTextIntoSegments(text: string, sourceFilename: string): ParsedSegment[] {
+  const blocks = text
+    .split(/\n\s*\n/)
+    .map(b => b.trim())
+    .filter(b => b.length > 0)
+
+  return blocks.map((block, idx) => {
+    const charCount = block.length
+    const chineseChars = (block.match(/[\u4e00-\u9fff]/g) || []).length
+    const englishWords = block.split(/\s+/).filter(w => w.length > 0).length
+    const tokenCount = Math.ceil(chineseChars * 1.2 + englishWords * 0.8)
+    const lines = block.split('\n')
+    const firstLine = lines[0].trim()
+    const title = firstLine.length < 60 ? firstLine : null
+    const textPreview = block.substring(0, 120) + (block.length > 120 ? '...' : '')
+
+    return {
+      index: idx,
+      text: block,
+      text_preview: textPreview,
+      title,
+      voice: null,
+      model: null,
+      context: null,
+      char_count: charCount,
+      token_count: tokenCount,
+      has_error: false,
+      error: null,
+      source_filename: sourceFilename,
+    }
+  })
+}
+
 function triggerFileInput() { fileInputRef.value?.click() }
-function handleFileSelect(e: Event) { const input = e.target as HTMLInputElement; const files = input.files; if (!files || files.length === 0) return; processFiles(Array.from(files)) }
+function handleFileSelect(e: Event) {
+  const input = e.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+  processFiles(Array.from(files))
+  // Reset so same file can be re-selected
+  input.value = ''
+}
 
 /** Recursively collect files from a FileSystemEntry (handles folders) */
 async function collectFromEntry(entry: FileSystemEntry): Promise<File[]> {
@@ -537,7 +645,6 @@ async function collectFromEntry(entry: FileSystemEntry): Promise<File[]> {
 
 async function handleDrop(e: DragEvent) {
   isDragging.value = false
-  // Phase 1: Use webkitGetAsEntry() for recursive folder support
   const items = e.dataTransfer?.items
   if (items && items.length > 0) {
     const entries: FileSystemEntry[] = []
@@ -551,31 +658,51 @@ async function handleDrop(e: DragEvent) {
       if (files.length > 0) { processFiles(files); return }
     }
   }
-  // Phase 2: Fallback to flat file list
   const files = e.dataTransfer?.files
   if (files && files.length > 0) { processFiles(Array.from(files)) }
 }
 
+/** Read .txt files client-side and parse into segments */
 async function processFiles(files: File[]) {
   const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'))
-  if (txtFiles.length === 0) { uploadState.value = 'error'; uploadError.value = '所选文件夹中没有 .txt 文件'; return }
-  if (txtFiles.length === 1) { uploadFile(txtFiles[0]); return }
-  let combined = ''
-  for (const f of txtFiles) { const text = await f.text(); combined += `# ${f.name}\n${text}\n` }
-  const virtualFile = new File([combined], 'batch_import.txt', { type: 'text/plain' })
-  uploadFile(virtualFile)
-}
+  if (txtFiles.length === 0) {
+    uploadState.value = 'error'
+    uploadError.value = '所选文件夹中没有 .txt 文件'
+    return
+  }
 
-async function uploadFile(file: File) {
-  uploadState.value = 'uploading'; uploadProgress.value = 0; uploadError.value = ''
-  tokenExpired.value = false; uploadedFileList.value = [file.name]
-  try {
-    const result = await api.uploadBatchFile(file, (pct) => { uploadProgress.value = pct })
-    importToken.value = result.token
-    totalCount.value = result.stats?.valid_items ?? result.stats?.total_items ?? 0
-    fileStats.value = result.file_stats ?? result.stats?.file_stats ?? []
-    uploadState.value = 'success'
-  } catch (err: unknown) { uploadState.value = 'error'; uploadError.value = err instanceof Error ? err.message : '上传失败，请重试' }
+  uploadState.value = 'uploading'
+  uploadProgress.value = 0
+  uploadError.value = ''
+  parsedSegments.value = []
+
+  let allSegments: ParsedSegment[] = []
+  const fileStatsArr: LocalFileStat[] = []
+
+  for (let i = 0; i < txtFiles.length; i++) {
+    const file = txtFiles[i]
+    uploadProgress.value = Math.round(((i) / txtFiles.length) * 100)
+    try {
+      const text = await file.text()
+      const segments = parseTextIntoSegments(text, file.name)
+      allSegments = allSegments.concat(segments)
+      fileStatsArr.push({
+        filename: file.name,
+        item_count: segments.length,
+        char_count: segments.reduce((s, seg) => s + seg.char_count, 0),
+        token_count: segments.reduce((s, seg) => s + seg.token_count, 0),
+      })
+    } catch (err) {
+      console.error(`Failed to read file ${file.name}:`, err)
+    }
+  }
+
+  // Re-index after combining
+  parsedSegments.value = allSegments.map((seg, idx) => ({ ...seg, index: idx }))
+  fileStats.value = fileStatsArr
+  uploadProgress.value = 100
+  previewState.value = 'loaded'
+  uploadState.value = 'success'
 }
 
 onMounted(() => {
@@ -586,5 +713,5 @@ watch(() => props.open, (isOpen) => {
   if (isOpen) loadVoices()
 })
 
-onUnmounted(() => { stopExtendTimer() })
+onUnmounted(() => { /* cleanup */ })
 </script>

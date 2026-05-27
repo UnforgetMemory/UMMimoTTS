@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务列表侧边栏布局优化 - 方案对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0d0e14;
+    color: #e8eaf0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    padding: 32px 24px 48px;
+    background-image:
+      radial-gradient(ellipse at 15% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+  }
+
+  /* ───── Header ───── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 36px;
+  }
+  .page-header h1 {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    background: linear-gradient(135deg, #e8eaf0 0%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .page-header p {
+    color: #6b7280;
+    font-size: 14px;
+    margin-top: 6px;
+  }
+
+  /* ───── Grid ───── */
+  .mockup-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 28px;
+    max-width: 1260px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* ───── Column Card ───── */
+  .mockup-col {
+    background: linear-gradient(160deg, #161822 0%, #12141e 100%);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.25s ease, box-shadow 0.3s ease;
+  }
+  .mockup-col:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 48px rgba(0, 0, 0, 0.5);
+  }
+
+  /* label ribbon */
+  .col-label {
+    position: absolute;
+    top: 14px;
+    right: -28px;
+    padding: 4px 36px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    transform: rotate(45deg);
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  .col-label.current {
+    background: linear-gradient(90deg, #4b5563, #6b7280);
+    color: #d1d5db;
+  }
+  .col-label.plan-a {
+    background: linear-gradient(90deg, #6366f1, #818cf8);
+    color: #fff;
+  }
+  .col-label.plan-b {
+    background: linear-gradient(90deg, #a855f7, #c084fc);
+    color: #fff;
+  }
+
+  .col-title {
+    padding: 20px 20px 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #9ca3af;
+    letter-spacing: 0.5px;
+  }
+
+  /* ───── Sidebar Inner ───── */
+  .sidebar {
+    padding: 16px 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  /* header row */
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-header h3 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f0f2f8;
+  }
+  .refresh-btn {
+    width: 32px; height: 32px;
+    border-radius: 10px;
+    border: none;
+    background: rgba(255, 255, 255, 0.06);
+    color: #9ca3af;
+    font-size: 16px;
+    cursor: default;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+  .refresh-btn:hover { background: rgba(255, 255, 255, 0.12); }
+
+  /* search */
+  .search-bar {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: border-color 0.2s;
+  }
+  .search-bar:focus-within {
+    border-color: rgba(99, 102, 241, 0.3);
+  }
+  .search-bar span { color: #6b7280; font-size: 14px; margin-right: 8px; }
+  .search-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: #e8eaf0;
+    font-size: 13px;
+    padding: 9px 0;
+    font-family: inherit;
+  }
+  .search-bar input::placeholder { color: #4b5563; }
+
+  /* filter chips */
+  .filter-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #6b7280;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    cursor: default;
+  }
+  .chip.active {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818cf8;
+    border-color: rgba(99, 102, 241, 0.25);
+  }
+
+  /* ───── Section ───── */
+  .task-section { margin-top: 2px; }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    padding: 0 2px;
+  }
+  .section-header .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .section-header .dot.pending { background: #818cf8; }
+  .section-header .dot.done    { background: #34d399; }
+  .section-header .dot.failed  { background: #f87171; }
+
+  .section-header .label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    letter-spacing: 0.3px;
+  }
+  .section-header .count {
+    font-size: 11px;
+    color: #4b5563;
+    margin-left: auto;
+  }
+
+  /* ───── Task Items ───── */
+  .task-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    margin-bottom: 5px;
+    transition: background 0.15s;
+    cursor: default;
+  }
+  .task-item:hover { background: rgba(255, 255, 255, 0.06); }
+
+  .task-check {
+    width: 16px; height: 16px;
+    border-radius: 5px;
+    border: 1.5px solid rgba(255, 255, 255, 0.12);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: transparent;
+  }
+  .task-check.done {
+    background: #34d399;
+    border-color: #34d399;
+    color: #0d0e14;
+  }
+
+  .task-info { flex: 1; min-width: 0; }
+  .task-info .name {
+    font-size: 12.5px;
+    color: #e8eaf0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .task-info .meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .task-info .meta span {
+    font-size: 10.5px;
+    color: #4b5563;
+  }
+  .task-info .meta .tag {
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .task-priority {
+    width: 3px; height: 24px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .task-priority.high { background: #f87171; }
+  .task-priority.medium { background: #fbbf24; }
+  .task-priority.low { background: #34d399; }
+
+  /* ──────────────────────────────────────────────
+     VARIANT: 当前 — flat, no emphasis
+     ────────────────────────────────────────────── */
+  .mockup-col.current-variant .pending-card {
+    /* no special styling – flat layout */
+  }
+
+  /* ──────────────────────────────────────────────
+     VARIANT: 方案A — elevated pending card
+     ────────────────────────────────────────────── */
+  .mockup-col.plan-a-variant .pending-card {
+    background: linear-gradient(160deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.04));
+    border: 1px solid rgba(99, 102, 241, 0.18);
+    border-radius: 14px;
+    padding: 10px 10px 6px;
+    margin: 0 -2px;
+    box-shadow:
+      0 0 20px rgba(99, 102, 241, 0.06),
+      inset 0 1px 0 rgba(99, 102, 241, 0.08);
+    position: relative;
+  }
+  .mockup-col.plan-a-variant .pending-card::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 20%; right: 20%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.5), transparent);
+    border-radius: 2px;
+  }
+  .mockup-col.plan-a-variant .pending-card .section-header {
+    padding: 0 4px;
+  }
+
+  /* ──────────────────────────────────────────────
+     VARIANT: 方案B — floating card + timeline
+     ────────────────────────────────────────────── */
+  .mockup-col.plan-b-variant .pending-card {
+    background: linear-gradient(160deg, #1a1d30, #161827);
+    border: 1px solid rgba(139, 92, 246, 0.25);
+    border-radius: 16px;
+    padding: 12px 12px 8px;
+    margin: 0 -6px;
+    box-shadow:
+      0 8px 32px rgba(99, 102, 241, 0.12),
+      0 2px 8px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(139, 92, 246, 0.1);
+    position: relative;
+  }
+  .mockup-col.plan-b-variant .pending-card::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: 17px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), transparent 40%, transparent 60%, rgba(168, 85, 247, 0.2));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+  .mockup-col.plan-b-variant .pending-card .section-header {
+    padding: 0 2px;
+    margin-bottom: 10px;
+  }
+  /* timeline-style tasks */
+  .mockup-col.plan-b-variant .task-item {
+    background: transparent;
+    border-left: 2px solid rgba(99, 102, 241, 0.2);
+    border-radius: 0;
+    padding: 7px 10px 7px 14px;
+    margin-bottom: 2px;
+    position: relative;
+  }
+  .mockup-col.plan-b-variant .task-item::before {
+    content: '';
+    position: absolute;
+    left: -5px; top: 50%;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: rgba(99, 102, 241, 0.4);
+    transform: translateY(-50%);
+  }
+  .mockup-col.plan-b-variant .task-item:first-child::before {
+    background: #818cf8;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.5);
+  }
+  .mockup-col.plan-b-variant .task-item:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-left-color: rgba(99, 102, 241, 0.5);
+  }
+
+  /* ───── Badge on pending section ───── */
+  .focus-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 1px 8px;
+    border-radius: 20px;
+    margin-left: auto;
+    color: #818cf8;
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+  }
+
+  /* ───── Responsive ───── */
+  @media (max-width: 860px) {
+    .mockup-grid {
+      grid-template-columns: 1fr;
+      max-width: 420px;
+    }
+    .page-header h1 { font-size: 20px; }
+  }
+
+  @media (min-width: 861px) and (max-width: 1100px) {
+    .mockup-grid { gap: 16px; }
+    .sidebar { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>任务列表侧边栏 · 布局优化方案</h1>
+  <p>对比三种布局方案，聚焦「进行中」区域的可视化突出</p>
+</div>
+
+<div class="mockup-grid">
+
+  <!-- ═══════════ 当前 ═══════════ -->
+  <div class="mockup-col current-variant">
+    <div class="col-label current">当前</div>
+    <div class="col-title">基线布局</div>
+    <div class="sidebar">
+
+      <!-- header -->
+      <div class="sidebar-header">
+        <h3>任务列表</h3>
+        <div class="refresh-btn">↻</div>
+      </div>
+
+      <!-- search -->
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" placeholder="搜索任务…" value="视觉稿">
+      </div>
+
+      <!-- chips -->
+      <div class="filter-row">
+        <span class="chip active">全部</span>
+        <span class="chip">设计</span>
+        <span class="chip">开发</span>
+      </div>
+
+      <!-- ── 进行中 ── -->
+      <div class="task-section pending-card">
+        <div class="section-header">
+          <span class="dot pending"></span>
+          <span class="label">进行中</span>
+          <span class="count">4</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority high"></div>
+          <div class="task-info">
+            <div class="name">首页改版视觉稿评审</div>
+            <div class="meta"><span class="tag">设计</span><span>截止 05/22</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority medium"></div>
+          <div class="task-info">
+            <div class="name">侧边栏组件重构</div>
+            <div class="meta"><span class="tag">前端</span><span>截止 05/24</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority high"></div>
+          <div class="task-info">
+            <div class="name">用户反馈数据看板</div>
+            <div class="meta"><span class="tag">数据</span><span>截止 05/21</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority low"></div>
+          <div class="task-info">
+            <div class="name">API 文档更新</div>
+            <div class="meta"><span class="tag">文档</span><span>截止 05/28</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 已完成 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot done"></span>
+          <span class="label">已完成</span>
+          <span class="count">2</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">登录页 UI 走查</div>
+            <div class="meta"><span>完成 05/18</span></div>
+          </div>
+        </div>
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">配色系统 Token 对齐</div>
+            <div class="meta"><span>完成 05/17</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 失败 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot failed"></span>
+          <span class="label">失败</span>
+          <span class="count">1</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check">✕</div>
+          <div class="task-info">
+            <div class="name">旧版 IE 兼容方案</div>
+            <div class="meta"><span>已废弃 05/15</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ═══════════ 方案A ═══════════ -->
+  <div class="mockup-col plan-a-variant">
+    <div class="col-label plan-a">方案 A</div>
+    <div class="col-title">卡片聚焦 · 轻量强调</div>
+    <div class="sidebar">
+
+      <div class="sidebar-header">
+        <h3>任务列表</h3>
+        <div class="refresh-btn">↻</div>
+      </div>
+
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" placeholder="搜索任务…" value="视觉稿">
+      </div>
+
+      <div class="filter-row">
+        <span class="chip active">全部</span>
+        <span class="chip">设计</span>
+        <span class="chip">开发</span>
+      </div>
+
+      <!-- ── 进行中 (elevated card) ── -->
+      <div class="task-section pending-card">
+        <div class="section-header">
+          <span class="dot pending"></span>
+          <span class="label">进行中</span>
+          <span class="focus-badge">✦ 聚焦</span>
+          <span class="count">4</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority high"></div>
+          <div class="task-info">
+            <div class="name">首页改版视觉稿评审</div>
+            <div class="meta"><span class="tag">设计</span><span>截止 05/22</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority medium"></div>
+          <div class="task-info">
+            <div class="name">侧边栏组件重构</div>
+            <div class="meta"><span class="tag">前端</span><span>截止 05/24</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority high"></div>
+          <div class="task-info">
+            <div class="name">用户反馈数据看板</div>
+            <div class="meta"><span class="tag">数据</span><span>截止 05/21</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-priority low"></div>
+          <div class="task-info">
+            <div class="name">API 文档更新</div>
+            <div class="meta"><span class="tag">文档</span><span>截止 05/28</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 已完成 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot done"></span>
+          <span class="label">已完成</span>
+          <span class="count">2</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">登录页 UI 走查</div>
+            <div class="meta"><span>完成 05/18</span></div>
+          </div>
+        </div>
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">配色系统 Token 对齐</div>
+            <div class="meta"><span>完成 05/17</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 失败 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot failed"></span>
+          <span class="label">失败</span>
+          <span class="count">1</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check">✕</div>
+          <div class="task-info">
+            <div class="name">旧版 IE 兼容方案</div>
+            <div class="meta"><span>已废弃 05/15</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ═══════════ 方案B ═══════════ -->
+  <div class="mockup-col plan-b-variant">
+    <div class="col-label plan-b">方案 B</div>
+    <div class="col-title">浮动卡片 · 时间线增强</div>
+    <div class="sidebar">
+
+      <div class="sidebar-header">
+        <h3>任务列表</h3>
+        <div class="refresh-btn">↻</div>
+      </div>
+
+      <div class="search-bar">
+        <span>🔍</span>
+        <input type="text" placeholder="搜索任务…" value="视觉稿">
+      </div>
+
+      <div class="filter-row">
+        <span class="chip active">全部</span>
+        <span class="chip">设计</span>
+        <span class="chip">开发</span>
+      </div>
+
+      <!-- ── 进行中 (floating card + timeline) ── -->
+      <div class="task-section pending-card">
+        <div class="section-header">
+          <span class="dot pending"></span>
+          <span class="label">进行中</span>
+          <span class="focus-badge">✦ 聚焦</span>
+          <span class="count">4</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-info">
+            <div class="name">首页改版视觉稿评审</div>
+            <div class="meta"><span class="tag">设计</span><span>截止 05/22</span><span>🔥 紧急</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-info">
+            <div class="name">侧边栏组件重构</div>
+            <div class="meta"><span class="tag">前端</span><span>截止 05/24</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-info">
+            <div class="name">用户反馈数据看板</div>
+            <div class="meta"><span class="tag">数据</span><span>截止 05/21</span><span>🔥 紧急</span></div>
+          </div>
+        </div>
+
+        <div class="task-item">
+          <div class="task-info">
+            <div class="name">API 文档更新</div>
+            <div class="meta"><span class="tag">文档</span><span>截止 05/28</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 已完成 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot done"></span>
+          <span class="label">已完成</span>
+          <span class="count">2</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">登录页 UI 走查</div>
+            <div class="meta"><span>完成 05/18</span></div>
+          </div>
+        </div>
+        <div class="task-item">
+          <div class="task-check done">✓</div>
+          <div class="task-info">
+            <div class="name">配色系统 Token 对齐</div>
+            <div class="meta"><span>完成 05/17</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── 失败 ── -->
+      <div class="task-section">
+        <div class="section-header">
+          <span class="dot failed"></span>
+          <span class="label">失败</span>
+          <span class="count">1</span>
+        </div>
+
+        <div class="task-item">
+          <div class="task-check">✕</div>
+          <div class="task-info">
+            <div class="name">旧版 IE 兼容方案</div>
+            <div class="meta"><span>已废弃 05/15</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

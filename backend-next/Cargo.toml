@@ -1,0 +1,46 @@
+[package]
+name = "um-mimo-tts-server-v3"
+version = "3.0.0"
+edition = "2021"
+authors = ["UnforgetMemory"]
+description = "MIMO v3 TTS Web Service - Layered DDD architecture with SQLite persistence"
+
+[[bin]]
+name = "um-mimo-tts-server-v3"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4"
+actix-multipart = "0.7"
+actix-cors = "0.7"
+actix-files = "0.6"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+dotenvy = "0.15"
+uuid = { version = "1.6", features = ["v4", "v7", "serde", "fast-rng"] }
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+flume = "0.11"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+base64 = "0.22"
+parking_lot = "0.12"
+async-stream = "0.3"
+fastrand = "2"
+rust-embed = "8"
+mime_guess = "2"
+zip = "0.6"
+sanitize-filename = "0.6.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+
+[dev-dependencies]
+actix-rt = "2"
+actix-test = "0.1"
+wiremock = "0.6"
+tokio-util = { version = "0.7", features = ["rt"] }

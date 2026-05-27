@@ -1,0 +1,195 @@
+- generic [ref=e3]:
+  - generic:
+    - heading [level=1]: UM-MimoTTS
+  - main [ref=e5]:
+    - button "批量任务 (0)" [ref=e7]:
+      - img
+      - text: 批量任务 (0)
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]: 新建合成任务
+        - generic [ref=e12]: 输入文本并选择音色进行语音合成
+      - generic [ref=e13]:
+        - generic [ref=e14]:
+          - generic [ref=e15]: 任务名称（可选）
+          - textbox "任务名称（可选）" [ref=e16]:
+            - /placeholder: 留空则自动生成（例如：任务_20240519_143022）
+          - paragraph [ref=e17]: 相同名称的任务会自动添加序号后缀以避免冲突
+        - generic [ref=e18]:
+          - generic [ref=e20]:
+            - text: 合成文本
+            - generic [ref=e21]: "*"
+          - textbox "合成文本 *" [ref=e22]:
+            - /placeholder: 输入要合成的文本...
+          - generic [ref=e23]:
+            - generic [ref=e24]: "字符数: 0"
+            - generic [ref=e25]: "预估 Token: 0"
+        - generic [ref=e26]:
+          - generic [ref=e27]: 模型
+          - combobox [ref=e28]:
+            - generic: mimo-v2.5-tts (预置音色)
+            - img
+        - generic [ref=e29]:
+          - generic [ref=e30]:
+            - text: 音色
+            - generic [ref=e31]: "*"
+          - generic [ref=e32]:
+            - generic [ref=e33] [cursor=pointer]:
+              - generic [ref=e34]:
+                - img [ref=e35]
+                - generic [ref=e37]:
+                  - generic [ref=e38]: 冰糖
+                  - generic [ref=e39]:
+                    - generic [ref=e40]:
+                      - img [ref=e41]
+                      - text: 中文
+                    - generic [ref=e44]:
+                      - img [ref=e45]
+                      - text: 女性
+                    - generic [ref=e48]:
+                      - img [ref=e49]
+                      - text: 活泼少女
+              - button "试听音色" [ref=e51]:
+                - img
+            - generic [ref=e52] [cursor=pointer]:
+              - generic [ref=e54]:
+                - generic [ref=e55]: 茉莉
+                - generic [ref=e56]:
+                  - generic [ref=e57]:
+                    - img [ref=e58]
+                    - text: 中文
+                  - generic [ref=e61]:
+                    - img [ref=e62]
+                    - text: 女性
+                  - generic [ref=e65]:
+                    - img [ref=e66]
+                    - text: 知性女声
+              - button "试听音色" [ref=e68]:
+                - img
+            - generic [ref=e69] [cursor=pointer]:
+              - generic [ref=e71]:
+                - generic [ref=e72]: 苏打
+                - generic [ref=e73]:
+                  - generic [ref=e74]:
+                    - img [ref=e75]
+                    - text: 中文
+                  - generic [ref=e78]:
+                    - img [ref=e79]
+                    - text: 男性
+                  - generic [ref=e82]:
+                    - img [ref=e83]
+                    - text: 阳光少年
+              - button "试听音色" [ref=e85]:
+                - img
+            - generic [ref=e86] [cursor=pointer]:
+              - generic [ref=e88]:
+                - generic [ref=e89]: 白桦
+                - generic [ref=e90]:
+                  - generic [ref=e91]:
+                    - img [ref=e92]
+                    - text: 中文
+                  - generic [ref=e95]:
+                    - img [ref=e96]
+                    - text: 男性
+                  - generic [ref=e99]:
+                    - img [ref=e100]
+                    - text: 成熟男声
+              - button "试听音色" [ref=e102]:
+                - img
+            - generic [ref=e103] [cursor=pointer]:
+              - generic [ref=e105]:
+                - generic [ref=e106]: Mia
+                - generic [ref=e107]:
+                  - generic [ref=e108]:
+                    - img [ref=e109]
+                    - text: English
+                  - generic [ref=e112]:
+                    - img [ref=e113]
+                    - text: Female
+                  - generic [ref=e116]:
+                    - img [ref=e117]
+                    - text: Lively girl
+              - button "试听音色" [ref=e119]:
+                - img
+            - generic [ref=e120] [cursor=pointer]:
+              - generic [ref=e122]:
+                - generic [ref=e123]: Chloe
+                - generic [ref=e124]:
+                  - generic [ref=e125]:
+                    - img [ref=e126]
+                    - text: English
+                  - generic [ref=e129]:
+                    - img [ref=e130]
+                    - text: Female
+                  - generic [ref=e133]:
+                    - img [ref=e134]
+                    - text: Sweet Dreamy
+              - button "试听音色" [ref=e136]:
+                - img
+            - generic [ref=e137] [cursor=pointer]:
+              - generic [ref=e139]:
+                - generic [ref=e140]: Milo
+                - generic [ref=e141]:
+                  - generic [ref=e142]:
+                    - img [ref=e143]
+                    - text: English
+                  - generic [ref=e146]:
+                    - img [ref=e147]
+                    - text: Male
+                  - generic [ref=e150]:
+                    - img [ref=e151]
+                    - text: Sunny boy
+              - button "试听音色" [ref=e153]:
+                - img
+            - generic [ref=e154] [cursor=pointer]:
+              - generic [ref=e156]:
+                - generic [ref=e157]: Dean
+                - generic [ref=e158]:
+                  - generic [ref=e159]:
+                    - img [ref=e160]
+                    - text: English
+                  - generic [ref=e163]:
+                    - img [ref=e164]
+                    - text: Male
+                  - generic [ref=e167]:
+                    - img [ref=e168]
+                    - text: Steady Gentle
+              - button "试听音色" [ref=e170]:
+                - img
+        - generic [ref=e171]:
+          - generic [ref=e172]:
+            - text: 风格控制
+            - generic [ref=e173]: (可选)
+          - textbox "风格控制 (可选)" [ref=e174]:
+            - /placeholder: "例如：用温柔的语气，语速稍慢\n支持多行描述，更精细地控制语音风格"
+          - generic [ref=e175]:
+            - generic [ref=e176]: 描述期望的语气、情感和语速风格
+            - generic [ref=e177]: 0/1024
+        - button "开始合成" [disabled]
+    - contentinfo "页脚信息" [ref=e178]:
+      - generic [ref=e179]:
+        - generic [ref=e180]:
+          - img [ref=e181]
+          - text: MIT License
+        - generic [ref=e183]: ·
+        - link "访问 GitHub 仓库" [ref=e184] [cursor=pointer]:
+          - /url: https://github.com/UnforgetMemory/UMMimoTTS
+          - img [ref=e185]
+          - text: GitHub
+        - generic [ref=e187]: ·
+        - generic [ref=e188]: v2.0
+        - generic [ref=e189]: ·
+        - generic [ref=e190]:
+          - generic [ref=e191]: Rust
+          - generic [ref=e192]: Vue
+          - generic [ref=e193]: Actix
+      - paragraph [ref=e194]: © 2026 UM-MIMO-TTS. All rights reserved.
+  - toolbar "快捷操作工具栏" [ref=e195]:
+    - button "切换主题" [ref=e196]:
+      - img
+    - button "API 配置" [ref=e197]:
+      - img
+    - button "任务列表" [ref=e198]:
+      - img
+  - region "Notifications alt+T":
+    - list

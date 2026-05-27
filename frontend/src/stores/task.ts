@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, shallowRef, type ShallowRef } from 'vue'
-import { api, type Task, type TaskSummary, type TaskStatus, type TaskEvent, type TaskListParams } from '@/api/client'
+import { api, apiV2, type Task, type TaskSummary, type TaskStatus, type TaskEvent } from '@/api/client'
 
 export const useTaskStore = defineStore('task', () => {
   // ── Task Map (shallowRef for large-scale performance) ──────────
@@ -57,16 +57,16 @@ export const useTaskStore = defineStore('task', () => {
    * Resets accumulated tasks if page === 0.
    */
   async function loadPage(page = 0) {
-    const params: TaskListParams = {
+    const params: Record<string, any> = {
       page,
-      per_page: perPage.value,
+      page_size: perPage.value,
     }
     if (activeSearch.value) params.search = activeSearch.value
     if (activeStatus.value) params.status = activeStatus.value
     if (activeGroupFilter.value) params.group_id = activeGroupFilter.value
 
     try {
-      const result = await api.getTasksPaginated(params)
+      const result = await apiV2.listTasks(params)
 
       const newMap = page === 0 ? new Map<string, TaskSummary>() : new Map(taskMap.value)
 
@@ -131,7 +131,7 @@ export const useTaskStore = defineStore('task', () => {
 
     detailLoading.value = true
     try {
-      const task = await api.getTask(id)
+      const task = await apiV2.getTask(id)
       taskDetailCache.set(id, task)
       return task
     } finally {
@@ -181,14 +181,20 @@ export const useTaskStore = defineStore('task', () => {
     loading.value = true
     error.value = null
     try {
-      const result = await api.synthesize(request)
+      const task = await apiV2.createTask({
+        content: request.text,
+        voice: request.voice,
+        model: request.model,
+        title: request.task_name || `Synthesized ${new Date().toLocaleString('zh-CN')}`,
+      })
+      await apiV2.enqueueTask(task.id)
       // Use lightweight page reload instead of full loadTasks
       await loadPage(0)
 
       // 订阅该任务的 SSE 事件
-      subscribeToTaskEvents(result.task_id)
+      subscribeToTaskEvents(task.id)
 
-      return result.task_id
+      return task.id
     } catch (err: any) {
       error.value = err.response?.data?.message || err.message || '创建任务失败'
       throw err
@@ -209,6 +215,19 @@ export const useTaskStore = defineStore('task', () => {
       console.error('Failed to delete task:', err)
       throw err
     }
+  }
+
+  /// Enqueue an existing task for synthesis processing.
+  async function enqueueTask(taskId: string) {
+    await apiV2.enqueueTask(taskId)
+    // Reload to update state
+    await loadPage(0)
+  }
+
+  /// Update a task's title.
+  async function updateTaskTitle(taskId: string, newTitle: string) {
+    // v2 has no dedicated PATCH endpoint yet — update locally for now
+    updateTaskInMap(taskId, { custom_title: newTitle })
   }
 
   // ── SSE subscription ──────────────────────────────────────────
@@ -354,6 +373,8 @@ export const useTaskStore = defineStore('task', () => {
     // CRUD
     createTask,
     removeTask,
+    enqueueTask,
+    updateTaskTitle,
 
     // SSE
     updateTaskInMap,

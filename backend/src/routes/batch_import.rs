@@ -7,6 +7,7 @@ use crate::models::batch_import::ParsedItem;
 use crate::models::batch::BatchGroup;
 use crate::models::task::{TaskStatus, TtsTask};
 use crate::models::response::PaginatedResponse;
+use crate::services::batch_queue::{BatchQueue, QueuedTask};
 use crate::state::app_state::AppState;
 use uuid::Uuid;
 
@@ -200,6 +201,7 @@ pub struct SubmitBody {
 pub async fn submit(
     body: web::Json<SubmitBody>,
     data: web::Data<AppState>,
+    queue: web::Data<BatchQueue>,
 ) -> impl Responder {
     // Get and validate import
     let import = match data.batch_imports.get_import(&body.token) {
@@ -274,7 +276,18 @@ pub async fn submit(
         };
 
         data.add_task(task);
-        task_ids.push(task_id);
+        task_ids.push(task_id.clone());
+
+        // Enqueue to batch queue for processing
+        queue
+            .enqueue(QueuedTask {
+                task_id,
+                group_id: Some(group_id.clone()),
+                priority: 0,
+                token_count: 0,
+                enqueued_at: std::time::Instant::now(),
+            })
+            .await;
     }
 
     // Update group with task IDs

@@ -34,7 +34,15 @@
       <span class="hidden sm:inline text-muted-foreground/50">·</span>
       
       <!-- Version -->
-      <span>v2.0</span>
+      <span v-if="frontendVersion || backendVersion" class="flex items-center gap-1.5">
+        <span v-if="frontendVersion" class="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 text-xs">
+          Frontend: v{{ frontendVersion }}
+        </span>
+        <span v-if="backendVersion" class="px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 text-xs">
+          Backend: v{{ backendVersion }}
+        </span>
+      </span>
+      <span v-else>v2.0</span>
       
       <!-- Separator -->
       <span class="hidden sm:inline text-muted-foreground/50">·</span>
@@ -55,5 +63,30 @@
 </template>
 
 <script setup lang="ts">
-// Footer Info Component - 底部开源信息
+import { ref, onMounted } from 'vue'
+import axios from 'axios'
+
+const frontendVersion = ref<string>('')
+const backendVersion = ref<string>('')
+
+onMounted(async () => {
+  // Get frontend version from package.json (injected by Vite)
+  try {
+    // Vite injects package.json version at build time
+    frontendVersion.value = __APP_VERSION__ || '1.0.0'
+  } catch {
+    frontendVersion.value = '1.0.0'
+  }
+
+  // Get backend version from API
+  try {
+    const response = await axios.get('/api/version')
+    if (response.data?.version) {
+      backendVersion.value = response.data.version
+    }
+  } catch {
+    // Backend version fetch failed - that's okay
+    console.debug('Could not fetch backend version')
+  }
+})
 </script>

@@ -687,3 +687,311 @@ export const api = {
   },
 
 }
+
+// ── V2 API Response Types (internal) ─────────────────────────────
+
+interface TaskV2Response {
+  id: string
+  task_type: string
+  status: TaskStatus
+  batch_id?: string
+  group_id?: string
+  content: string
+  content_ref?: string
+  title?: string
+  voice?: string
+  model?: string
+  style?: string
+  speed?: number
+  total_chars: number
+  total_tokens: number
+  total_chunks: number
+  done_chunks: number
+  failed_chunks: number
+  output_path?: string
+  audio_duration?: number
+  max_retries?: number
+  retry_count?: number
+  created_at: string
+  updated_at: string
+  completed_at?: string | null
+}
+
+interface BatchV2Item {
+  seq: number
+  text: string
+  status: string
+  priority?: number
+  error?: string
+}
+
+interface BatchV2TaskSummary {
+  id: string
+  task_type: string
+  status: TaskStatus
+  content: string
+  title?: string
+  voice?: string
+  model?: string
+  total_chunks: number
+  done_chunks: number
+  output_path?: string
+  created_at: string
+  updated_at: string
+  completed_at?: string | null
+}
+
+interface BatchV2Response {
+  id: string
+  title: string
+  status: GroupStatus
+  voice?: string
+  model?: string
+  speed?: number
+  total_items: number
+  total_chars: number
+  total_tokens: number
+  items?: BatchV2Item[]
+  tasks?: BatchV2TaskSummary[]
+  created_at: string
+  updated_at: string
+}
+
+interface PaginatedV2Response<T> {
+  data: T[]
+  page: number
+  page_size: number
+  total: number
+}
+
+// ── V2 Request Params (exported) ─────────────────────────────────
+
+export interface CreateTaskV2Params {
+  content: string
+  task_type?: string
+  voice?: string
+  model?: string
+  style?: string
+  speed?: number
+  title?: string
+  batch_id?: string
+  group_id?: string
+}
+
+export interface ListTasksV2Params {
+  page?: number
+  page_size?: number
+  status?: TaskStatus
+  search?: string
+  sort?: string
+  group_id?: string
+  batch_id?: string
+}
+
+export interface CreateBatchV2Params {
+  title: string
+  voice?: string
+  model?: string
+  style?: string
+  speed?: number
+  items?: Array<{ seq: number; text: string; priority?: number }>
+}
+
+// ── Transform helpers ─────────────────────────────────────────────
+
+function transformV2Task(v2: TaskV2Response): Task {
+  let error: string | null = null
+  if (v2.status === 'failed') {
+    error = `Task failed after ${v2.failed_chunks} chunk(s)`
+  }
+
+  const startTime = new Date(v2.created_at).getTime()
+  const endTime = v2.completed_at
+    ? new Date(v2.completed_at).getTime()
+    : new Date(v2.updated_at).getTime()
+
+  return {
+    id: v2.id,
+    custom_title: v2.title,
+    status: v2.status,
+    model: v2.model || '',
+    voice: v2.voice || null,
+    text: v2.content,
+    context: null,
+    created_at: v2.created_at,
+    completed_at: v2.completed_at || null,
+    error,
+    progress: v2.total_chunks > 0 ? v2.done_chunks / v2.total_chunks : 0,
+    token_count: v2.total_tokens,
+    char_count: v2.total_chars,
+    elapsed_secs: Math.round((endTime - startTime) / 1000),
+    has_audio: !!v2.output_path,
+    total_chunks: v2.total_chunks,
+    current_chunk: v2.done_chunks,
+    group_id: v2.group_id || null,
+  }
+}
+
+function transformV2BatchTask(v2: BatchV2TaskSummary): Task {
+  const startTime = new Date(v2.created_at).getTime()
+  const endTime = v2.completed_at
+    ? new Date(v2.completed_at).getTime()
+    : new Date(v2.updated_at).getTime()
+
+  return {
+    id: v2.id,
+    custom_title: v2.title,
+    status: v2.status,
+    model: v2.model || '',
+    voice: v2.voice || null,
+    text: v2.content,
+    context: null,
+    created_at: v2.created_at,
+    completed_at: v2.completed_at || null,
+    error: v2.status === 'failed' ? 'Task failed' : null,
+    progress: v2.total_chunks > 0 ? v2.done_chunks / v2.total_chunks : 0,
+    token_count: 0,
+    char_count: 0,
+    elapsed_secs: Math.round((endTime - startTime) / 1000),
+    has_audio: !!v2.output_path,
+    total_chunks: v2.total_chunks,
+    current_chunk: v2.done_chunks,
+    group_id: null,
+  }
+}
+
+function transformV2Batch(v2: BatchV2Response): BatchGroup {
+  const tasks = v2.tasks || []
+  const completedTasks = tasks.filter(t => t.status === 'completed').length
+  const failedTasks = tasks.filter(t => t.status === 'failed').length
+
+  return {
+    id: v2.id,
+    name: v2.title,
+    status: v2.status,
+    voice: v2.voice || null,
+    model: v2.model || '',
+    context: null,
+    created_at: v2.created_at,
+    task_ids: tasks.map(t => t.id),
+    total_tasks: v2.total_items || tasks.length,
+    completed_tasks: completedTasks,
+    failed_tasks: failedTasks,
+    total_tokens: v2.total_tokens,
+    tasks: tasks.map(transformV2BatchTask),
+  }
+}
+
+function convertPaginated<T>(v2: PaginatedV2Response<T>): PaginatedResponse<T> {
+  return {
+    items: v2.data,
+    total: v2.total,
+    page: v2.page,
+    per_page: v2.page_size,
+    total_pages: Math.ceil(v2.total / v2.page_size),
+  }
+}
+
+// ── V2 API Client ─────────────────────────────────────────────────
+
+export const apiV2 = {
+  // ── Tasks ──────────────────────────────────────────────────────
+
+  async createTask(params: CreateTaskV2Params): Promise<Task> {
+    const response = await apiClient.post('/api/v2/tasks', params)
+    return transformV2Task(response.data)
+  },
+
+  async listTasks(params: ListTasksV2Params = {}): Promise<PaginatedResponse<Task>> {
+    const response = await apiClient.get('/api/v2/tasks', { params })
+    const data = response.data
+    // Backend returns either a plain array or { data: [], total, page, page_size }
+    if (Array.isArray(data)) {
+      const items = data.map(transformV2Task)
+      return {
+        items,
+        total: items.length,
+        page: 0,
+        per_page: items.length || 50,
+        total_pages: 1,
+      }
+    }
+    const v2 = data as PaginatedV2Response<TaskV2Response>
+    return {
+      items: (v2.data || []).map(transformV2Task),
+      total: v2.total || 0,
+      page: v2.page || 0,
+      per_page: v2.page_size || 50,
+      total_pages: Math.ceil((v2.total || 0) / (v2.page_size || 50)),
+    }
+  },
+
+  async getTask(id: string): Promise<Task> {
+    const response = await apiClient.get(`/api/v2/tasks/${id}`)
+    return transformV2Task(response.data)
+  },
+
+  async enqueueTask(id: string): Promise<void> {
+    await apiClient.post(`/api/v2/tasks/${id}/enqueue`)
+  },
+
+  async retryTask(id: string): Promise<void> {
+    await apiClient.post(`/api/v2/tasks/${id}/retry`)
+  },
+
+  async continueTask(id: string): Promise<void> {
+    await apiClient.post(`/api/v2/tasks/${id}/continue`)
+  },
+
+  // ── Batches ──────────────────────────────────────────────────
+
+  async createBatch(params: CreateBatchV2Params): Promise<BatchGroup> {
+    const response = await apiClient.post('/api/v2/batches', params)
+    return transformV2Batch(response.data)
+  },
+
+  async getBatch(id: string): Promise<BatchGroup> {
+    const response = await apiClient.get(`/api/v2/batches/${id}`)
+    return transformV2Batch(response.data)
+  },
+
+  async addBatchItem(batchId: string, item: { seq: number; text: string; priority?: number }): Promise<void> {
+    await apiClient.post(`/api/v2/batches/${batchId}/items`, item)
+  },
+
+  async updateBatchItem(batchId: string, seq: number, item: { text: string; priority?: number }): Promise<void> {
+    await apiClient.put(`/api/v2/batches/${batchId}/items/${seq}`, item)
+  },
+
+  async deleteBatchItem(batchId: string, seq: number): Promise<void> {
+    await apiClient.delete(`/api/v2/batches/${batchId}/items/${seq}`)
+  },
+
+  async submitBatch(id: string): Promise<BatchGroup> {
+    const response = await apiClient.post(`/api/v2/batches/${id}/submit`)
+    return transformV2Batch(response.data)
+  },
+
+  // ── Groups ────────────────────────────────────────────────────
+
+  async createGroup(params: { name: string; batch_ids: string[] }): Promise<GroupSummary> {
+    const response = await apiClient.post('/api/v2/groups', params)
+    return response.data
+  },
+
+  async listGroups(params: { batch_id?: string; page?: number; page_size?: number } = {}): Promise<PaginatedResponse<GroupSummary>> {
+    const response = await apiClient.get('/api/v2/groups', { params })
+    const data = response.data
+    // Backend returns either a plain array or { data: [], total, page, page_size }
+    if (Array.isArray(data)) {
+      return {
+        items: data,
+        total: data.length,
+        page: 0,
+        per_page: data.length || 20,
+        total_pages: 1,
+      }
+    }
+    return convertPaginated(data)
+  },
+}

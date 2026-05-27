@@ -2,11 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed, shallowRef, type ShallowRef } from 'vue'
 import {
   api,
+  apiV2,
   type GroupSummary,
   type BatchGroup,
   type TaskSummary,
   type GroupUpdateRequest,
-  type GroupEvent,
   type GroupStatus,
   type TaskConfig,
 } from '@/api/client'
@@ -104,7 +104,7 @@ export const useBatchStore = defineStore('batch', () => {
    */
   async function loadPage(page = 0) {
     try {
-      const result = await api.getGroupsPaginated(page, perPage.value)
+      const result = await apiV2.listGroups({ page, page_size: perPage.value })
       if (page === 0) {
         setGroupMap(result.items as GroupSummary[])
       } else {
@@ -167,25 +167,41 @@ export const useBatchStore = defineStore('batch', () => {
    */
   async function getGroupDetailWithTasks(groupId: string, page = 0, tasksPerPage = 50) {
     try {
-      const result = await api.getGroupDetailWithTasks(groupId, page, tasksPerPage)
+      // v2: use getBatch for detail + listTasks for paginated tasks
+      const [batch, taskResult] = await Promise.all([
+        apiV2.getBatch(groupId),
+        apiV2.listTasks({ group_id: groupId, page, page_size: tasksPerPage }),
+      ])
 
       // Update the group in the map
-      updateGroupInMap(groupId, result.group)
+      updateGroupInMap(groupId, {
+        id: batch.id,
+        name: batch.name,
+        status: batch.status,
+        voice: batch.voice ?? null,
+        model: batch.model ?? '',
+        context: batch.context ?? null,
+        created_at: batch.created_at,
+        total_tasks: batch.total_tasks ?? 0,
+        completed_tasks: batch.completed_tasks ?? 0,
+        failed_tasks: batch.failed_tasks ?? 0,
+        total_tokens: batch.total_tokens ?? 0,
+      })
 
       // Store tasks in the per-group cache
       const existing = groupTaskCache.get(groupId)
       const tasks: TaskSummary[] = page === 0 || !existing
-        ? result.tasks.items
-        : [...existing.tasks, ...result.tasks.items]
+        ? taskResult.items
+        : [...existing.tasks, ...taskResult.items]
 
       groupTaskCache.set(groupId, {
         tasks,
-        loaded: page === 0 || (result.tasks.page >= result.tasks.total_pages - 1),
-        hasMore: result.tasks.page < result.tasks.total_pages - 1,
-        page: result.tasks.page - 1, // store as 0-based internally
+        loaded: page === 0 || (taskResult.page >= taskResult.total_pages - 1),
+        hasMore: taskResult.page < taskResult.total_pages - 1,
+        page: taskResult.page - 1, // store as 0-based internally
       })
 
-      return result
+      return { group: batch as GroupSummary, tasks: taskResult }
     } catch (err) {
       console.error(`Failed to load group detail for ${groupId}:`, err)
       throw err
@@ -200,7 +216,7 @@ export const useBatchStore = defineStore('batch', () => {
     if (cache && cache.loaded && !force && page === 0) return
 
     try {
-      const result = await api.getGroupTasks(groupId, page, 50)
+      const result = await apiV2.listTasks({ group_id: groupId, page, page_size: 50 })
 
       const existing = groupTaskCache.get(groupId)
       const tasks: TaskSummary[] = page === 0 || !existing
@@ -235,6 +251,52 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
+   * Create a new batch (group) via v2 API.
+   * Used by BatchImportWizard for the create-group step.
+   */
+  async function createGroup(params: {
+    name?: string
+    voice: string
+    model?: string
+    context?: string
+  }): Promise<GroupSummary> {
+    const batch = await apiV2.createBatch({
+      title: params.name ?? 'Untitled Batch',
+      voice: params.voice,
+      model: params.model,
+    })
+    // Convert BatchGroup to GroupSummary
+    const summary: GroupSummary = {
+      id: batch.id,
+      name: batch.name,
+      status: batch.status,
+      voice: batch.voice,
+      model: batch.model,
+      created_at: batch.created_at,
+      context: null,
+      total_tasks: batch.total_tasks,
+      completed_tasks: batch.completed_tasks,
+      failed_tasks: batch.failed_tasks,
+      total_tokens: batch.total_tokens,
+    }
+    updateGroupInMap(summary.id, summary)
+    return summary
+  }
+
+  /**
+   * Submit a batch (group) for processing.
+   */
+  async function submitGroup(groupId: string) {
+    const batch = await apiV2.submitBatch(groupId)
+    updateGroupInMap(groupId, {
+      status: batch.status,
+      total_tasks: batch.total_tasks,
+      completed_tasks: batch.completed_tasks,
+      failed_tasks: batch.failed_tasks,
+    })
+  }
+
+  /**
    * 批量导入文件并创建分组
    */
   async function importBatch(
@@ -252,22 +314,44 @@ export const useBatchStore = defineStore('batch', () => {
     loading.value = true
     error.value = null
     try {
-      const result = await api.importBatch({
-        files,
-        group_name: options?.name,
+      if (files.length === 0) throw new Error('No files provided')
+
+      // Read files client-side and split into text segments
+      const segments: string[] = []
+      for (const file of files) {
+        const text = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`))
+          reader.readAsText(file)
+        })
+        const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+        segments.push(...lines)
+      }
+
+      if (segments.length === 0) throw new Error('No valid text segments found in files')
+
+      // Create batch via v2 API
+      const batch = await apiV2.createBatch({
+        title: options?.name ?? files[0].name,
         voice: options?.voice,
         model: options?.model,
-        context: options?.context,
-        task_configs: options?.taskConfigs,
-        use_filename_as_task_name: options?.useFilenameAsTaskName,
-        api_key: options?.apiKey,
       })
+
+      // Add each segment as a batch item
+      for (let i = 0; i < segments.length; i++) {
+        await apiV2.addBatchItem(batch.id, { seq: i + 1, text: segments[i] })
+      }
+
+      // Submit the batch for processing
+      await apiV2.submitBatch(batch.id)
+
       await loadGroups()
 
-      // 订阅该分组的 SSE 事件
-      subscribeToGroupEvents(result.group_id)
+      // Subscribe to v2 SSE for this batch
+      subscribeToGroupEvents(batch.id)
 
-      return result.group_id
+      return batch.id
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -378,7 +462,8 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
-   * 订阅分组 SSE 事件，实时更新分组状态
+   * 订阅分组 SSE 事件（v2 单通道），实时更新分组状态
+   * 连接到 /api/v2/events?channel=batch:{batchId}
    */
   function subscribeToGroupEvents(groupId: string) {
     // 如果已订阅，先关闭旧连接
@@ -386,54 +471,75 @@ export const useBatchStore = defineStore('batch', () => {
       eventSources.get(groupId)?.close()
     }
 
-    const eventSource = api.subscribeToGroup(groupId, (event: GroupEvent) => {
-      console.log('Group SSE event:', event)
+    const eventSource = new EventSource(`/api/v2/events?channel=batch:${groupId}`)
 
-      switch (event.event_type) {
-        case 'progress':
-          updateGroupInMap(groupId, {
-            completed_tasks: event.completed_tasks ?? 0,
-            failed_tasks: event.failed_tasks ?? 0,
-            total_tasks: event.total_tasks ?? 0,
-            ...(event.group_status && { status: event.group_status as GroupStatus }),
-          })
-          break
-        case 'task_completed':
-          updateGroupInMap(groupId, {
-            completed_tasks: event.completed_tasks ?? 0,
-            total_tasks: event.total_tasks ?? 0,
-            ...(event.group_status && { status: event.group_status as GroupStatus }),
-          })
-          break
-        case 'task_failed':
-          updateGroupInMap(groupId, {
-            failed_tasks: event.failed_tasks ?? 0,
-            total_tasks: event.total_tasks ?? 0,
-            ...(event.group_status && { status: event.group_status as GroupStatus }),
-          })
-          break
-        case 'group_completed':
-          updateGroupInMap(groupId, {
-            status: 'completed' as GroupStatus,
-            completed_tasks: event.completed_tasks ?? 0,
-          })
-          // 完成后关闭连接并刷新
-          eventSources.delete(groupId)
-          eventSource.close()
-          loadGroups()
-          break
-        case 'group_failed':
-          updateGroupInMap(groupId, {
-            status: 'failed' as GroupStatus,
-            failed_tasks: event.failed_tasks ?? 0,
-          })
-          // 失败后关闭连接并刷新
-          eventSources.delete(groupId)
-          eventSource.close()
-          loadGroups()
-          break
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        console.log('Batch SSE v2 event:', data)
+
+        switch (data.type) {
+          case 'Progress':
+          case 'TaskProgress':
+            updateGroupInMap(groupId, {
+              completed_tasks: data.completed_tasks ?? 0,
+              failed_tasks: data.failed_tasks ?? 0,
+              total_tasks: data.total_tasks ?? 0,
+              ...(data.status && { status: data.status as GroupStatus }),
+            })
+            break
+          case 'TaskCompleted':
+            updateGroupInMap(groupId, {
+              completed_tasks: data.completed_tasks ?? 0,
+              total_tasks: data.total_tasks ?? 0,
+              ...(data.status && { status: data.status as GroupStatus }),
+            })
+            break
+          case 'TaskFailed':
+            updateGroupInMap(groupId, {
+              failed_tasks: data.failed_tasks ?? 0,
+              total_tasks: data.total_tasks ?? 0,
+              ...(data.status && { status: data.status as GroupStatus }),
+            })
+            break
+          case 'BatchCompleted':
+            updateGroupInMap(groupId, {
+              status: 'completed' as GroupStatus,
+              completed_tasks: data.completed_tasks ?? 0,
+            })
+            // 完成后关闭连接并刷新
+            eventSources.delete(groupId)
+            eventSource.close()
+            loadGroups()
+            break
+          case 'BatchFailed':
+            updateGroupInMap(groupId, {
+              status: 'failed' as GroupStatus,
+              failed_tasks: data.failed_tasks ?? 0,
+            })
+            // 失败后关闭连接并刷新
+            eventSources.delete(groupId)
+            eventSource.close()
+            loadGroups()
+            break
+          case 'ChunkCompleted':
+            // 分片完成 — 更新进度信息
+            if (data.task_id) {
+              updateGroupInMap(groupId, {
+                current_chunk: data.current_chunk,
+                total_chunks: data.total_chunks,
+              } as any)
+            }
+            break
+        }
+      } catch (err) {
+        console.error('Failed to parse batch SSE event:', err)
       }
-    })
+    }
+
+    eventSource.onerror = () => {
+      console.warn('Batch SSE connection error, will auto-reconnect:', groupId)
+    }
 
     eventSources.set(groupId, eventSource)
   }
@@ -552,6 +658,8 @@ export const useBatchStore = defineStore('batch', () => {
 
     // CRUD
     importBatch,
+    createGroup,
+    submitGroup,
     updateGroup,
     pauseGroup,
     resumeGroup,

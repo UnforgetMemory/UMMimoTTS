@@ -163,7 +163,7 @@ import { ref, computed, watch, unref } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
-import { api, type Task, type TaskSummary } from '@/api/client'
+import type { Task, TaskSummary } from '@/api/client'
 import { handleApiError } from '@/utils/errorHandler'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -399,7 +399,7 @@ async function handleViewText(task: Task | TaskSummary) {
 
 async function handleEditTitle(taskId: string, newTitle: string) {
   try {
-    await api.updateTaskTitle(taskId, newTitle)
+    await taskStore.updateTaskTitle(taskId, newTitle)
     toast.success('标题已更新')
     await taskStore.loadTasks()
   } catch (error) {

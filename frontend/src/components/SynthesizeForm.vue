@@ -121,8 +121,9 @@
               </div>
             </div>
             
-            <!-- 右侧：播放按钮（固定显示） -->
+            <!-- 右侧：播放按钮（仅在有 CDN 音频 URL 时显示） -->
             <Button
+              v-if="voice.preview_url"
               size="sm"
               variant="outline"
               class="h-10 w-10 p-0 shrink-0 ml-3 rounded-full border-2 
@@ -179,7 +180,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
-import { api, type Voice } from '@/api/client'
+import { type Voice } from '@/api/client'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -262,16 +263,11 @@ const FALLBACK_VOICES: Voice[] = [
 
 async function loadVoices() {
   voicesLoading.value = true
-  try {
-    voices.value = await api.getVoices()
-  } catch (error) {
-    console.error('加载音色列表失败，使用默认音色:', error)
-    voices.value = FALLBACK_VOICES
-  } finally {
-    voicesLoading.value = false
-    if (voices.value && voices.value.length > 0 && !form.value.voice) {
-      form.value.voice = voices.value[0].id
-    }
+  // Backend-next 没有独立音色列表接口，直接使用预置音色
+  voices.value = FALLBACK_VOICES
+  voicesLoading.value = false
+  if (voices.value.length > 0 && !form.value.voice) {
+    form.value.voice = voices.value[0].id
   }
 }
 
@@ -291,7 +287,7 @@ async function handleSubmit() {
 
   isSubmitting.value = true
   try {
-    await taskStore.createTask({
+    const taskId = await taskStore.createTask({
       text: form.value.text,
       voice: form.value.voice,
       model: form.value.model,
@@ -301,6 +297,11 @@ async function handleSubmit() {
     })
     
     toast.success('任务创建成功')
+    
+    // Enqueue the task for synthesis processing (v2 two-phase flow)
+    await taskStore.enqueueTask(taskId)
+    toast.success('任务已加入队列')
+    
     form.value.text = ''
     form.value.context = ''
     updateCounts()
@@ -337,31 +338,24 @@ async function playVoicePreview(voiceId: string) {
   try {
     previewingVoice.value = voiceId
     
-    // 优先使用 CDN URL，回退到后端代理
-    const previewUrl = api.getVoicePreviewUrl(voiceId, voice.preview_url)
-    console.log(`[音色预览] 使用 URL: ${previewUrl}`)
+    // 优先使用 CDN URL
+    const previewUrl = voice.preview_url || ''
     
     const audio = new Audio(previewUrl)
     currentAudio.value = audio
     
     audio.onended = () => {
-      console.log(`[音色预览] 播放完成: ${voiceId}`)
       previewingVoice.value = null
       currentAudio.value = null
     }
     
-    audio.onerror = (e) => {
-      console.error(`[音色预览] 加载失败:`, e, 'URL:', previewUrl)
-      toast.error('试听音频加载失败')
+    audio.onerror = () => {
       previewingVoice.value = null
       currentAudio.value = null
     }
     
     await audio.play()
-    console.log(`[音色预览] 开始播放: ${voiceId}`)
-  } catch (error) {
-    console.error(`[音色预览] 播放异常:`, error)
-    toast.error('试听播放失败')
+  } catch (_error) {
     previewingVoice.value = null
     currentAudio.value = null
   }
