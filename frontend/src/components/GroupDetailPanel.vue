@@ -2,7 +2,7 @@
   <div class="w-full h-full">
     <div class="flex flex-col h-full border rounded-lg bg-card shadow-sm">
       <!-- Header -->
-      <div class="p-4 border-b shrink-0">
+      <div class="p-4 pt-16 border-b shrink-0">
         <div class="flex items-center justify-between">
           <div class="min-w-0 flex-1">
             <h3 class="text-lg font-semibold truncate">{{ group.name }}</h3>
