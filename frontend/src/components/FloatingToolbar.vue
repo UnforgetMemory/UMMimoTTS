@@ -8,8 +8,8 @@
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
-      :class="{ 'bg-white/30': showBatchSidebar }"
+      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+      :class="{ 'bg-black/15 dark:bg-white/30': showBatchSidebar }"
       @click="$emit('toggle-batch')"
       aria-label="批量任务列表"
     >
@@ -17,13 +17,13 @@
     </Button>
 
     <!-- 分隔线 -->
-    <div class="w-px h-6 bg-white/30" />
+    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
 
     <!-- API 配置按钮 -->
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
+      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
       @click="$emit('open-config')"
       aria-label="API 配置"
     >
@@ -31,7 +31,7 @@
     </Button>
 
     <!-- 分隔线 -->
-    <div class="w-px h-6 bg-white/30" />
+    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
 
     <!-- 主题切换下拉 -->
     <DropdownMenu>
@@ -39,7 +39,7 @@
         <Button 
           variant="ghost" 
           size="sm"
-          class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
+          class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
           aria-label="切换主题"
         >
           <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5" />
@@ -66,14 +66,14 @@
     </DropdownMenu>
 
     <!-- 分隔线 -->
-    <div class="w-px h-6 bg-white/30" />
+    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
 
     <!-- 单任务列表按钮（最右边） -->
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
-      :class="{ 'bg-white/30': showTaskSidebar }"
+      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+      :class="{ 'bg-black/15 dark:bg-white/30': showTaskSidebar }"
       @click="$emit('toggle-tasks')"
       aria-label="单任务列表"
     >
@@ -117,13 +117,23 @@ const themeStore = useThemeStore()
 
 <style scoped>
 .dynamic-island {
-  background: rgba(0, 0, 0, 0.65);
-  backdrop-filter: blur(24px) saturate(200%);
-  -webkit-backdrop-filter: blur(24px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* 暗色主题下的样式 */
+:root.dark .dynamic-island {
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
     0 2px 8px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 </style>
