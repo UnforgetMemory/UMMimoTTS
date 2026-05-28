@@ -28,6 +28,7 @@ impl MimoClient {
                 "text": text,
                 "model": "tts-1"
             }))
+            .timeout(std::time::Duration::from_secs(5))
             .send()
             .await
             .map_err(|e| AppError::Internal(format!("tokenize request failed: {e}")))?;

@@ -77,10 +77,13 @@ async fn main() -> std::io::Result<()> {
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
 
     // ── event bus ─────────────────────────────────────────────────────
-    let (event_tx, _event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(256);
+    let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(256);
 
     // ── SSE bus ───────────────────────────────────────────────────────
     let sse_bus = Arc::new(SseBus::new());
+
+    // ── SSE bridge: forward domain events to SSE subscribers ─────────
+    um_mimo_tts_server_v3::infra::sse_bus::spawn_sse_bridge(event_rx, sse_bus.clone());
 
     // ── MIMO client + chunker ─────────────────────────────────────────
     let client = Arc::new(MimoClient::new(&mimo_api_key, &mimo_base_url));
@@ -143,6 +146,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .wrap(cors)
             .wrap(middleware::Logger::default())
+            .app_data(web::JsonConfig::default().limit(50 * 1024 * 1024)) // 50 MB for batch add
             .app_data(web::Data::new(app_state.clone()))
             .configure(um_mimo_tts_server_v3::routes::configure)
     })

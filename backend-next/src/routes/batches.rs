@@ -53,9 +53,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{id}", web::get().to(get_batch))
             .route("/{id}", web::put().to(update_batch))
             .route("/{id}/items", web::post().to(add_item))
+            .route("/{id}/items/batch", web::post().to(batch_add_items))
             .route("/{id}/items/{seq}", web::put().to(update_item))
             .route("/{id}/items/{seq}", web::delete().to(delete_item))
-            .route("/{id}/submit", web::post().to(submit_batch)),
+            .route("/{id}/submit", web::post().to(submit_batch))
+            .route("/{id}", web::delete().to(delete_batch)),
     );
 }
 
@@ -70,7 +72,11 @@ async fn create_batch(
         body.style.clone(),
         body.speed,
     ) {
-        Ok(batch) => HttpResponse::Ok().json(batch),
+        Ok(batch) => {
+            // Also create a group record so listGroups can find it
+            let _ = state.group_service.create(&batch.id.to_string(), &batch.title);
+            HttpResponse::Ok().json(batch)
+        },
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
     }
 }
@@ -122,6 +128,22 @@ async fn add_item(
     }
 }
 
+async fn batch_add_items(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    body: web::Json<Vec<AddItemRequest>>,
+) -> impl Responder {
+    let id = path.into_inner();
+    let items = body.into_inner();
+    match state
+        .batch_service
+        .add_items(&id, &items)
+    {
+        Ok(()) => HttpResponse::Created().json(serde_json::json!({"ok": true, "count": items.len()})),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
 async fn update_item(
     state: web::Data<AppState>,
     path: web::Path<(String, i32)>,
@@ -147,7 +169,6 @@ async fn delete_item(
     path: web::Path<(String, i32)>,
 ) -> impl Responder {
     let (batch_id, seq) = path.into_inner();
-    // Look up the item by batch+seq to get its DB id
     match state.batch_service.batch_repo.find_pending_item_by_seq(&batch_id, seq) {
         Ok(Some(item)) => {
             match state.batch_service.batch_repo.delete_pending_item(&item.id) {
@@ -167,6 +188,17 @@ async fn submit_batch(
     let id = path.into_inner();
     match state.batch_service.submit(&id).await {
         Ok(tasks) => HttpResponse::Ok().json(tasks),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+async fn delete_batch(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let id = path.into_inner();
+    match state.batch_service.delete(&id) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
     }
 }

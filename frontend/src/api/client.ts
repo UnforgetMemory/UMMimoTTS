@@ -955,8 +955,13 @@ export const apiV2 = {
     return transformV2Batch(response.data)
   },
 
-  async addBatchItem(batchId: string, item: { seq: number; text: string; priority?: number }): Promise<void> {
+  async addBatchItem(batchId: string, item: { seq: number; filename: string; content: string }): Promise<void> {
     await apiClient.post(`/api/v2/batches/${batchId}/items`, item)
+  },
+
+  async addBatchItems(batchId: string, items: Array<{ seq: number; filename: string; content: string }>): Promise<{ ok: boolean; count: number }> {
+    const response = await apiClient.post(`/api/v2/batches/${batchId}/items/batch`, items)
+    return response.data
   },
 
   async updateBatchItem(batchId: string, seq: number, item: { text: string; priority?: number }): Promise<void> {
@@ -965,6 +970,10 @@ export const apiV2 = {
 
   async deleteBatchItem(batchId: string, seq: number): Promise<void> {
     await apiClient.delete(`/api/v2/batches/${batchId}/items/${seq}`)
+  },
+
+  async deleteBatch(id: string): Promise<void> {
+    await apiClient.delete(`/api/v2/batches/${id}`)
   },
 
   async submitBatch(id: string): Promise<BatchGroup> {

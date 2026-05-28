@@ -242,6 +242,20 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
+   * Update a task's status in the group task cache (for SSE real-time updates)
+   */
+  function updateTaskInGroupCache(groupId: string, taskId: string, updates: Partial<TaskSummary>) {
+    const cache = groupTaskCache.get(groupId)
+    if (!cache) return
+    const idx = cache.tasks.findIndex(t => t.id === taskId)
+    if (idx === -1) return
+    const updated = { ...cache.tasks[idx], ...updates }
+    const newTasks = [...cache.tasks]
+    newTasks[idx] = updated
+    groupTaskCache.set(groupId, { ...cache, tasks: newTasks })
+  }
+
+  /**
    * Load more tasks for a group (next page)
    */
   async function loadMoreGroupTasks(groupId: string) {
@@ -340,7 +354,7 @@ export const useBatchStore = defineStore('batch', () => {
 
       // Add each segment as a batch item
       for (let i = 0; i < segments.length; i++) {
-        await apiV2.addBatchItem(batch.id, { seq: i + 1, text: segments[i] })
+        await apiV2.addBatchItem(batch.id, { seq: i + 1, filename: `${files[Math.floor(i / Math.ceil(segments.length / files.length))]?.name || 'segment'}_${i + 1}.txt`, content: segments[i] })
       }
 
       // Submit the batch for processing
@@ -442,7 +456,7 @@ export const useBatchStore = defineStore('batch', () => {
   async function removeGroup(groupId: string) {
     error.value = null
     try {
-      await api.deleteGroup(groupId)
+      await apiV2.deleteBatch(groupId)
       const newMap = new Map(groupMap.value)
       newMap.delete(groupId)
       groupMap.value = newMap
@@ -487,6 +501,20 @@ export const useBatchStore = defineStore('batch', () => {
               total_tasks: data.total_tasks ?? 0,
               ...(data.status && { status: data.status as GroupStatus }),
             })
+            // Update individual task in cache if task_id present
+            if (data.task_id) {
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: data.task_status ?? 'processing',
+              } as Partial<TaskSummary>)
+            }
+            break
+          case 'TaskEnqueued':
+            // Update task status in cache
+            if (data.task_id) {
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: 'queued',
+              } as Partial<TaskSummary>)
+            }
             break
           case 'TaskCompleted':
             updateGroupInMap(groupId, {
@@ -494,6 +522,13 @@ export const useBatchStore = defineStore('batch', () => {
               total_tasks: data.total_tasks ?? 0,
               ...(data.status && { status: data.status as GroupStatus }),
             })
+            // Update individual task in cache
+            if (data.task_id) {
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: 'done',
+                has_audio: true,
+              } as Partial<TaskSummary>)
+            }
             break
           case 'TaskFailed':
             updateGroupInMap(groupId, {
@@ -501,6 +536,12 @@ export const useBatchStore = defineStore('batch', () => {
               total_tasks: data.total_tasks ?? 0,
               ...(data.status && { status: data.status as GroupStatus }),
             })
+            // Update individual task in cache
+            if (data.task_id) {
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: 'failed',
+              } as Partial<TaskSummary>)
+            }
             break
           case 'BatchCompleted':
             updateGroupInMap(groupId, {
@@ -529,6 +570,10 @@ export const useBatchStore = defineStore('batch', () => {
                 current_chunk: data.current_chunk,
                 total_chunks: data.total_chunks,
               } as any)
+              // Update task to show it's actively processing
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: 'chunking',
+              } as Partial<TaskSummary>)
             }
             break
         }

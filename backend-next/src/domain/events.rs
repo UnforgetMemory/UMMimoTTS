@@ -2,6 +2,7 @@ use crate::shared::id::Id;
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum DomainEvent {
     FileParsed { batch_id: Id, filename: String, seq: i32, chars: i64, tokens: i64 },
     ParsingComplete { batch_id: Id, total: usize, parsed: usize, failed: usize },

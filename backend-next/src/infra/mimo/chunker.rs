@@ -1,5 +1,20 @@
 use crate::shared::error::AppError;
 use serde_json::json;
+use tracing::warn;
+
+/// Rough token estimation: Chinese chars ≈ 2 tokens, ASCII ≈ 0.3 tokens.
+fn estimate_token_count(text: &str) -> i64 {
+    let (chinese, ascii) = text.chars().fold((0i64, 0i64), |(c, a), ch| {
+        if ('\u{4E00}'..='\u{9FFF}').contains(&ch)
+            || ('\u{3400}'..='\u{4DBF}').contains(&ch)
+        {
+            (c + 1, a)
+        } else {
+            (c, a + 1)
+        }
+    });
+    std::cmp::max(1, chinese * 2 + ascii * 3 / 10)
+}
 
 /// A text segment produced by the chunker.
 pub struct ChunkSegment {
@@ -41,7 +56,27 @@ impl MimoChunker {
     }
 
     /// Call the remote tokenize endpoint and return sentence-level breakdown.
+    ///
+    /// Falls back to a local heuristic when the remote API is unavailable.
     pub async fn tokenize(&self, text: &str) -> Result<Vec<SentenceInfo>, AppError> {
+        if text.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Try remote API first
+        match self.tokenize_remote(text).await {
+            Ok(result) => return Ok(result),
+            Err(ref e) => {
+                warn!("MIMO tokenize API unavailable, using local fallback: {e}");
+            }
+        }
+
+        // Local fallback: split by sentence boundaries
+        Ok(self.tokenize_local(text))
+    }
+
+    /// Remote tokenize API call.
+    async fn tokenize_remote(&self, text: &str) -> Result<Vec<SentenceInfo>, AppError> {
         let url = format!("{}/v1/tokenize", self.base_url);
         let resp = self
             .client
@@ -91,6 +126,44 @@ impl MimoChunker {
             });
         }
         Ok(result)
+    }
+
+    /// Local fallback: split text by sentence-ending punctuation and estimate token counts.
+    fn tokenize_local(&self, text: &str) -> Vec<SentenceInfo> {
+        let mut result = Vec::new();
+        let chars: Vec<char> = text.chars().collect();
+        let mut start = 0;
+
+        for (i, c) in chars.iter().enumerate() {
+            if matches!(c, '。' | '！' | '？' | '!' | '?' | '\n') && i + 1 < chars.len() {
+                let sentence: String = chars[start..=i].iter().collect();
+                if !sentence.trim().is_empty() {
+                    let char_count = sentence.chars().count() as i64;
+                    let token_count = estimate_token_count(&sentence);
+                    result.push(SentenceInfo { text: sentence, token_count, char_count });
+                }
+                start = i + 1;
+            }
+        }
+
+        // Last segment
+        if start < chars.len() {
+            let sentence: String = chars[start..].iter().collect();
+            if !sentence.trim().is_empty() {
+                let char_count = sentence.chars().count() as i64;
+                let token_count = estimate_token_count(&sentence);
+                result.push(SentenceInfo { text: sentence, token_count, char_count });
+            }
+        }
+
+        // If no boundaries found, treat the whole text as one sentence
+        if result.is_empty() {
+            let char_count = text.chars().count() as i64;
+            let token_count = estimate_token_count(text);
+            result.push(SentenceInfo { text: text.to_string(), token_count, char_count });
+        }
+
+        result
     }
 
     /// Split text into chunks respecting sentence boundaries.

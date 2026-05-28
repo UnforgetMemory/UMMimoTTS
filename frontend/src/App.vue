@@ -99,17 +99,19 @@
 
         <!-- 选中分组详情 或 合成表单 -->
         <template v-if="selectedGroup">
-          <GroupDetailPanel
-            :group="selectedGroup"
-            :downloading="batchStore.downloadingGroupId === selectedGroup.id"
-            @close="selectedGroupId = null"
-            @pause="handlePauseGroup"
-            @resume="handleResumeGroup"
-            @retry="handleRetryGroup"
-            @download="handleDownloadGroup"
-            @play="handleOpenPlayer"
-            @view-text="handleOpenTextViewer"
-          />
+          <div class="w-full h-full">
+            <GroupDetailPanel
+              :group="selectedGroup"
+              :downloading="batchStore.downloadingGroupId === selectedGroup.id"
+              @close="selectedGroupId = null"
+              @pause="handlePauseGroup"
+              @resume="handleResumeGroup"
+              @retry="handleRetryGroup"
+              @download="handleDownloadGroup"
+              @play="handleOpenPlayer"
+              @view-text="handleOpenTextViewer"
+            />
+          </div>
         </template>
         <div v-else class="w-full max-w-4xl mt-8 sm:mt-12">
           <SynthesizeForm ref="synthesizeFormRef" />
@@ -401,6 +403,7 @@ async function handleDownloadGroup(groupId: string) {
 
 function handleBatchImported(groupId: string) {
   selectedGroupId.value = groupId
+  showBatchWizard.value = false
   batchStore.loadGroups()
   // Also refresh task list so newly created tasks appear
   taskStore.loadTasks()

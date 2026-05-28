@@ -12,6 +12,8 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
             total_tasks     INTEGER NOT NULL DEFAULT 0,
             done_tasks      INTEGER NOT NULL DEFAULT 0,
             failed_tasks    INTEGER NOT NULL DEFAULT 0,
+            total_chars     INTEGER NOT NULL DEFAULT 0,
+            total_tokens    INTEGER NOT NULL DEFAULT 0,
             default_voice   TEXT NOT NULL,
             default_model   TEXT NOT NULL,
             default_style   TEXT,
@@ -129,6 +131,10 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         CREATE INDEX IF NOT EXISTS idx_pending_items_batch ON pending_items(batch_id);
         CREATE INDEX IF NOT EXISTS idx_groups_batch ON groups(batch_id);
     ")?;
+
+    // Add columns to batches table for existing databases
+    let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_chars INTEGER NOT NULL DEFAULT 0", []);
+    let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0", []);
 
     Ok(())
 }

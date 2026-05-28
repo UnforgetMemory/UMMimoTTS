@@ -69,6 +69,7 @@ pub trait BatchRepo: Send + Sync {
     fn update_batch_status(&self, id: &str, status: &BatchStatus) -> Result<(), AppError>;
     fn delete_batch(&self, id: &str) -> Result<(), AppError>;
     fn insert_pending_item(&self, batch_id: &str, item: &BatchPendingItem) -> Result<(), AppError>;
+    fn batch_insert_pending_items(&self, batch_id: &str, items: &[BatchPendingItem]) -> Result<(), AppError>;
     fn list_pending_items(
         &self,
         batch_id: &str,
@@ -88,8 +89,16 @@ pub trait BatchRepo: Send + Sync {
     ) -> Result<(), AppError>;
     fn delete_pending_item(&self, id: &str) -> Result<(), AppError>;
     fn count_pending_items(&self, batch_id: &str) -> Result<i64, AppError>;
-    fn submit_batch(&self, batch_id: &str) -> Result<Vec<Task>, AppError>;
+    fn submit_batch(&self, batch_id: &str) -> Result<Vec<SubmitTaskResult>, AppError>;
     fn get_child_task_ids(&self, batch_id: &str) -> Result<Vec<String>, AppError>;
+    fn list_all(&self) -> Result<Vec<Batch>, AppError>;
+}
+
+/// Minimal task info returned from `submit_batch` — avoids loading full content into memory.
+#[derive(Debug, Clone)]
+pub struct SubmitTaskResult {
+    pub id: String,
+    pub title: String,
 }
 
 pub struct SqliteBatchRepo {
@@ -112,8 +121,8 @@ impl SqliteBatchRepo {
             style: row.get("default_style")?,
             speed: row.get("default_speed")?,
             total_items: row.get::<_, i32>("total_tasks")?,
-            total_chars: 0,
-            total_tokens: 0,
+            total_chars: row.get::<_, i64>("total_chars")?,
+            total_tokens: row.get::<_, i64>("total_tokens")?,
             created_at: parse_datetime(&row.get::<_, String>("created_at")?),
             updated_at: parse_datetime(&row.get::<_, String>("updated_at")?),
             completed_at: row
@@ -151,7 +160,7 @@ impl SqliteBatchRepo {
     fn submit_batch_inner(
         conn: &mut Connection,
         batch_id: &str,
-    ) -> Result<Vec<Task>, AppError> {
+    ) -> Result<Vec<SubmitTaskResult>, AppError> {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
         // Read batch to verify it exists
@@ -175,9 +184,11 @@ impl SqliteBatchRepo {
             ));
         }
 
-        // Create a Task for each pending item
-        let mut tasks = Vec::new();
+        // Create a Task for each pending item (temporary — INSERT only, then dropped)
+        let mut results = Vec::with_capacity(items.len());
         let total_items = items.len() as i32;
+        let total_tokens_sum: i64 = items.iter().map(|i| i.token_estimate).sum();
+        let total_chars_sum: i64 = items.iter().map(|i| i.total_chars).sum();
 
         for item in &items {
             let task = Task::new(CreateTaskRequest {
@@ -235,7 +246,10 @@ impl SqliteBatchRepo {
                 ],
             )?;
 
-            tasks.push(task);
+            results.push(SubmitTaskResult {
+                id: task.id.to_string(),
+                title: task.title.clone(),
+            });
         }
 
         // Clear pending items
@@ -244,20 +258,22 @@ impl SqliteBatchRepo {
             params![Utc::now().to_rfc3339(), batch_id],
         )?;
 
-        // Update batch status
+        // Update batch status and totals
         let now_rfc = Utc::now().to_rfc3339();
         tx.execute(
-            "UPDATE batches SET status = ?1, total_tasks = ?2, updated_at = ?3 WHERE id = ?4",
+            "UPDATE batches SET status = ?1, total_tasks = ?2, total_tokens = ?3, total_chars = ?4, updated_at = ?5 WHERE id = ?6",
             params![
                 serde_json::to_string(&BatchStatus::Queued).unwrap(),
                 total_items,
+                total_tokens_sum,
+                total_chars_sum,
                 now_rfc,
                 batch_id,
             ],
         )?;
 
         tx.commit()?;
-        Ok(tasks)
+        Ok(results)
     }
 }
 
@@ -322,10 +338,18 @@ impl BatchRepo for SqliteBatchRepo {
     }
 
     fn delete_batch(&self, id: &str) -> Result<(), AppError> {
-        let conn = self.pool.get()?;
-        let tx = conn.unchecked_transaction()?;
+        let mut conn = self.pool.get()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        // Order matters: FK constraints must be satisfied
+        // chunks → tasks → batch_tasks → pending_items/groups → batches
+        tx.execute(
+            "DELETE FROM chunks WHERE task_id IN (SELECT id FROM tasks WHERE batch_id = ?1)",
+            params![id],
+        )?;
         tx.execute("DELETE FROM pending_items WHERE batch_id = ?1", params![id])?;
         tx.execute("DELETE FROM batch_tasks WHERE batch_id = ?1", params![id])?;
+        tx.execute("DELETE FROM tasks WHERE batch_id = ?1", params![id])?;
+        tx.execute("DELETE FROM groups WHERE batch_id = ?1", params![id])?;
         tx.execute("DELETE FROM batches WHERE id = ?1", params![id])?;
         tx.commit()?;
         Ok(())
@@ -334,10 +358,11 @@ impl BatchRepo for SqliteBatchRepo {
     fn insert_pending_item(&self, batch_id: &str, item: &BatchPendingItem) -> Result<(), AppError> {
         let conn = self.pool.get()?;
         let now = Utc::now().to_rfc3339();
-        let text_preview = if item.content.len() > 100 {
-            format!("{}...", &item.content[..100])
+        let text_preview: String = item.content.chars().take(100).collect();
+        let text_preview = if item.content.chars().count() > 100 {
+            format!("{}...", text_preview)
         } else {
-            item.content.clone()
+            text_preview
         };
         conn.execute(
             "INSERT INTO pending_items (id, batch_id, seq, filename, content, text_preview,
@@ -368,6 +393,55 @@ impl BatchRepo for SqliteBatchRepo {
                 now,
             ],
         )?;
+        Ok(())
+    }
+
+    fn batch_insert_pending_items(
+        &self,
+        batch_id: &str,
+        items: &[BatchPendingItem],
+    ) -> Result<(), AppError> {
+        let mut conn = self.pool.get()?;
+        let now = Utc::now().to_rfc3339();
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        for item in items {
+            let text_preview: String = item.content.chars().take(100).collect();
+            let text_preview = if item.content.chars().count() > 100 {
+                format!("{}...", text_preview)
+            } else {
+                text_preview
+            };
+            tx.execute(
+                "INSERT INTO pending_items (id, batch_id, seq, filename, content, text_preview,
+                 total_chars, token_estimate, custom_title, custom_voice, custom_model, custom_style, custom_speed,
+                 effective_title, effective_voice, effective_model, effective_style, effective_speed,
+                 status, created_at, updated_at)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,'pending',?19,?20)",
+                params![
+                    Id::new().to_string(),
+                    batch_id,
+                    item.seq,
+                    item.filename,
+                    item.content,
+                    text_preview,
+                    item.total_chars,
+                    item.token_estimate,
+                    item.custom_title,
+                    item.custom_voice,
+                    item.custom_model,
+                    item.custom_style,
+                    item.custom_speed,
+                    item.effective_title,
+                    item.effective_voice,
+                    item.effective_model,
+                    item.effective_style,
+                    item.effective_speed,
+                    now,
+                    now,
+                ],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -526,7 +600,7 @@ impl BatchRepo for SqliteBatchRepo {
         Ok(count)
     }
 
-    fn submit_batch(&self, batch_id: &str) -> Result<Vec<Task>, AppError> {
+    fn submit_batch(&self, batch_id: &str) -> Result<Vec<SubmitTaskResult>, AppError> {
         let max_retries = 3;
 
         for attempt in 0..max_retries {
@@ -535,7 +609,7 @@ impl BatchRepo for SqliteBatchRepo {
             let result = Self::submit_batch_inner(&mut *conn, batch_id);
 
             match result {
-                Ok(tasks) => return Ok(tasks),
+                Ok(results) => return Ok(results),
                 Err(AppError::Internal(_)) if attempt < max_retries - 1 => {
                     std::thread::sleep(std::time::Duration::from_millis(
                         10 * 2u64.pow(attempt as u32),
@@ -561,6 +635,16 @@ impl BatchRepo for SqliteBatchRepo {
             .filter_map(|r| r.ok())
             .collect();
         Ok(ids)
+    }
+
+    fn list_all(&self) -> Result<Vec<Batch>, AppError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM batches ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map([], Self::row_to_batch)?;
+        let batches: Vec<Batch> = rows.filter_map(|r| r.ok()).collect();
+        Ok(batches)
     }
 }
 

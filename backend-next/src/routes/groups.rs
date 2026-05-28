@@ -1,4 +1,6 @@
 //! Group routes — CRUD.
+//! NOTE: "groups" in the frontend are actually batches.
+//! The list endpoint returns batch data mapped to GroupSummary-compatible fields.
 
 #![allow(dead_code)]
 
@@ -35,10 +37,32 @@ async fn create_group(
 
 async fn list_groups(
     state: web::Data<AppState>,
-    query: web::Query<ListGroupsQuery>,
+    _query: web::Query<ListGroupsQuery>,
 ) -> impl Responder {
-    match state.group_service.list(query.batch_id.as_deref()) {
-        Ok(groups) => HttpResponse::Ok().json(groups),
+    // List batches instead of groups — the frontend's "GroupSummary" is
+    // actually batch-level data (name, voice, model, tokens, etc.)
+    match state.batch_service.batch_repo.list_all() {
+        Ok(batches) => {
+            let groups: Vec<serde_json::Value> = batches
+                .into_iter()
+                .map(|b| {
+                    serde_json::json!({
+                        "id": b.id.to_string(),
+                        "name": b.title,
+                        "status": b.status,
+                        "voice": b.voice,
+                        "model": b.model,
+                        "context": b.style,
+                        "created_at": b.created_at.to_rfc3339(),
+                        "total_tasks": b.total_items,
+                        "completed_tasks": 0,
+                        "failed_tasks": 0,
+                        "total_tokens": b.total_tokens,
+                    })
+                })
+                .collect();
+            HttpResponse::Ok().json(groups)
+        }
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
     }
 }

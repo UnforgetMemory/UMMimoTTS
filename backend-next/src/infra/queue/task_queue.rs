@@ -72,6 +72,8 @@ impl TaskQueue {
     /// 6. Transitions the task to `Processing`.
     /// 7. Enqueues each chunk with the `ChunkQueue`.
     ///
+    /// On failure the task status is reset to `Pending` so the caller can retry.
+    ///
     /// The task must already exist in the DB (created via the service layer).
     pub async fn enqueue(&self, task_id: &str) -> Result<(), AppError> {
         let mut task = self
@@ -90,15 +92,29 @@ impl TaskQueue {
         self.task_repo.update_status(task_id, &TaskStatus::Queued)?;
         self.task_repo.update_status(task_id, &TaskStatus::Chunking)?;
 
-        // Tokenize and split into chunks.
-        let sentences = self.chunker.tokenize(&task.content).await?;
+        // Tokenize and split into chunks — on failure, reset status so caller can retry.
+        let tokenize_result = self.chunker.tokenize(&task.content).await;
+        let sentences = match tokenize_result {
+            Ok(s) => s,
+            Err(e) => {
+                warn!("enqueue: tokenize failed for task {task_id}, resetting to Pending: {e}");
+                let _ = self.task_repo.update_status(task_id, &TaskStatus::Pending);
+                return Err(e);
+            }
+        };
+
         let total_tokens: i64 = sentences.iter().map(|s| s.token_count).sum();
         task.total_tokens = total_tokens;
 
         let segments = self
             .chunker
             .split(&task.content, None)
-            .await?;
+            .await
+            .map_err(|e| {
+                warn!("enqueue: split failed for task {task_id}, resetting to Pending: {e}");
+                let _ = self.task_repo.update_status(task_id, &TaskStatus::Pending);
+                e
+            })?;
 
         let task_id_obj = Id::from_str(task_id)?;
         let chunks: Vec<Chunk> = segments

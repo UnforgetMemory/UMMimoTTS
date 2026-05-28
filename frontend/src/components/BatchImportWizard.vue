@@ -3,6 +3,7 @@
     <DialogContent
       class="max-w-[95vw] w-full h-[90vh] flex flex-col p-0 sm:max-w-[90vw]"
       :show-close-button="false"
+      prevent-overlay-close
     >
       <!-- Header -->
       <DialogHeader class="px-6 py-4 border-b shrink-0">
@@ -140,80 +141,82 @@
               <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
             </div>
 
-            <!-- Paginated table -->
-            <div class="border rounded-lg overflow-hidden flex-1 min-h-0 flex flex-col">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead class="w-14">#</TableHead>
-                    <TableHead>任务名</TableHead>
-                    <TableHead class="w-44">风格</TableHead>
-                    <TableHead class="w-36">音色</TableHead>
-                    <TableHead class="w-24 text-right">Token</TableHead>
-                    <TableHead class="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  <TableRow v-for="row in flattenedItems" :key="row.key">
-                    <template v-if="row.type === 'data'">
-                      <TableCell class="font-mono text-xs text-muted-foreground">{{ row.item.index + 1 }}</TableCell>
-                      <TableCell>
-                        <div class="text-sm truncate max-w-[200px]">{{ row.item.title || row.item.text_preview }}</div>
-                      </TableCell>
-                      <TableCell>
-                        <span class="text-sm text-muted-foreground">{{ row.item.context || '默认' }}</span>
-                      </TableCell>
-                      <TableCell>
-                        <span class="text-sm">{{ getVoiceName(row.item.voice || '') || '默认' }}</span>
-                      </TableCell>
-                      <TableCell class="text-right text-sm">{{ row.item.token_count?.toLocaleString() || '…' }}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon-sm" @click="toggleEditItem(row.item.index)">
-                          <PencilIcon class="w-3 h-3" />
-                        </Button>
-                      </TableCell>
-                    </template>
-                    <TableCell v-else colspan="6" class="bg-muted/5 p-3">
-                      <div class="flex flex-wrap items-end gap-3">
-                        <div class="flex flex-col gap-1.5">
-                          <Label class="text-xs">任务名</Label>
-                          <Input v-model="editForm.title" class="h-7 text-xs w-44" placeholder="默认" />
+            <!-- Table container -->
+            <div class="border rounded-lg flex-1 min-h-0 flex flex-col">
+              <!-- Scrollable table area -->
+              <div class="flex-1 min-h-0 overflow-y-auto">
+                <Table>
+                  <TableHeader class="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead class="w-14">#</TableHead>
+                      <TableHead>任务名</TableHead>
+                      <TableHead class="w-44">风格</TableHead>
+                      <TableHead class="w-36">音色</TableHead>
+                      <TableHead class="w-24 text-right">Token</TableHead>
+                      <TableHead class="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow v-for="row in flattenedItems" :key="row.key">
+                      <template v-if="row.type === 'data'">
+                        <TableCell class="font-mono text-xs text-muted-foreground">{{ row.item.index + 1 }}</TableCell>
+                        <TableCell>
+                          <div class="text-sm truncate max-w-[200px]">{{ row.item.title || row.item.text_preview }}</div>
+                        </TableCell>
+                        <TableCell>
+                          <span class="text-sm text-muted-foreground">{{ row.item.context || '默认' }}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span class="text-sm">{{ getVoiceName(row.item.voice || '') || '默认' }}</span>
+                        </TableCell>
+                        <TableCell class="text-right text-sm">{{ row.item.token_count?.toLocaleString() || '…' }}</TableCell>
+                        <TableCell>
+                          <Button variant="ghost" size="icon-sm" @click="toggleEditItem(row.item.index)">
+                            <PencilIcon class="w-3 h-3" />
+                          </Button>
+                        </TableCell>
+                      </template>
+                      <TableCell v-else colspan="6" class="bg-muted/5 p-3">
+                        <div class="flex flex-wrap items-end gap-3">
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">任务名</Label>
+                            <Input v-model="editForm.title" class="h-7 text-xs w-44" placeholder="默认" />
+                          </div>
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">风格</Label>
+                            <Input v-model="editForm.context" class="h-7 text-xs w-44" placeholder="默认" />
+                          </div>
+                          <div class="flex flex-col gap-1.5">
+                            <Label class="text-xs">音色</Label>
+                            <Select v-model="editForm.voice">
+                              <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__default__">默认</SelectItem>
+                                <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div class="flex items-center gap-1.5">
+                            <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
+                            <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
+                            <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
+                            <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
+                            <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(row.item)">保存</Button>
+                          </div>
                         </div>
-                        <div class="flex flex-col gap-1.5">
-                          <Label class="text-xs">风格</Label>
-                          <Input v-model="editForm.context" class="h-7 text-xs w-44" placeholder="默认" />
-                        </div>
-                        <div class="flex flex-col gap-1.5">
-                          <Label class="text-xs">音色</Label>
-                          <Select v-model="editForm.voice">
-                            <SelectTrigger class="h-7 text-xs w-36"><SelectValue placeholder="默认" /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="__default__">默认</SelectItem>
-                              <SelectItem v-for="v in voices" :key="v.id" :value="v.id">{{ v.name }}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                          <span v-if="editSaveStatus === 'saving'" class="text-[10px] text-muted-foreground flex items-center gap-1"><Loader2Icon class="w-3 h-3 animate-spin" />保存中...</span>
-                          <span v-else-if="editSaveStatus === 'success'" class="text-[10px] text-green-500">✓ 已保存</span>
-                          <span v-else-if="editSaveStatus === 'error'" class="text-[10px] text-destructive">保存失败</span>
-                          <Button variant="ghost" size="sm" class="h-6 text-xs" @click="cancelEditItem">取消</Button>
-                          <Button size="sm" class="h-6 text-xs" @click="handleSaveEdit(row.item)">保存</Button>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-
-            <!-- Pagination -->
-            <div class="flex items-center justify-between shrink-0">
-              <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
-              <div class="flex items-center gap-2">
-                <Button variant="outline" size="sm" :disabled="currentPage === 0" @click="goToPage(currentPage - 1)">上一页</Button>
-                <span class="text-sm text-muted-foreground">第 {{ currentPage + 1 }} / {{ totalPages }} 页</span>
-                <Button variant="outline" size="sm" :disabled="currentPage >= totalPages - 1" @click="goToPage(currentPage + 1)">下一页</Button>
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+              <!-- Pagination - always visible at bottom -->
+              <div class="bg-background border-t px-4 py-3 flex items-center justify-between shrink-0">
+                <span class="text-sm text-muted-foreground">共 {{ totalCount.toLocaleString() }} 条</span>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" size="sm" :disabled="currentPage === 0" @click="goToPage(currentPage - 1)">上一页</Button>
+                  <span class="text-sm text-muted-foreground">第 {{ currentPage + 1 }} / {{ totalPages }} 页</span>
+                  <Button variant="outline" size="sm" :disabled="currentPage >= totalPages - 1" @click="goToPage(currentPage + 1)">下一页</Button>
+                </div>
               </div>
             </div>
           </template>
@@ -230,54 +233,18 @@
         </div>
 
         <!-- Step 3: Confirm & Submit -->
-        <div v-if="currentStep === 3" class="flex flex-col gap-6 flex-1 min-h-0 max-w-2xl mx-auto w-full">
-          <div class="flex flex-col gap-4">
-            <h3 class="text-sm font-medium text-muted-foreground">确认提交</h3>
-            <div class="border rounded-lg p-4 flex flex-col gap-3">
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">总条目数</span><span class="font-medium">{{ totalCount }} 个</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">默认音色</span><span class="font-medium">{{ submitConfig.default_voice ? getVoiceName(submitConfig.default_voice) : '未选择' }}</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">默认模型</span><span class="font-medium">{{ submitConfig.default_model }}</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">批次名称</span><span class="font-medium">{{ submitConfig.group_name || '自动生成' }}</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">文件数</span><span class="font-medium">{{ fileStats.length }} 个</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">总字符数</span><span class="font-medium">{{ totalChars.toLocaleString() }}</span></div>
-              <Separator />
-              <div class="flex items-center justify-between text-sm"><span class="text-muted-foreground">总 Tokens</span><span class="font-medium">{{ totalTokens.toLocaleString() }}</span></div>
-            </div>
-
-            <!-- ===== File Grouping Preview ===== -->
-            <div class="border rounded-lg p-4 flex flex-col gap-3">
-              <h4 class="text-xs font-medium text-muted-foreground uppercase tracking-wider">文件任务分组</h4>
-              <div class="flex flex-col divide-y">
-                <div class="flex items-center gap-4 py-2 text-xs text-muted-foreground font-medium">
-                  <span class="flex-1 min-w-0">文件名</span>
-                  <span class="w-16 text-right">条目数</span>
-                  <span class="w-20 text-right">字符数</span>
-                  <span class="w-14 text-right">任务数</span>
-                </div>
-                <div v-for="f in fileStats" :key="f.filename" class="flex items-center gap-4 py-2 text-sm">
-                  <span class="flex-1 min-w-0 truncate" :title="f.filename">{{ f.filename }}</span>
-                  <span class="w-16 text-right text-muted-foreground">{{ f.item_count }}</span>
-                  <span class="w-20 text-right text-muted-foreground">{{ f.char_count.toLocaleString() }}</span>
-                  <span class="w-14 text-right font-medium">1</span>
-                </div>
-              </div>
-              <Separator />
-              <div class="flex items-center justify-between text-xs text-muted-foreground">
-                <span>共 <strong>{{ fileStats.length }}</strong> 个文件 → <strong>{{ fileStats.length }}</strong> 个合成任务</span>
-                <span>总计 {{ totalChars.toLocaleString() }} 字符</span>
-              </div>
-            </div>
-
-            <div v-if="submitError" class="flex items-center gap-2 text-sm text-destructive bg-destructive/10 px-4 py-2 rounded-lg">
-              <AlertCircleIcon class="w-4 h-4" />{{ submitError }}
-            </div>
-          </div>
-        </div>
+        <BatchImportPanel
+          v-if="currentStep === 3"
+          :total-count="totalCount"
+          :default-voice="submitConfig.default_voice"
+          :default-model="submitConfig.default_model"
+          :group-name="submitConfig.group_name"
+          :file-stats="fileStats"
+          :total-chars="totalChars"
+          :total-tokens="totalTokens"
+          :voices="voices"
+          :submit-error="submitError"
+        />
 
         <!-- Step 4: Success -->
         <div v-if="currentStep === 4" class="flex flex-col items-center justify-center gap-4 py-12">
@@ -314,7 +281,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 
-import { type Voice } from '@/api/client'
+import { apiV2, type Voice } from '@/api/client'
 import { useTaskStore } from '@/stores/task'
 import { useBatchStore } from '@/stores/batch'
 
@@ -347,10 +314,10 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { Progress } from '@/components/ui/progress'
-import { Separator } from '@/components/ui/separator'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { UploadIcon, XIcon, FileTextIcon, AlertCircleIcon, CheckCircleIcon, TrashIcon, ArrowUpDownIcon, Loader2Icon, PencilIcon } from 'lucide-vue-next'
+import BatchImportPanel from '@/components/BatchImportPanel.vue'
 
 interface Props { open: boolean }
 interface Emits { (e: 'update:open', v: boolean): void; (e: 'imported', g: string): void }
@@ -514,23 +481,18 @@ async function handleSubmit() {
     })
     const groupId = group.id
 
-    // Step 2 – Add each parsed segment as a task item
-    const taskIds: string[] = []
-    for (const seg of parsedSegments.value) {
-      const taskId = await taskStore.createTask({
-        text: seg.text,
-        voice: seg.voice || submitConfig.default_voice,
-        model: seg.model || submitConfig.default_model,
-        context: seg.context || submitConfig.default_context || undefined,
-        task_name: seg.title || undefined,
-      })
-      taskIds.push(taskId)
-    }
+    // Step 2 – Add all parsed segments as batch items (single request)
+    const items = parsedSegments.value.map((seg, i) => ({
+      seq: i + 1,
+      filename: seg.source_filename || seg.title || `segment_${i + 1}.txt`,
+      content: seg.text,
+    }))
+    await apiV2.addBatchItems(groupId, items)
 
-    // Step 3 – Submit / enqueue the batch for processing
-    await batchStore.submitGroup(groupId)
+    // Step 3 – Submit the batch (creates tasks + enqueues all at once)
+    await apiV2.submitBatch(groupId)
 
-    submitResult.value = { group_id: groupId, task_count: taskIds.length }
+    submitResult.value = { group_id: groupId, task_count: parsedSegments.value.length }
     currentStep.value = 4
     // Refresh task + group lists
     taskStore.loadTasks()

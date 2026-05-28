@@ -68,10 +68,34 @@ impl TaskService {
         self.task_queue.enqueue(task_id).await
     }
 
+    /// Fetch tasks by batch ID.
+    pub fn get_by_batch(&self, batch_id: &str) -> Result<Vec<Task>, AppError> {
+        self.task_repo.find_by_batch(batch_id)
+    }
+
     /// Recover an incomplete task after a restart (cache miss / crash).
     ///
     /// Delegates to `TaskQueue::continue_task`.
     pub async fn continue_task(&self, task_id: &str) -> Result<(), AppError> {
         self.task_queue.continue_task(task_id)
+    }
+
+    /// Retry a failed task: reset status to Queued and re-enqueue.
+    pub async fn retry(&self, task_id: &str) -> Result<(), AppError> {
+        let mut task = self
+            .task_repo
+            .find_by_id(task_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Task {task_id}")))?;
+
+        if !matches!(task.status, crate::domain::task::TaskStatus::Failed | crate::domain::task::TaskStatus::MergingFailed) {
+            return Err(AppError::InvalidInput(
+                "Task is not in a retryable state".into(),
+            ));
+        }
+
+        task.transition_to(crate::domain::task::TaskStatus::Queued)
+            .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+        self.task_repo.update_status(task_id, &task.status)?;
+        self.task_queue.enqueue(task_id).await
     }
 }

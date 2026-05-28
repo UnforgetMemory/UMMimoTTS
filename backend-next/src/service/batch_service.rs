@@ -10,13 +10,13 @@
 
 use crate::domain::batch::{Batch, BatchPendingItem};
 use crate::domain::events::DomainEvent;
-use crate::infra::persistence::batch_repo::{BatchRepo, ItemOverride, PendingItemRow};
+use crate::infra::persistence::batch_repo::{BatchRepo, ItemOverride, PendingItemRow, SubmitTaskResult};
 use crate::infra::sse_bus::SseBus;
 use crate::service::task_service::TaskService;
-use crate::domain::task::Task;
 use crate::shared::error::AppError;
 use crate::shared::id::Id;
 use std::sync::Arc;
+use tracing::error;
 
 /// Stateless service wrapping batch persistence + task orchestration.
 pub struct BatchService {
@@ -77,8 +77,8 @@ impl BatchService {
             seq,
             filename: filename.to_string(),
             content: content.to_string(),
-            total_chars: content.len() as i64,
-            token_estimate: (content.len() as i64) / 2,
+            total_chars: content.chars().count() as i64,
+            token_estimate: (content.chars().count() as i64) / 2,
             custom_voice: None,
             custom_model: None,
             custom_title: None,
@@ -93,6 +93,45 @@ impl BatchService {
 
         self.batch_repo.insert_pending_item(batch_id, &item)?;
         Ok(())
+    }
+
+    /// Batch-add multiple pending items in a single DB transaction.
+    ///
+    /// Reads the batch defaults once and applies them to all items.
+    pub fn add_items(&self, batch_id: &str, items: &[crate::routes::batches::AddItemRequest]) -> Result<(), AppError> {
+        let batch = self
+            .batch_repo
+            .find_batch(batch_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Batch {batch_id}")))?;
+
+        let pending: Vec<BatchPendingItem> = items
+            .iter()
+            .map(|req| BatchPendingItem {
+                seq: req.seq,
+                filename: req.filename.clone(),
+                content: req.content.clone(),
+                total_chars: req.content.chars().count() as i64,
+                token_estimate: (req.content.chars().count() as i64) / 2,
+                custom_voice: None,
+                custom_model: None,
+                custom_title: None,
+                custom_style: None,
+                custom_speed: None,
+                effective_voice: batch.voice.clone(),
+                effective_model: batch.model.clone(),
+                effective_title: req.filename.clone(),
+                effective_style: batch.style.clone(),
+                effective_speed: batch.speed,
+            })
+            .collect();
+
+        self.batch_repo.batch_insert_pending_items(batch_id, &pending)?;
+        Ok(())
+    }
+
+    /// Delete a batch and cascade to pending items, tasks, and groups.
+    pub fn delete(&self, batch_id: &str) -> Result<(), AppError> {
+        self.batch_repo.delete_batch(batch_id)
     }
 
     /// Update a pending item's overrides.
@@ -157,44 +196,50 @@ impl BatchService {
 
     /// Submit a batch for processing.
     ///
-    /// 1. Calls `BatchRepo::submit_batch` which creates `Task` rows from pending items.
-    /// 2. Enqueues each task via `TaskService::enqueue`.
-    /// 3. Publishes batch-submitted domain events.
+    /// 1. Creates `Task` rows from pending items (fast, DB only).
+    /// 2. Returns immediately — enqueueing runs in a background tokio task
+    ///    (avoids frontend timeout when many items call MIMO chunker HTTP API).
     pub async fn submit(&self, batch_id: &str) -> Result<Vec<TaskSummary>, AppError> {
-        // 1. Create child Tasks from pending items
-        let tasks: Vec<Task> = self.batch_repo.submit_batch(batch_id)?;
+        // 1. Create child Tasks from pending items (fast, DB only — no content loaded)
+        let results: Vec<SubmitTaskResult> = self.batch_repo.submit_batch(batch_id)?;
 
-        // 2. Enqueue each task
-        let mut results = Vec::with_capacity(tasks.len());
-        for task in &tasks {
-            match self.task_service.enqueue(&task.id.to_string()).await {
-                Ok(()) => {
-                    self.sse_bus.publish(
-                        &format!("batch:{batch_id}"),
-                        &DomainEvent::TaskEnqueued {
-                            task_id: task.id.clone(),
-                            batch_id: Some(Id::from_str(batch_id).unwrap()),
-                        },
-                    );
-                    results.push(TaskSummary {
-                        id: task.id.to_string(),
-                        title: task.title.clone(),
-                        enqueued: true,
-                        error: None,
-                    });
-                }
-                Err(e) => {
-                    results.push(TaskSummary {
-                        id: task.id.to_string(),
-                        title: task.title.clone(),
-                        enqueued: false,
-                        error: Some(e.to_string()),
-                    });
+        // Prepare summaries for immediate return
+        let summaries: Vec<TaskSummary> = results
+            .iter()
+            .map(|r| TaskSummary {
+                id: r.id.clone(),
+                title: r.title.clone(),
+                enqueued: false,
+                error: None,
+            })
+            .collect();
+
+        // 2. Spawn background enqueue so the HTTP response returns quickly
+        let task_service = self.task_service.clone();
+        let sse_bus = self.sse_bus.clone();
+        let batch_id_owned = batch_id.to_string();
+        let task_ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
+
+        tokio::spawn(async move {
+            for task_id in &task_ids {
+                match task_service.enqueue(task_id).await {
+                    Ok(()) => {
+                        sse_bus.publish(
+                            &format!("batch:{batch_id_owned}"),
+                            &DomainEvent::TaskEnqueued {
+                                task_id: Id::from_str(task_id).unwrap(),
+                                batch_id: Some(Id::from_str(&batch_id_owned).unwrap()),
+                            },
+                        );
+                    }
+                    Err(e) => {
+                        error!("Failed to enqueue task {task_id}: {e}");
+                    }
                 }
             }
-        }
+        });
 
-        Ok(results)
+        Ok(summaries)
     }
 }
 
