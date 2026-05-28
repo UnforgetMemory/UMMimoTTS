@@ -77,7 +77,8 @@
             id="text"
             v-model="form.text"
             placeholder="输入要合成的文本..."
-            class="flex-1 text-sm resize-none min-h-[120px]"
+            class="text-sm w-full"
+            :style="{ minHeight: '150px', height: 'calc(100% - 50px)' }"
             @input="updateCounts"
           />
           <div class="flex items-center justify-between mt-1.5">
