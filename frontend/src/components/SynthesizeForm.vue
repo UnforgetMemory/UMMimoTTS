@@ -140,15 +140,25 @@
         </div>
 
         <!-- 模型选择 -->
-        <div v-if="configTab === 'model'" class="space-y-3">
-          <Select v-model="form.model">
-            <SelectTrigger>
-              <SelectValue placeholder="选择模型" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts (预置音色)</SelectItem>
-            </SelectContent>
-          </Select>
+        <div v-if="configTab === 'model'" class="flex-1 overflow-y-auto space-y-2 pr-1">
+          <div
+            v-for="model in models"
+            :key="model.id"
+            class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all"
+            :class="form.model === model.id 
+              ? 'bg-primary/5 border-primary/50 shadow-sm' 
+              : 'hover:bg-muted/50'"
+            @click="form.model = model.id"
+          >
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <SparklesIcon class="w-5 h-5 text-primary" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium">{{ model.name }}</div>
+              <p class="text-xs text-muted-foreground">{{ model.description }}</p>
+            </div>
+            <CheckIcon v-if="form.model === model.id" class="w-5 h-5 text-primary shrink-0" />
+          </div>
         </div>
 
         <!-- 音色选择 -->
@@ -159,35 +169,38 @@
           <div
             v-for="voice in voices"
             :key="voice.id"
-            class="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-all"
+            class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all"
             :class="form.voice === voice.id 
               ? 'bg-primary/5 border-primary/50 shadow-sm' 
               : 'hover:bg-muted/50'"
             @click="form.voice = voice.id"
           >
-            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-4 h-4 text-primary" />
-              <UserRoundIcon v-else class="w-4 h-4 text-primary" />
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+              <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-5 h-5 text-primary" />
+              <UserRoundIcon v-else class="w-5 h-5 text-primary" />
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium">{{ voice.name }}</span>
-                <span class="text-xs text-muted-foreground">{{ voice.language }}</span>
+                <Badge variant="secondary" class="text-[10px] px-1">{{ voice.language }}</Badge>
               </div>
-              <p class="text-xs text-muted-foreground truncate">{{ voice.style }}</p>
+              <p class="text-xs text-muted-foreground">{{ voice.style }}</p>
             </div>
-            <Button
-              v-if="voice.preview_url"
-              size="sm"
-              variant="ghost"
-              class="h-8 w-8 p-0 shrink-0"
-              @click.stop="playVoicePreview(voice.id)"
-              :aria-label="previewingVoice === voice.id ? '停止' : '试听'"
-            >
-              <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-4 h-4 animate-spin" />
-              <PauseIcon v-else-if="previewingVoice === voice.id" class="w-4 h-4" />
-              <PlayIcon v-else class="w-4 h-4" />
-            </Button>
+            <div class="flex items-center gap-1 shrink-0">
+              <Button
+                v-if="voice.preview_url"
+                size="sm"
+                variant="ghost"
+                class="h-8 w-8 p-0"
+                @click.stop="playVoicePreview(voice.id)"
+                :aria-label="previewingVoice === voice.id ? '停止' : '试听'"
+              >
+                <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-4 h-4 animate-spin" />
+                <PauseIcon v-else-if="previewingVoice === voice.id" class="w-4 h-4" />
+                <PlayIcon v-else class="w-4 h-4" />
+              </Button>
+              <CheckIcon v-if="form.voice === voice.id" class="w-5 h-5 text-primary" />
+            </div>
           </div>
         </div>
       </div>
@@ -207,11 +220,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Play as PlayIcon, 
   Pause as PauseIcon,
   Loader2 as Loader2Icon, 
+  Check as CheckIcon,
   User as UserIcon,
   UserRound as UserRoundIcon,
   Sparkles as SparklesIcon
@@ -223,6 +236,10 @@ const configStore = useConfigStore()
 const emit = defineEmits<{
   submitted: [taskId: string]
 }>()
+
+const models = [
+  { id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts', description: '小米 MIMO TTS 模型，支持预置音色' },
+]
 
 const voices = ref<Voice[]>([])
 const voicesLoading = ref(false)
