@@ -476,43 +476,52 @@ export const api = {
   },
 
   subscribeToTask(taskId: string, onEvent: (event: TaskEvent) => void): EventSource {
-    const eventSource = new EventSource(`/api/v1/sse/tasks/${taskId}`)
+    // V2 SSE: /api/v2/events?channel=task:{id}
+    // V2 backend sends DomainEvent JSON with `type` discriminator
+    const eventSource = new EventSource(`/api/v2/events?channel=task:${taskId}`)
     
-    // 处理命名事件（后端用 event: xxx 推送）
-    eventSource.addEventListener('status_changed', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        onEvent(data)
-      } catch (error) {
-        console.error('Failed to parse status_changed event:', error)
-      }
-    })
-    
-    eventSource.addEventListener('completed', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        onEvent(data)
-      } catch (error) {
-        console.error('Failed to parse completed event:', error)
-      }
-    })
-    
-    eventSource.addEventListener('failed', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        onEvent(data)
-      } catch (error) {
-        console.error('Failed to parse failed event:', error)
-      }
-    })
-    
-    // 兼容匿名消息（发送纯 data: 的情况，如 connected）
+    // V2 DomainEvents use `type` field for event type discrimination
+    // Map V2 DomainEvent types to TaskEvent format
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
-        // 只处理匿名消息，命名事件已由 addEventListener 处理
-        if (!data.event_type) {
-          onEvent(data)
+        const eventType = data.type
+        
+        if (eventType === 'TaskCompleted') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'completed',
+            status: 'completed',
+            progress: 1.0,
+          })
+        } else if (eventType === 'TaskFailed') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'failed',
+            status: 'failed',
+            error: data.error,
+          })
+        } else if (eventType === 'AllChunksDone') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'status_changed',
+            status: 'synthesizing',
+            progress: 1.0,
+          })
+        } else if (eventType === 'ChunkCompleted') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'status_changed',
+            status: 'synthesizing',
+            progress: data.seq / (data.total_chunks || 10),
+          })
+        } else if (eventType === 'TaskEnqueued') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'status_changed',
+            status: 'queued',
+            progress: 0,
+          })
         }
       } catch (error) {
         console.error('Failed to parse SSE message:', error)
@@ -522,6 +531,26 @@ export const api = {
     // 出错时不 close()，让 EventSource 自动重连
     eventSource.onerror = () => {
       console.warn('SSE connection error for task, will auto-reconnect:', taskId)
+    }
+    
+    return eventSource
+  },
+
+  /** Subscribe to batch/group events via V2 SSE */
+  subscribeToChannel(channel: string, onEvent: (event: any) => void): EventSource {
+    const eventSource = new EventSource(`/api/v2/events?channel=${channel}`)
+    
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        onEvent(data)
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error)
+      }
+    }
+    
+    eventSource.onerror = () => {
+      console.warn('SSE connection error for channel, will auto-reconnect:', channel)
     }
     
     return eventSource

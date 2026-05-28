@@ -181,25 +181,20 @@ export const useTaskStore = defineStore('task', () => {
     loading.value = true
     error.value = null
     try {
-      // Use V1 API - POST /api/v1/tts/synthesize
-      const response = await api.synthesize({
-        text: request.text,
+      const task = await apiV2.createTask({
+        content: request.text,
         voice: request.voice,
         model: request.model,
-        context: request.context,
-        api_key: request.api_key,
-        task_name: request.task_name,
+        title: request.task_name || `Synthesized ${new Date().toLocaleString('zh-CN')}`,
       })
-      
-      const taskId = response.task_id
-      
+      await apiV2.enqueueTask(task.id)
       // Use lightweight page reload instead of full loadTasks
       await loadPage(0)
 
       // 订阅该任务的 SSE 事件
-      subscribeToTaskEvents(taskId)
+      subscribeToTaskEvents(task.id)
 
-      return taskId
+      return task.id
     } catch (err: any) {
       error.value = err.response?.data?.message || err.message || '创建任务失败'
       throw err
