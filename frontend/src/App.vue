@@ -70,7 +70,7 @@
                       variant="ghost"
                       size="icon-sm"
                       class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="pauseGroup(group.id)"
+                      @click.stop="handlePauseGroup(group.id)"
                       :disabled="batchStore.loading"
                     >
                       <PauseIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -80,7 +80,7 @@
                       variant="ghost"
                       size="icon-sm"
                       class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="resumeGroup(group.id)"
+                      @click.stop="handleResumeGroup(group.id)"
                       :disabled="batchStore.loading"
                     >
                       <PlayIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -90,7 +90,7 @@
                       variant="ghost"
                       size="icon-sm"
                       class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="downloadGroup(group.id)"
+                      @click.stop="handleDownloadGroup(group.id)"
                     >
                       <DownloadIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                     </Button>
@@ -99,7 +99,7 @@
                       variant="ghost"
                       size="icon-sm"
                       class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="retryGroup(group.id)"
+                      @click.stop="handleRetryGroup(group.id)"
                       :disabled="batchStore.loading"
                     >
                       <RotateCcwIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
@@ -109,7 +109,7 @@
                       variant="ghost"
                       size="icon-sm"
                       class="h-5 w-5 sm:h-6 sm:w-6 text-destructive hover:text-destructive"
-                      @click.stop="deleteGroup(group.id)"
+                      @click.stop="handleDeleteGroup(group.id)"
                       :disabled="batchStore.loading"
                     >
                       <TrashIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
