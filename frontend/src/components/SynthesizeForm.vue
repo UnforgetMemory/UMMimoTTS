@@ -1,198 +1,213 @@
 <template>
-  <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg">
-    <CardHeader class="pb-3 px-4 md:px-6 lg:px-8">
-      <CardTitle>新建合成任务</CardTitle>
-      <CardDescription>输入文本并选择音色进行语音合成</CardDescription>
+  <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg flex flex-col h-full">
+    <!-- 首行：标题 + 配置按钮 -->
+    <CardHeader class="pb-2 px-4 md:px-6 lg:px-8">
+      <div class="flex items-center justify-between">
+        <CardTitle class="text-lg">合成任务</CardTitle>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          class="h-8 px-2 gap-1"
+          @click="showConfig = !showConfig"
+        >
+          <SettingsIcon class="w-4 h-4" />
+          <span class="text-xs">配置</span>
+          <ChevronDownIcon 
+            class="w-3 h-3 transition-transform"
+            :class="{ 'rotate-180': showConfig }"
+          />
+        </Button>
+      </div>
     </CardHeader>
-    <CardContent class="space-y-5 sm:space-y-6 pt-0 px-4 md:px-6 lg:px-8">
-      <!-- Task Name Input -->
-      <div class="space-y-2">
-        <Label for="taskName">任务名称（可选）</Label>
-        <Input
-          id="taskName"
-          v-model="form.taskName"
-          placeholder="留空则自动生成（例如：任务_20240519_143022）"
-          class="text-sm"
-        />
-        <p class="text-xs text-muted-foreground">
-          相同名称的任务会自动添加序号后缀以避免冲突
-        </p>
+
+    <!-- 配置面板（可展开） -->
+    <Transition name="slide-down">
+      <div v-if="showConfig" class="border-b px-4 md:px-6 lg:px-8 pb-4">
+        <!-- 标签页切换 -->
+        <div class="flex gap-1 mb-3 bg-muted p-1 rounded-lg">
+          <button
+            class="flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors"
+            :class="configTab === 'model' ? 'bg-background shadow-sm' : 'hover:bg-background/50'"
+            @click="configTab = 'model'"
+          >
+            模型
+          </button>
+          <button
+            class="flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors"
+            :class="configTab === 'voice' ? 'bg-background shadow-sm' : 'hover:bg-background/50'"
+            @click="configTab = 'voice'"
+          >
+            音色
+          </button>
+        </div>
+
+        <!-- 模型选择 -->
+        <div v-if="configTab === 'model'" class="space-y-3">
+          <Select v-model="form.model">
+            <SelectTrigger>
+              <SelectValue placeholder="选择模型" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts (预置音色)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <!-- 音色选择 -->
+        <div v-if="configTab === 'voice'" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+          <div v-if="voicesLoading" class="flex items-center justify-center py-8">
+            <Loader2Icon class="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+          <div
+            v-for="voice in voices"
+            :key="voice.id"
+            class="flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-all"
+            :class="form.voice === voice.id 
+              ? 'bg-primary/5 border-primary/50 shadow-sm' 
+              : 'hover:bg-muted/50'"
+            @click="form.voice = voice.id"
+          >
+            <div class="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+              <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-4 h-4 text-primary" />
+              <UserRoundIcon v-else class="w-4 h-4 text-primary" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-medium">{{ voice.name }}</span>
+                <span class="text-xs text-muted-foreground">{{ voice.language }}</span>
+              </div>
+              <p class="text-xs text-muted-foreground truncate">{{ voice.style }}</p>
+            </div>
+            <Button
+              v-if="voice.preview_url"
+              size="sm"
+              variant="ghost"
+              class="h-8 w-8 p-0 shrink-0"
+              @click.stop="playVoicePreview(voice.id)"
+              :aria-label="previewingVoice === voice.id ? '停止' : '试听'"
+            >
+              <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-4 h-4 animate-spin" />
+              <PauseIcon v-else-if="previewingVoice === voice.id" class="w-4 h-4" />
+              <PlayIcon v-else class="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 主内容区 -->
+    <CardContent class="flex-1 flex flex-col pt-3 px-4 md:px-6 lg:px-8 pb-4 overflow-hidden">
+      <!-- 模型 & 音色徽章 -->
+      <div class="flex items-center gap-2 mb-3 flex-wrap">
+        <Badge variant="secondary" class="text-xs gap-1">
+          <SparklesIcon class="w-3 h-3" />
+          {{ form.model }}
+        </Badge>
+        <Badge v-if="selectedVoice" variant="outline" class="text-xs gap-1">
+          <UserIcon v-if="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'" class="w-3 h-3" />
+          <UserRoundIcon v-else class="w-3 h-3" />
+          {{ selectedVoice.name }}
+        </Badge>
+        <Badge v-else variant="destructive" class="text-xs">
+          请选择音色
+        </Badge>
       </div>
 
-      <!-- Text Input -->
-      <div class="space-y-2">
-        <div class="flex items-center justify-between">
-          <Label for="text" class="text-sm sm:text-base">合成文本 <span class="text-destructive">*</span></Label>
-          <Button 
-            v-if="form.text" 
-            variant="ghost" 
-            size="sm"
-            class="h-6 text-xs"
-            @click="clearText"
-          >
-            清空
-          </Button>
+      <!-- 任务名称 -->
+      <div class="mb-3">
+        <Input
+          v-model="form.taskName"
+          placeholder="任务名称（可选）"
+          class="text-sm h-9"
+        />
+      </div>
+
+      <!-- 文本合成区域 -->
+      <div class="flex-1 flex flex-col min-h-[200px] mb-3">
+        <div class="flex items-center justify-between mb-1.5">
+          <Label for="text" class="text-sm">
+            合成文本 <span class="text-destructive">*</span>
+          </Label>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-muted-foreground">{{ charCount }} 字</span>
+            <Button 
+              v-if="form.text" 
+              variant="ghost" 
+              size="sm"
+              class="h-6 text-xs px-2"
+              @click="clearText"
+            >
+              清空
+            </Button>
+          </div>
         </div>
         <Textarea
           id="text"
           v-model="form.text"
           placeholder="输入要合成的文本..."
-          rows="5"
-          class="text-sm sm:text-base"
+          class="flex-1 text-sm resize-none min-h-[120px]"
           @input="updateCounts"
         />
-        <div class="text-xs text-muted-foreground flex flex-wrap gap-2 sm:gap-3">
-          <span>字符数: {{ charCount }}</span>
-          <span>预估 Token: {{ estimatedTokens }}</span>
-          <span v-if="estimatedAudioTime" class="text-primary">预估时长: {{ estimatedAudioTime }}</span>
-          <span v-if="charCount > 2000" class="text-blue-500">
-            将自动分 {{ Math.ceil(charCount / 2000) }} 片均匀合成
-          </span>
-        </div>
-        <div v-if="charCount > 2000" class="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-          ⚠️ 文本较长，将自动分 {{ Math.ceil(charCount / 2000) }} 片（每分钟 10 次 API 限制，约需 {{ Math.ceil(charCount / 2000) * 6 }} 秒）
-        </div>
-      </div>
-
-      <!-- Model Select -->
-      <div class="space-y-2">
-        <Label for="model">模型</Label>
-        <Select v-model="form.model">
-          <SelectTrigger>
-            <SelectValue placeholder="选择模型" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="mimo-v2.5-tts">mimo-v2.5-tts (预置音色)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      <!-- Voice Selection -->
-      <div class="space-y-2">
-        <Label>音色 <span class="text-destructive">*</span></Label>
-        
-        <div v-if="voicesLoading" class="text-sm text-muted-foreground">加载音色中...</div>
-        <div v-else class="space-y-2.5 xl:grid xl:grid-cols-2 xl:gap-2.5 xl:space-y-0">
-          <div
-            v-for="voice in voices"
-            :key="voice.id"
-            class="flex items-center justify-between p-4 rounded-lg border-2 cursor-pointer transition-all duration-150 active:scale-[0.98]"
-            :class="{
-              'border-primary bg-primary-light dark:bg-primary/10': form.voice === voice.id,
-              'border-border hover:border-primary/50 hover:bg-muted/50': form.voice !== voice.id
-            }"
-            @click="form.voice = voice.id"
-            tabindex="0"
-            @keydown.enter="form.voice = voice.id"
-            @keydown.space.prevent="form.voice = voice.id"
-          >
-            <!-- 左侧：选中标记 + 音色信息 -->
-            <div class="flex items-center gap-3 flex-1 min-w-0">
-              <!-- 选中标记（仅选中时显示） -->
-              <CheckIcon v-if="form.voice === voice.id" 
-                         class="w-5 h-5 text-primary shrink-0 mr-1" />
-              <div v-else class="w-5 shrink-0 mr-1"></div>
-              
-              <!-- 音色名称和描述 -->
-              <div class="min-w-0 flex-1">
-                <div class="font-medium text-sm truncate mb-1.5">{{ voice.name }}</div>
-                
-                <!-- 图标化属性标签 -->
-                <div class="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                  <!-- 语言 -->
-                  <span class="inline-flex items-center gap-1">
-                    <GlobeIcon class="w-3 h-3" />
-                    {{ voice.language }}
-                  </span>
-                  
-                  <!-- 性别 -->
-                  <span class="inline-flex items-center gap-1">
-                    <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-3 h-3" />
-                    <UserRoundIcon v-else class="w-3 h-3" />
-                    {{ voice.gender }}
-                  </span>
-                  
-                  <!-- 风格（如果有） -->
-                  <span v-if="voice.style" class="inline-flex items-center gap-1">
-                    <SparklesIcon class="w-3 h-3" />
-                    {{ voice.style }}
-                  </span>
-                </div>
-              </div>
-            </div>
-            
-            <!-- 右侧：播放/停止按钮（仅在有 CDN 音频 URL 时显示） -->
-            <Button
-              v-if="voice.preview_url"
-              size="sm"
-              variant="outline"
-              class="h-10 w-10 p-0 shrink-0 ml-3 rounded-full border-2 
-                     hover:bg-primary/10 hover:border-primary 
-                     active:scale-95 transition-all duration-150
-                     disabled:opacity-50 disabled:cursor-not-allowed"
-              @click.stop="playVoicePreview(voice.id)"
-              :aria-label="previewingVoice === voice.id ? '停止' : '试听音色'"
-            >
-              <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-5 h-5 text-primary animate-spin" />
-              <PauseIcon v-else-if="previewingVoice === voice.id" class="w-5 h-5 text-primary" />
-              <PlayIcon v-else class="w-5 h-5 text-primary" />
-            </Button>
+        <div class="flex items-center justify-between mt-1.5">
+          <div class="text-xs text-muted-foreground flex gap-3">
+            <span v-if="estimatedTokens">Token: {{ estimatedTokens }}</span>
+            <span v-if="estimatedAudioTime" class="text-primary">{{ estimatedAudioTime }}</span>
+          </div>
+          <div v-if="charCount > 2000" class="text-xs text-yellow-600 dark:text-yellow-400">
+            自动分 {{ Math.ceil(charCount / 2000) }} 片
           </div>
         </div>
       </div>
 
-      <!-- Context Input -->
-      <div class="space-y-2">
-        <Label for="context">风格控制 <span class="text-muted-foreground">(可选)</span></Label>
+      <!-- 风格控制 -->
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-1.5">
+          <Label for="context" class="text-sm">风格控制 <span class="text-muted-foreground text-xs">(可选)</span></Label>
+          <span class="text-xs text-muted-foreground">{{ contextCharCount }}/1024</span>
+        </div>
         <Textarea
           id="context"
           v-model="form.context"
-          placeholder="例如：用温柔的语气，语速稍慢&#10;支持多行描述，更精细地控制语音风格"
-          rows="3"
+          placeholder="例如：用温柔的语气，语速稍慢"
+          rows="2"
           maxlength="1024"
-          class="text-sm sm:text-base resize-none"
+          class="text-sm resize-none"
           @input="updateContextCount"
         />
-        <div class="flex items-center justify-between text-xs">
-          <span class="text-muted-foreground">
-            描述期望的语气、情感和语速风格
-          </span>
-          <span :class="contextCharCount >= 1024 ? 'text-destructive font-medium' : 'text-muted-foreground'">
-            {{ contextCharCount }}/1024
-          </span>
-        </div>
       </div>
 
-      <!-- Submit Button -->
+      <!-- 提交按钮 -->
       <Button
         @click="handleSubmit"
         :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.hasValidKey"
-        class="w-full sm:w-auto text-sm sm:text-base"
+        class="w-full h-10"
       >
-        {{ isSubmitting ? '合成中...' : '开始合成' }}
+        <Loader2Icon v-if="isSubmitting" class="w-4 h-4 mr-2 animate-spin" />
+        {{ isSubmitting ? '提交中...' : '开始合成' }}
       </Button>
     </CardContent>
   </Card>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
 import { type Voice } from '@/api/client'
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Play as PlayIcon, 
   Pause as PauseIcon,
   Loader2 as Loader2Icon, 
-  Check as CheckIcon,
-  Globe as GlobeIcon,
+  Settings as SettingsIcon,
+  ChevronDown as ChevronDownIcon,
   User as UserIcon,
   UserRound as UserRoundIcon,
   Sparkles as SparklesIcon
@@ -200,6 +215,10 @@ import {
 
 const taskStore = useTaskStore()
 const configStore = useConfigStore()
+
+const emit = defineEmits<{
+  submitted: [taskId: string]
+}>()
 
 const voices = ref<Voice[]>([])
 const voicesLoading = ref(false)
@@ -209,34 +228,36 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 const isPaused = ref(false)
 const loading = ref(false)
 
+const showConfig = ref(false)
+const configTab = ref<'model' | 'voice'>('model')
+
 const form = ref({
   text: '',
   voice: '',
   model: 'mimo-v2.5-tts',
   context: '',
-  taskName: '',  // Optional custom task name
+  taskName: '',
 })
 
 const charCount = ref(0)
 const estimatedTokens = ref(0)
 const contextCharCount = ref(0)
 
+const selectedVoice = computed(() => {
+  return voices.value.find(v => v.id === form.value.voice)
+})
+
 function updateCounts() {
   const text = form.value.text
   charCount.value = text.length
   
-  // More accurate token estimation
   const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length
   const englishWords = text.split(/\s+/).filter(w => w.length > 0).length
   const punctuation = (text.match(/[.,!?;:，。！？；：]/g) || []).length
   const numbers = (text.match(/\d+/g) || []).length
   
-  // MIMO TTS actual token calculation rules
   estimatedTokens.value = Math.ceil(
-    chineseChars * 1.2 +   // Chinese characters
-    englishWords * 0.8 +   // English words
-    punctuation * 0.3 +    // Punctuation
-    numbers * 0.5          // Numbers
+    chineseChars * 1.2 + englishWords * 0.8 + punctuation * 0.3 + numbers * 0.5
   )
 }
 
@@ -244,13 +265,12 @@ function updateContextCount() {
   contextCharCount.value = (form.value.context ?? '').length
 }
 
-// 预估音频时长（中文约 3-4 字/秒）
 const estimatedAudioTime = computed(() => {
   if (charCount.value === 0) return null
-  const seconds = Math.ceil(charCount.value / 3.5) // 保守估计
-  if (seconds < 60) return `${seconds}秒`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}分${seconds % 60}秒`
-  return `${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`
+  const seconds = Math.ceil(charCount.value / 3.5)
+  if (seconds < 60) return `~${seconds}秒`
+  if (seconds < 3600) return `~${Math.floor(seconds / 60)}分${seconds % 60}秒`
+  return `~${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`
 })
 
 const FALLBACK_VOICES: Voice[] = [
@@ -266,7 +286,6 @@ const FALLBACK_VOICES: Voice[] = [
 
 async function loadVoices() {
   voicesLoading.value = true
-  // Backend-next 没有独立音色列表接口，直接使用预置音色
   voices.value = FALLBACK_VOICES
   voicesLoading.value = false
   if (voices.value.length > 0 && !form.value.voice) {
@@ -274,57 +293,19 @@ async function loadVoices() {
   }
 }
 
-async function handleSubmit() {
-  if (!form.value.text.trim()) {
-    toast.error('请输入合成文本')
-    return
-  }
-  if (!form.value.voice) {
-    toast.error('请选择音色')
-    return
-  }
-  if (!configStore.hasValidKey) {
-    toast.error('API Key 无效或为环境占位符，请重新配置')
-    return
-  }
-
-  isSubmitting.value = true
-  try {
-    const taskId = await taskStore.createTask({
-      text: form.value.text,
-      voice: form.value.voice,
-      model: form.value.model,
-      context: form.value.context || undefined,
-      task_name: form.value.taskName || undefined,  // Pass custom task name
-      api_key: configStore.apiKey,
-    })
-    
-    toast.success('任务创建成功')
-    
-    // Enqueue the task for synthesis processing (v2 two-phase flow)
-    await taskStore.enqueueTask(taskId)
-    toast.success('任务已加入队列')
-    
-    form.value.text = ''
-    form.value.context = ''
-    updateCounts()
-    contextCharCount.value = 0
-  } catch (error: any) {
-    toast.error(error.response?.data?.message || error.message || '创建任务失败')
-  } finally {
-    isSubmitting.value = false
-  }
+function clearText() {
+  form.value.text = ''
+  charCount.value = 0
+  estimatedTokens.value = 0
 }
 
 async function playVoicePreview(voiceId: string) {
   const voice = voices.value.find(v => v.id === voiceId)
-  
   if (!voice) {
     toast.error('音色不存在')
     return
   }
 
-  // 如果正在播放同一个音色，停止播放并重置状态
   if (previewingVoice.value === voiceId && currentAudio.value) {
     currentAudio.value.pause()
     currentAudio.value.currentTime = 0
@@ -334,7 +315,6 @@ async function playVoicePreview(voiceId: string) {
     return
   }
 
-  // 停止之前的播放
   if (currentAudio.value) {
     currentAudio.value.pause()
     currentAudio.value = null
@@ -345,9 +325,7 @@ async function playVoicePreview(voiceId: string) {
     isPaused.value = false
     loading.value = true
     
-    // 优先使用 CDN URL
     const previewUrl = voice.preview_url || ''
-    
     const audio = new Audio(previewUrl)
     currentAudio.value = audio
     
@@ -378,56 +356,92 @@ async function playVoicePreview(voiceId: string) {
   }
 }
 
-// Keyboard shortcuts
+async function handleSubmit() {
+  if (!form.value.text.trim()) {
+    toast.error('请输入合成文本')
+    return
+  }
+  if (!form.value.voice) {
+    toast.error('请选择音色')
+    return
+  }
+  if (!configStore.hasValidKey) {
+    toast.error('请先配置 API Key')
+    return
+  }
+
+  isSubmitting.value = true
+  try {
+    const result = await taskStore.createTask({
+      text: form.value.text.trim(),
+      voice: form.value.voice,
+      model: form.value.model,
+      context: form.value.context || undefined,
+      name: form.value.taskName || undefined,
+    })
+    toast.success('任务已创建')
+    form.value.text = ''
+    form.value.taskName = ''
+    form.value.context = ''
+    charCount.value = 0
+    estimatedTokens.value = 0
+    contextCharCount.value = 0
+    emit('submitted', result.id)
+  } catch (error: any) {
+    toast.error(error.message || '创建任务失败')
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+function setConfig(config: { text: string; voice: string | null; model: string; context?: string }) {
+  form.value.text = config.text
+  if (config.voice) form.value.voice = config.voice
+  if (config.model) form.value.model = config.model
+  if (config.context !== undefined) form.value.context = config.context
+  updateCounts()
+  updateContextCount()
+}
+
+defineExpose({ setConfig })
+
 function handleKeydown(event: KeyboardEvent) {
-  // Ctrl/Cmd + Enter to submit
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
     if (!isSubmitting.value && form.value.text.trim() && form.value.voice) {
       handleSubmit()
     }
   }
-  
-  // ESC to clear text (only when textarea is focused)
-  if (event.key === 'Escape') {
-    const textArea = document.getElementById('text') as HTMLTextAreaElement
-    if (document.activeElement === textArea && form.value.text) {
-      event.preventDefault()
-      clearText()
-    }
-  }
-}
-
-function clearText() {
-  if (confirm('确定要清空文本吗？')) {
-    form.value.text = ''
-    updateCounts()
-  }
 }
 
 onMounted(() => {
   loadVoices()
-  contextCharCount.value = (form.value.context ?? '').length
-  window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleKeydown)
-})
-
-// 暴露方法供父组件调用（配置复用）
-function setConfig(config: { text: string; voice: string | null; model: string; context?: string; task_name?: string }) {
-  if (config.text) form.value.text = config.text
-  if (config.voice) form.value.voice = config.voice
-  if (config.model) form.value.model = config.model
-  if (config.context !== undefined) form.value.context = config.context
-  if (config.task_name) form.value.taskName = config.task_name
-  updateCounts()
-  contextCharCount.value = (form.value.context ?? '').length
-  toast.success('已复用历史配置')
-}
-
-defineExpose({
-  setConfig
+  document.removeEventListener('keydown', handleKeydown)
+  if (currentAudio.value) {
+    currentAudio.value.pause()
+    currentAudio.value = null
+  }
 })
 </script>
+
+<style scoped>
+.slide-down-enter-active,
+.slide-down-leave-active {
+  transition: all 0.2s ease;
+}
+.slide-down-enter-from,
+.slide-down-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.slide-down-enter-to,
+.slide-down-leave-from {
+  max-height: 400px;
+}
+</style>
