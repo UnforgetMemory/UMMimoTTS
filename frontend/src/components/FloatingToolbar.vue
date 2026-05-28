@@ -1,23 +1,52 @@
 <template>
   <div 
-    class="fixed top-4 right-4 z-50 flex flex-col gap-2"
+    class="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 bg-foreground/90 backdrop-blur-xl rounded-full shadow-lg border border-foreground/20"
     role="toolbar"
     aria-label="快捷操作工具栏"
   >
-    <!-- 主题切换按钮 -->
+    <!-- 分组列表切换按钮 -->
+    <Button 
+      variant="ghost" 
+      size="sm"
+      class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+      :class="{ 'bg-background/30': showTaskSidebar }"
+      @click="$emit('toggle-tasks')"
+      aria-label="分组列表"
+    >
+      <LayersIcon class="w-4 h-4" />
+    </Button>
+
+    <!-- 分隔线 -->
+    <div class="w-px h-5 bg-background/30 mx-0.5" />
+
+    <!-- API 配置按钮 -->
+    <Button 
+      variant="ghost" 
+      size="sm"
+      class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+      @click="$emit('open-config')"
+      aria-label="API 配置"
+    >
+      <KeyIcon class="w-4 h-4" />
+    </Button>
+
+    <!-- 分隔线 -->
+    <div class="w-px h-5 bg-background/30 mx-0.5" />
+
+    <!-- 主题切换下拉 -->
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
         <Button 
-          variant="outline" 
+          variant="ghost" 
           size="sm"
-          class="w-10 h-10 p-0 rounded-lg transition-colors hover:bg-muted"
+          class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
           aria-label="切换主题"
         >
-          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5 text-foreground" />
-          <MoonIcon v-else class="w-5 h-5 text-foreground" />
+          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-4 h-4" />
+          <MoonIcon v-else class="w-4 h-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      <DropdownMenuContent align="center">
         <DropdownMenuItem @click="themeStore.setTheme('light')">
           <SunIcon class="w-4 h-4 mr-2" />
           <span>明亮模式</span>
@@ -36,32 +65,44 @@
       </DropdownMenuContent>
     </DropdownMenu>
 
-    <!-- API 配置按钮 -->
-    <Button 
-      variant="outline" 
-      size="sm"
-      class="w-10 h-10 p-0 rounded-lg transition-colors hover:bg-muted"
-      @click="$emit('open-config')"
-      aria-label="API 配置"
-    >
-      <SettingsIcon class="w-5 h-5 text-foreground" />
-    </Button>
+    <!-- 分隔线 -->
+    <div class="w-px h-5 bg-background/30 mx-0.5" />
 
-    <!-- 任务列表按钮 -->
-    <Button 
-      variant="outline" 
-      size="sm"
-      :class="{ 'bg-primary/10 border-primary': showTaskSidebar }"
-      class="w-10 h-10 p-0 rounded-lg transition-colors hover:bg-muted"
-      @click="$emit('toggle-tasks')"
-      aria-label="任务列表"
-    >
-      <ListIcon class="w-5 h-5 text-foreground" />
-    </Button>
+    <!-- 语言切换下拉 -->
+    <DropdownMenu>
+      <DropdownMenuTrigger as-child>
+        <Button 
+          variant="ghost" 
+          size="sm"
+          class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+          aria-label="切换语言"
+        >
+          <GlobeIcon class="w-4 h-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center">
+        <DropdownMenuItem @click="setLocale('zh-CN')">
+          <span>🇨🇳</span>
+          <span class="ml-2">简体中文</span>
+          <DropdownMenuShortcut v-if="locale === 'zh-CN'">✓</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem @click="setLocale('en')">
+          <span>🇺🇸</span>
+          <span class="ml-2">English</span>
+          <DropdownMenuShortcut v-if="locale === 'en'">✓</DropdownMenuShortcut>
+        </DropdownMenuItem>
+        <DropdownMenuItem @click="setLocale('ja')">
+          <span>🇯🇵</span>
+          <span class="ml-2">日本語</span>
+          <DropdownMenuShortcut v-if="locale === 'ja'">✓</DropdownMenuShortcut>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,14 +113,13 @@ import {
   DropdownMenuShortcut,
 } from '@/components/ui/dropdown-menu'
 import { 
-  Settings as SettingsIcon, 
-  List as ListIcon,
+  Key as KeyIcon, 
+  Layers as LayersIcon,
   Moon as MoonIcon,
   Sun as SunIcon,
-  Monitor as MonitorIcon
+  Monitor as MonitorIcon,
+  Globe as GlobeIcon
 } from 'lucide-vue-next'
-
-const themeStore = useThemeStore()
 
 defineProps<{
   showTaskSidebar?: boolean
@@ -89,4 +129,14 @@ defineEmits<{
   'open-config': []
   'toggle-tasks': []
 }>()
+
+const themeStore = useThemeStore()
+const locale = ref(localStorage.getItem('locale') || 'zh-CN')
+
+function setLocale(lang: string) {
+  locale.value = lang
+  localStorage.setItem('locale', lang)
+  // TODO: 实际切换语言需要集成 i18n
+  window.location.reload()
+}
 </script>
