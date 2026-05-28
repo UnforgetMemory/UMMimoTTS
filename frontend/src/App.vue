@@ -322,9 +322,24 @@ import GroupCard from './components/GroupCard.vue'
 import GroupDetailPanel from './components/GroupDetailPanel.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
-import { X as XIcon, Plus as PlusIcon, Layers as LayersIcon, PanelLeftClose as PanelLeftCloseIcon, PanelLeftOpen as PanelLeftOpenIcon } from 'lucide-vue-next'
+import { 
+  X as XIcon, 
+  Plus as PlusIcon, 
+  Layers as LayersIcon, 
+  PanelLeftClose as PanelLeftCloseIcon, 
+  PanelLeftOpen as PanelLeftOpenIcon,
+  Pause as PauseIcon,
+  Play as PlayIcon,
+  Download as DownloadIcon,
+  RotateCcw as RotateCcwIcon,
+  Trash as TrashIcon,
+  Clock as ClockIcon,
+  Folder as FolderIcon
+} from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
 const batchStore = useBatchStore()
@@ -347,6 +362,36 @@ const selectedGroup = computed(() => {
   if (!selectedGroupId.value) return null
   return batchStore.groups.find(g => g.id === selectedGroupId.value) || null
 })
+
+// 获取状态徽章
+function getStatusBadge(status: string) {
+  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+    pending: { label: '等待中', variant: 'secondary' },
+    chunking: { label: '分片中', variant: 'secondary' },
+    queued: { label: '排队中', variant: 'secondary' },
+    processing: { label: '处理中', variant: 'default' },
+    completed: { label: '已完成', variant: 'outline' },
+    failed: { label: '失败', variant: 'destructive' },
+    paused: { label: '已暂停', variant: 'secondary' }
+  }
+  return statusMap[status] || { label: status, variant: 'secondary' as const }
+}
+
+// 格式化相对时间
+function formatRelativeTime(dateStr: string) {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diff = now.getTime() - date.getTime()
+  const minutes = Math.floor(diff / 60000)
+  const hours = Math.floor(diff / 3600000)
+  const days = Math.floor(diff / 86400000)
+  
+  if (minutes < 1) return '刚刚'
+  if (minutes < 60) return `${minutes}分钟前`
+  if (hours < 24) return `${hours}小时前`
+  if (days < 30) return `${days}天前`
+  return date.toLocaleDateString('zh-CN')
+}
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {
