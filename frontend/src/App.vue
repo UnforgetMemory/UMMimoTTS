@@ -124,8 +124,10 @@
 
     <!-- 悬浮工具栏 -->
     <FloatingToolbar 
+      :show-batch-sidebar="!sidebarCollapsed"
       :show-task-sidebar="showTaskSidebar"
       @open-config="showConfigDialog = true"
+      @toggle-batch="sidebarCollapsed = !sidebarCollapsed"
       @toggle-tasks="showTaskSidebar = !showTaskSidebar"
       class="z-50"
     />

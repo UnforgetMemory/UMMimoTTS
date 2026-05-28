@@ -4,14 +4,14 @@
     role="toolbar"
     aria-label="快捷操作工具栏"
   >
-    <!-- 分组列表切换按钮 -->
+    <!-- 批量任务列表按钮（最左边） -->
     <Button 
       variant="ghost" 
       size="sm"
       class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
-      :class="{ 'bg-white/30': showTaskSidebar }"
-      @click="$emit('toggle-tasks')"
-      aria-label="分组列表"
+      :class="{ 'bg-white/30': showBatchSidebar }"
+      @click="$emit('toggle-batch')"
+      aria-label="批量任务列表"
     >
       <LayersIcon class="w-5 h-5" />
     </Button>
@@ -68,41 +68,21 @@
     <!-- 分隔线 -->
     <div class="w-px h-6 bg-white/30" />
 
-    <!-- 语言切换下拉 -->
-    <DropdownMenu>
-      <DropdownMenuTrigger as-child>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
-          aria-label="切换语言"
-        >
-          <GlobeIcon class="w-5 h-5" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="center">
-        <DropdownMenuItem @click="setLocale('zh-CN')">
-          <span>🇨🇳</span>
-          <span class="ml-2">简体中文</span>
-          <DropdownMenuShortcut v-if="locale === 'zh-CN'">✓</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuItem @click="setLocale('en')">
-          <span>🇺🇸</span>
-          <span class="ml-2">English</span>
-          <DropdownMenuShortcut v-if="locale === 'en'">✓</DropdownMenuShortcut>
-        </DropdownMenuItem>
-        <DropdownMenuItem @click="setLocale('ja')">
-          <span>🇯🇵</span>
-          <span class="ml-2">日本語</span>
-          <DropdownMenuShortcut v-if="locale === 'ja'">✓</DropdownMenuShortcut>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <!-- 单任务列表按钮（最右边） -->
+    <Button 
+      variant="ghost" 
+      size="sm"
+      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
+      :class="{ 'bg-white/30': showTaskSidebar }"
+      @click="$emit('toggle-tasks')"
+      aria-label="单任务列表"
+    >
+      <ListIcon class="w-5 h-5" />
+    </Button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useThemeStore } from '@/stores/theme'
 import { Button } from '@/components/ui/button'
 import {
@@ -115,30 +95,24 @@ import {
 import { 
   Key as KeyIcon, 
   Layers as LayersIcon,
+  List as ListIcon,
   Moon as MoonIcon,
   Sun as SunIcon,
   Monitor as MonitorIcon,
-  Globe as GlobeIcon
 } from 'lucide-vue-next'
 
 defineProps<{
+  showBatchSidebar?: boolean
   showTaskSidebar?: boolean
 }>()
 
 defineEmits<{
   'open-config': []
+  'toggle-batch': []
   'toggle-tasks': []
 }>()
 
 const themeStore = useThemeStore()
-const locale = ref(localStorage.getItem('locale') || 'zh-CN')
-
-function setLocale(lang: string) {
-  locale.value = lang
-  localStorage.setItem('locale', lang)
-  // TODO: 实际切换语言需要集成 i18n
-  window.location.reload()
-}
 </script>
 
 <style scoped>
