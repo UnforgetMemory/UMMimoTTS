@@ -121,7 +121,7 @@
               </div>
             </div>
             
-            <!-- 右侧：播放/暂停按钮（仅在有 CDN 音频 URL 时显示） -->
+            <!-- 右侧：播放/停止按钮（仅在有 CDN 音频 URL 时显示） -->
             <Button
               v-if="voice.preview_url"
               size="sm"
@@ -131,10 +131,10 @@
                      active:scale-95 transition-all duration-150
                      disabled:opacity-50 disabled:cursor-not-allowed"
               @click.stop="playVoicePreview(voice.id)"
-              :aria-label="previewingVoice === voice.id && !isPaused ? '暂停' : '试听音色'"
+              :aria-label="previewingVoice === voice.id ? '停止' : '试听音色'"
             >
               <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-5 h-5 text-primary animate-spin" />
-              <PauseIcon v-else-if="previewingVoice === voice.id && !isPaused" class="w-5 h-5 text-primary" />
+              <PauseIcon v-else-if="previewingVoice === voice.id" class="w-5 h-5 text-primary" />
               <PlayIcon v-else class="w-5 h-5 text-primary" />
             </Button>
           </div>
@@ -324,15 +324,13 @@ async function playVoicePreview(voiceId: string) {
     return
   }
 
-  // 如果正在播放同一个音色，暂停/恢复播放
+  // 如果正在播放同一个音色，停止播放并重置状态
   if (previewingVoice.value === voiceId && currentAudio.value) {
-    if (currentAudio.value.paused) {
-      currentAudio.value.play()
-      isPaused.value = false
-    } else {
-      currentAudio.value.pause()
-      isPaused.value = true
-    }
+    currentAudio.value.pause()
+    currentAudio.value.currentTime = 0
+    currentAudio.value = null
+    previewingVoice.value = null
+    isPaused.value = false
     return
   }
 
