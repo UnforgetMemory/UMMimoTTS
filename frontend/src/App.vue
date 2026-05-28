@@ -5,52 +5,35 @@
     
     <!-- 主内容区 -->
     <div class="relative z-1 flex min-h-screen">
-      <!-- 左侧批量任务面板 (Desktop, 可折叠) -->
-      <aside
-        class="border-r bg-background/80 backdrop-blur-xl flex-col hidden lg:flex transition-all duration-300 relative"
-        :class="sidebarCollapsed ? 'w-12' : 'w-72'"
-      >
-        <!-- 折叠切换按钮 -->
-        <button
-          class="absolute -right-3 top-4 z-10 size-6 rounded-full bg-background border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
-          @click="sidebarCollapsed = !sidebarCollapsed"
-          :title="sidebarCollapsed ? '展开面板' : '折叠面板'"
+      <!-- 左侧批量任务面板 (覆盖式，不占位) -->
+      <Transition name="slide-in-left">
+        <aside
+          v-if="!sidebarCollapsed"
+          class="fixed left-0 top-0 h-full bg-background text-foreground border-r shadow-xl z-50 flex flex-col
+                 w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[32rem]"
+          role="complementary"
+          aria-label="批量任务面板"
+          aria-modal="true"
+          tabindex="-1"
         >
-          <PanelLeftOpenIcon v-if="sidebarCollapsed" class="w-3.5 h-3.5" />
-          <PanelLeftCloseIcon v-else class="w-3.5 h-3.5" />
-        </button>
-
-        <!-- 折叠状态：仅图标 -->
-        <div v-if="sidebarCollapsed" class="flex flex-col items-center py-4 gap-3">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            :title="configStore.hasValidKey ? '新建批量任务' : '请先配置 API Key'"
-            :disabled="!configStore.hasValidKey"
-            @click="showBatchWizard = true"
-          >
-            <PlusIcon class="w-4 h-4" />
-          </Button>
-          <Separator class="w-6" />
-          <div
-            v-for="group in batchStore.groups.slice(0, 8)"
-            :key="group.id"
-            class="size-8 rounded-md flex items-center justify-center text-xs font-medium cursor-pointer transition-colors"
-            :class="selectedGroupId === group.id ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80 text-muted-foreground'"
-            :title="group.name"
-            @click="selectedGroupId = group.id"
-          >
-            {{ group.name.charAt(0) }}
+          <div class="p-3 sm:p-4 border-b flex items-center justify-between">
+            <div class="min-w-0 flex-1">
+              <h2 class="text-base sm:text-lg font-semibold truncate">批量任务</h2>
+              <p class="text-xs text-muted-foreground mt-0.5 sm:mt-1">管理批量合成分组</p>
+            </div>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2"
+              @click="sidebarCollapsed = true"
+            >
+              <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            </Button>
           </div>
-        </div>
-
-        <!-- 展开状态：完整面板 -->
-        <template v-else>
-          <div class="p-4 border-b">
-            <h2 class="text-base font-semibold">批量任务</h2>
-            <p class="text-xs text-muted-foreground mt-0.5">管理批量合成分组</p>
+          
+          <div class="p-3 sm:p-4 border-b">
             <Button
-              class="w-full mt-3"
+              class="w-full"
               size="sm"
               :disabled="!configStore.hasValidKey"
               @click="showBatchWizard = true"
@@ -60,43 +43,111 @@
             </Button>
           </div>
 
-          <div class="flex-1 overflow-y-auto scrollbar-auto p-3 space-y-2">
-            <div v-if="batchStore.loading" class="space-y-2">
-              <Skeleton class="h-24 w-full" />
-              <Skeleton class="h-24 w-full" />
+          <div class="flex-1 overflow-hidden">
+            <div class="h-full overflow-y-auto p-3 sm:p-4 space-y-2">
+              <div
+                v-for="group in batchStore.groups"
+                :key="group.id"
+                class="group relative p-2.5 sm:p-3 rounded-lg border cursor-pointer transition-all hover:shadow-sm"
+                :class="selectedGroupId === group.id ? 'bg-primary/5 border-primary/20 shadow-sm' : 'bg-card hover:bg-muted/50'"
+                @click="selectedGroupId = group.id"
+              >
+                <div class="flex items-start justify-between">
+                  <div class="flex-1 min-w-0">
+                    <h3 class="font-medium text-xs sm:text-sm truncate">{{ group.name }}</h3>
+                    <div class="flex items-center gap-1.5 sm:gap-2 mt-1">
+                      <Badge :variant="getStatusBadge(group.status).variant" class="text-[10px] sm:text-xs px-1 sm:px-1.5">
+                        {{ getStatusBadge(group.status).label }}
+                      </Badge>
+                      <span class="text-[10px] sm:text-xs text-muted-foreground">
+                        {{ group.completed_tasks }}/{{ group.task_count }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-0.5 sm:gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      v-if="group.status === 'processing'"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="h-5 w-5 sm:h-6 sm:w-6"
+                      @click.stop="pauseGroup(group.id)"
+                      :disabled="batchStore.loading"
+                    >
+                      <PauseIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                    <Button
+                      v-if="group.status === 'paused'"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="h-5 w-5 sm:h-6 sm:w-6"
+                      @click.stop="resumeGroup(group.id)"
+                      :disabled="batchStore.loading"
+                    >
+                      <PlayIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                    <Button
+                      v-if="group.status === 'completed' && group.completed_tasks > 0"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="h-5 w-5 sm:h-6 sm:w-6"
+                      @click.stop="downloadGroup(group.id)"
+                    >
+                      <DownloadIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                    <Button
+                      v-if="group.status === 'failed'"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="h-5 w-5 sm:h-6 sm:w-6"
+                      @click.stop="retryGroup(group.id)"
+                      :disabled="batchStore.loading"
+                    >
+                      <RotateCcwIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                    <Button
+                      v-if="group.status !== 'processing'"
+                      variant="ghost"
+                      size="icon-sm"
+                      class="h-5 w-5 sm:h-6 sm:w-6 text-destructive hover:text-destructive"
+                      @click.stop="deleteGroup(group.id)"
+                      :disabled="batchStore.loading"
+                    >
+                      <TrashIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                  </div>
+                </div>
+                
+                <div v-if="group.status === 'processing' || group.status === 'chunking'" class="mt-2">
+                  <Progress :model-value="group.progress" class="h-1" />
+                </div>
+                
+                <div class="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
+                  <ClockIcon class="w-2.5 h-2.5" />
+                  <span>{{ formatRelativeTime(group.created_at) }}</span>
+                </div>
+              </div>
+
+              <div v-if="batchStore.groups.length === 0" class="text-center py-8">
+                <FolderIcon class="w-10 h-10 mx-auto text-muted-foreground/50 mb-3" />
+                <p class="text-sm text-muted-foreground">暂无批量任务</p>
+                <p class="text-xs text-muted-foreground/70 mt-1">点击上方按钮创建</p>
+              </div>
             </div>
-            <div v-else-if="batchStore.groups.length === 0" class="text-center py-8 text-muted-foreground text-sm">
-              暂无批量任务
-            </div>
-            <GroupCard
-              v-for="group in batchStore.groups"
-              :key="group.id"
-              :group="group"
-              :selected="selectedGroupId === group.id"
-              @select="selectedGroupId = $event"
-              @pause="handlePauseGroup"
-              @resume="handleResumeGroup"
-              @retry="handleRetryGroup"
-              @delete="handleDeleteGroup"
-            />
           </div>
-        </template>
-      </aside>
+        </aside>
+      </Transition>
+
+      <!-- 遮罩层 -->
+      <Transition name="fade">
+        <div 
+          v-if="!sidebarCollapsed"
+          class="fixed inset-0 bg-black/20 z-40"
+          @click="sidebarCollapsed = true"
+        />
+      </Transition>
 
       <!-- 中心内容区 -->
       <main class="flex-1 flex flex-col items-center justify-start px-4 py-8 sm:py-12 overflow-y-auto scrollbar-auto">
-        <!-- 移动端批量任务入口 -->
-        <div class="lg:hidden w-full max-w-4xl mb-4">
-          <Button
-            variant="outline"
-            class="w-full"
-            @click="showMobileBatchSidebar = true"
-          >
-            <LayersIcon class="w-4 h-4 mr-2" />
-            批量任务 ({{ batchStore.groups.length }})
-          </Button>
-        </div>
-
         <!-- 选中分组详情 或 合成表单 -->
         <template v-if="selectedGroup">
           <div class="w-full h-full">
@@ -299,8 +350,12 @@ const selectedGroup = computed(() => {
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape' && showTaskSidebar.value) {
-    showTaskSidebar.value = false
+  if (event.key === 'Escape') {
+    if (showTaskSidebar.value) {
+      showTaskSidebar.value = false
+    } else if (!sidebarCollapsed.value) {
+      sidebarCollapsed.value = true
+    }
   }
 }
 
