@@ -251,14 +251,14 @@ const estimatedAudioTime = computed(() => {
 })
 
 const FALLBACK_VOICES: Voice[] = [
-  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女' },
-  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声' },
-  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年' },
-  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声' },
-  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl' },
-  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy' },
-  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy' },
-  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle' },
+  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/bingtang.wav' },
+  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/moli.wav' },
+  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/suda.wav' },
+  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/baihua.wav' },
+  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/mia.wav' },
+  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/chloe.wav' },
+  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/milo.wav' },
+  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/dean.wav' },
 ]
 
 async function loadVoices() {
