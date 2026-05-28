@@ -1,29 +1,127 @@
 <template>
   <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg flex flex-col h-full">
-    <!-- 首行：标题 + 配置按钮 -->
+    <!-- 首行：标题 + 标签页切换 -->
     <CardHeader class="pb-2 px-4 md:px-6 lg:px-8">
       <div class="flex items-center justify-between">
         <CardTitle class="text-lg">合成任务</CardTitle>
-        <Button 
-          variant="ghost" 
-          size="sm"
-          class="h-8 px-2 gap-1"
-          @click="showConfig = !showConfig"
-        >
-          <SettingsIcon class="w-4 h-4" />
-          <span class="text-xs">配置</span>
-          <ChevronDownIcon 
-            class="w-3 h-3 transition-transform"
-            :class="{ 'rotate-180': showConfig }"
-          />
-        </Button>
+        
+        <!-- 标签页切换按钮组 -->
+        <div class="flex items-center gap-1 bg-muted p-1 rounded-lg">
+          <button
+            class="py-1 px-3 rounded-md text-sm font-medium transition-colors"
+            :class="activeTab === 'control' ? 'bg-background shadow-sm' : 'hover:bg-background/50'"
+            @click="activeTab = 'control'"
+          >
+            控制
+          </button>
+          <button
+            class="py-1 px-3 rounded-md text-sm font-medium transition-colors"
+            :class="activeTab === 'config' ? 'bg-background shadow-sm' : 'hover:bg-background/50'"
+            @click="activeTab = 'config'"
+          >
+            配置
+          </button>
+        </div>
       </div>
     </CardHeader>
 
-    <!-- 配置面板（可展开） -->
-    <Transition name="slide-down">
-      <div v-if="showConfig" class="border-b px-4 md:px-6 lg:px-8 pb-4">
-        <!-- 标签页切换 -->
+    <!-- 主内容区 -->
+    <CardContent class="flex-1 flex flex-col pt-0 px-4 md:px-6 lg:px-8 pb-4 overflow-hidden">
+      <!-- 控制标签页 -->
+      <div v-if="activeTab === 'control'" class="flex-1 flex flex-col">
+        <!-- 模型 & 音色徽章 -->
+        <div class="flex items-center gap-2 mb-3 flex-wrap">
+          <Badge variant="secondary" class="text-xs gap-1">
+            <SparklesIcon class="w-3 h-3" />
+            {{ form.model }}
+          </Badge>
+          <Badge v-if="selectedVoice" variant="outline" class="text-xs gap-1">
+            <UserIcon v-if="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'" class="w-3 h-3" />
+            <UserRoundIcon v-else class="w-3 h-3" />
+            {{ selectedVoice.name }}
+          </Badge>
+          <Badge v-else variant="destructive" class="text-xs">
+            请选择音色
+          </Badge>
+        </div>
+
+        <!-- 任务名称 -->
+        <div class="mb-3">
+          <Input
+            v-model="form.taskName"
+            placeholder="任务名称（可选）"
+            class="text-sm h-9"
+          />
+        </div>
+
+        <!-- 文本合成区域 -->
+        <div class="flex-1 flex flex-col min-h-[200px] mb-3">
+          <div class="flex items-center justify-between mb-1.5">
+            <Label for="text" class="text-sm">
+              合成文本 <span class="text-destructive">*</span>
+            </Label>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-muted-foreground">{{ charCount }} 字</span>
+              <Button 
+                v-if="form.text" 
+                variant="ghost" 
+                size="sm"
+                class="h-6 text-xs px-2"
+                @click="clearText"
+              >
+                清空
+              </Button>
+            </div>
+          </div>
+          <Textarea
+            id="text"
+            v-model="form.text"
+            placeholder="输入要合成的文本..."
+            class="flex-1 text-sm resize-none min-h-[120px]"
+            @input="updateCounts"
+          />
+          <div class="flex items-center justify-between mt-1.5">
+            <div class="text-xs text-muted-foreground flex gap-3">
+              <span v-if="estimatedTokens">Token: {{ estimatedTokens }}</span>
+              <span v-if="estimatedAudioTime" class="text-primary">{{ estimatedAudioTime }}</span>
+            </div>
+            <div v-if="charCount > 2000" class="text-xs text-yellow-600 dark:text-yellow-400">
+              自动分 {{ Math.ceil(charCount / 2000) }} 片
+            </div>
+          </div>
+        </div>
+
+        <!-- 风格控制 -->
+        <div class="mb-4">
+          <div class="flex items-center justify-between mb-1.5">
+            <Label for="context" class="text-sm">风格控制 <span class="text-muted-foreground text-xs">(可选)</span></Label>
+            <span class="text-xs text-muted-foreground">{{ contextCharCount }}/1024</span>
+          </div>
+          <Textarea
+            id="context"
+            v-model="form.context"
+            placeholder="例如：用温柔的语气，语速稍慢"
+            rows="2"
+            maxlength="1024"
+            class="text-sm resize-none"
+            @input="updateContextCount"
+          />
+        </div>
+
+        <!-- 提交按钮 -->
+        <Button
+          @click="handleSubmit"
+          :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.hasValidKey"
+          class="w-full h-10"
+        >
+          <Loader2Icon v-if="isSubmitting" class="w-4 h-4 mr-2 animate-spin" />
+          {{ isSubmitting ? '提交中...' : '开始合成' }}
+        </Button>
+      </div>
+
+      <!-- 配置标签页 -->
+      <div v-if="activeTab === 'config'" class="flex-1 flex flex-col overflow-hidden">
+        <!-- 配置子标签 -->
         <div class="flex gap-1 mb-3 bg-muted p-1 rounded-lg">
           <button
             class="flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors"
@@ -54,7 +152,7 @@
         </div>
 
         <!-- 音色选择 -->
-        <div v-if="configTab === 'voice'" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+        <div v-if="configTab === 'voice'" class="flex-1 overflow-y-auto space-y-2 pr-1">
           <div v-if="voicesLoading" class="flex items-center justify-center py-8">
             <Loader2Icon class="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
@@ -93,104 +191,12 @@
           </div>
         </div>
       </div>
-    </Transition>
-
-    <!-- 主内容区 -->
-    <CardContent class="flex-1 flex flex-col pt-3 px-4 md:px-6 lg:px-8 pb-4 overflow-hidden">
-      <!-- 模型 & 音色徽章 -->
-      <div class="flex items-center gap-2 mb-3 flex-wrap">
-        <Badge variant="secondary" class="text-xs gap-1">
-          <SparklesIcon class="w-3 h-3" />
-          {{ form.model }}
-        </Badge>
-        <Badge v-if="selectedVoice" variant="outline" class="text-xs gap-1">
-          <UserIcon v-if="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'" class="w-3 h-3" />
-          <UserRoundIcon v-else class="w-3 h-3" />
-          {{ selectedVoice.name }}
-        </Badge>
-        <Badge v-else variant="destructive" class="text-xs">
-          请选择音色
-        </Badge>
-      </div>
-
-      <!-- 任务名称 -->
-      <div class="mb-3">
-        <Input
-          v-model="form.taskName"
-          placeholder="任务名称（可选）"
-          class="text-sm h-9"
-        />
-      </div>
-
-      <!-- 文本合成区域 -->
-      <div class="flex-1 flex flex-col min-h-[200px] mb-3">
-        <div class="flex items-center justify-between mb-1.5">
-          <Label for="text" class="text-sm">
-            合成文本 <span class="text-destructive">*</span>
-          </Label>
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-muted-foreground">{{ charCount }} 字</span>
-            <Button 
-              v-if="form.text" 
-              variant="ghost" 
-              size="sm"
-              class="h-6 text-xs px-2"
-              @click="clearText"
-            >
-              清空
-            </Button>
-          </div>
-        </div>
-        <Textarea
-          id="text"
-          v-model="form.text"
-          placeholder="输入要合成的文本..."
-          class="flex-1 text-sm resize-none min-h-[120px]"
-          @input="updateCounts"
-        />
-        <div class="flex items-center justify-between mt-1.5">
-          <div class="text-xs text-muted-foreground flex gap-3">
-            <span v-if="estimatedTokens">Token: {{ estimatedTokens }}</span>
-            <span v-if="estimatedAudioTime" class="text-primary">{{ estimatedAudioTime }}</span>
-          </div>
-          <div v-if="charCount > 2000" class="text-xs text-yellow-600 dark:text-yellow-400">
-            自动分 {{ Math.ceil(charCount / 2000) }} 片
-          </div>
-        </div>
-      </div>
-
-      <!-- 风格控制 -->
-      <div class="mb-4">
-        <div class="flex items-center justify-between mb-1.5">
-          <Label for="context" class="text-sm">风格控制 <span class="text-muted-foreground text-xs">(可选)</span></Label>
-          <span class="text-xs text-muted-foreground">{{ contextCharCount }}/1024</span>
-        </div>
-        <Textarea
-          id="context"
-          v-model="form.context"
-          placeholder="例如：用温柔的语气，语速稍慢"
-          rows="2"
-          maxlength="1024"
-          class="text-sm resize-none"
-          @input="updateContextCount"
-        />
-      </div>
-
-      <!-- 提交按钮 -->
-      <Button
-        @click="handleSubmit"
-        :disabled="isSubmitting || !form.text.trim() || !form.voice || !configStore.hasValidKey"
-        class="w-full h-10"
-      >
-        <Loader2Icon v-if="isSubmitting" class="w-4 h-4 mr-2 animate-spin" />
-        {{ isSubmitting ? '提交中...' : '开始合成' }}
-      </Button>
     </CardContent>
   </Card>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
@@ -206,8 +212,6 @@ import {
   Play as PlayIcon, 
   Pause as PauseIcon,
   Loader2 as Loader2Icon, 
-  Settings as SettingsIcon,
-  ChevronDown as ChevronDownIcon,
   User as UserIcon,
   UserRound as UserRoundIcon,
   Sparkles as SparklesIcon
@@ -225,10 +229,9 @@ const voicesLoading = ref(false)
 const isSubmitting = ref(false)
 const previewingVoice = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
-const isPaused = ref(false)
 const loading = ref(false)
 
-const showConfig = ref(false)
+const activeTab = ref<'control' | 'config'>('control')
 const configTab = ref<'model' | 'voice'>('model')
 
 const form = ref({
@@ -311,7 +314,6 @@ async function playVoicePreview(voiceId: string) {
     currentAudio.value.currentTime = 0
     currentAudio.value = null
     previewingVoice.value = null
-    isPaused.value = false
     return
   }
 
@@ -322,7 +324,6 @@ async function playVoicePreview(voiceId: string) {
 
   try {
     previewingVoice.value = voiceId
-    isPaused.value = false
     loading.value = true
     
     const previewUrl = voice.preview_url || ''
@@ -332,14 +333,12 @@ async function playVoicePreview(voiceId: string) {
     audio.onended = () => {
       previewingVoice.value = null
       currentAudio.value = null
-      isPaused.value = false
       loading.value = false
     }
     
     audio.onerror = () => {
       previewingVoice.value = null
       currentAudio.value = null
-      isPaused.value = false
       loading.value = false
     }
     
@@ -351,7 +350,6 @@ async function playVoicePreview(voiceId: string) {
   } catch (_error) {
     previewingVoice.value = null
     currentAudio.value = null
-    isPaused.value = false
     loading.value = false
   }
 }
@@ -427,21 +425,3 @@ onUnmounted(() => {
   }
 })
 </script>
-
-<style scoped>
-.slide-down-enter-active,
-.slide-down-leave-active {
-  transition: all 0.2s ease;
-}
-.slide-down-enter-from,
-.slide-down-leave-to {
-  opacity: 0;
-  max-height: 0;
-  padding-top: 0;
-  padding-bottom: 0;
-}
-.slide-down-enter-to,
-.slide-down-leave-from {
-  max-height: 400px;
-}
-</style>
