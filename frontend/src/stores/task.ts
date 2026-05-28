@@ -186,6 +186,7 @@ export const useTaskStore = defineStore('task', () => {
         voice: request.voice,
         model: request.model,
         title: request.task_name || `Synthesized ${new Date().toLocaleString('zh-CN')}`,
+        style: request.context || undefined,
       })
       await apiV2.enqueueTask(task.id)
       // Use lightweight page reload instead of full loadTasks

@@ -392,9 +392,8 @@ async function handleSubmit() {
       text: form.value.text.trim(),
       voice: form.value.voice,
       model: form.value.model,
-      context: form.value.context || undefined,
       task_name: form.value.taskName || undefined,
-      api_key: configStore.apiKey,
+      context: form.value.context || undefined,
     })
     toast.success('任务已创建')
     form.value.text = ''
