@@ -121,7 +121,7 @@
               </div>
             </div>
             
-            <!-- 右侧：播放按钮（仅在有 CDN 音频 URL 时显示） -->
+            <!-- 右侧：播放/暂停按钮（仅在有 CDN 音频 URL 时显示） -->
             <Button
               v-if="voice.preview_url"
               size="sm"
@@ -131,11 +131,11 @@
                      active:scale-95 transition-all duration-150
                      disabled:opacity-50 disabled:cursor-not-allowed"
               @click.stop="playVoicePreview(voice.id)"
-              :disabled="previewingVoice === voice.id"
-              aria-label="试听音色"
+              :aria-label="previewingVoice === voice.id && !isPaused ? '暂停' : '试听音色'"
             >
-              <PlayIcon v-if="previewingVoice !== voice.id" class="w-5 h-5 text-primary" />
-              <Loader2Icon v-else class="w-5 h-5 text-primary animate-spin" />
+              <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-5 h-5 text-primary animate-spin" />
+              <PauseIcon v-else-if="previewingVoice === voice.id && !isPaused" class="w-5 h-5 text-primary" />
+              <PlayIcon v-else class="w-5 h-5 text-primary" />
             </Button>
           </div>
         </div>
@@ -189,6 +189,7 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Play as PlayIcon, 
+  Pause as PauseIcon,
   Loader2 as Loader2Icon, 
   Check as CheckIcon,
   Globe as GlobeIcon,
@@ -205,6 +206,8 @@ const voicesLoading = ref(false)
 const isSubmitting = ref(false)
 const previewingVoice = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
+const isPaused = ref(false)
+const loading = ref(false)
 
 const form = ref({
   text: '',
@@ -321,11 +324,15 @@ async function playVoicePreview(voiceId: string) {
     return
   }
 
-  // 如果正在播放同一个音色，停止播放
+  // 如果正在播放同一个音色，暂停/恢复播放
   if (previewingVoice.value === voiceId && currentAudio.value) {
-    currentAudio.value.pause()
-    currentAudio.value = null
-    previewingVoice.value = null
+    if (currentAudio.value.paused) {
+      currentAudio.value.play()
+      isPaused.value = false
+    } else {
+      currentAudio.value.pause()
+      isPaused.value = true
+    }
     return
   }
 
@@ -337,6 +344,8 @@ async function playVoicePreview(voiceId: string) {
 
   try {
     previewingVoice.value = voiceId
+    isPaused.value = false
+    loading.value = true
     
     // 优先使用 CDN URL
     const previewUrl = voice.preview_url || ''
@@ -347,17 +356,27 @@ async function playVoicePreview(voiceId: string) {
     audio.onended = () => {
       previewingVoice.value = null
       currentAudio.value = null
+      isPaused.value = false
+      loading.value = false
     }
     
     audio.onerror = () => {
       previewingVoice.value = null
       currentAudio.value = null
+      isPaused.value = false
+      loading.value = false
+    }
+    
+    audio.oncanplaythrough = () => {
+      loading.value = false
     }
     
     await audio.play()
   } catch (_error) {
     previewingVoice.value = null
     currentAudio.value = null
+    isPaused.value = false
+    loading.value = false
   }
 }
 
