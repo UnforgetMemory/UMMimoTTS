@@ -1,6 +1,6 @@
 <template>
   <div 
-    class="fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 px-2 py-1.5 rounded-full shadow-2xl dynamic-island"
+    class="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-2 rounded-full shadow-2xl dynamic-island"
     role="toolbar"
     aria-label="快捷操作工具栏"
   >
@@ -8,30 +8,30 @@
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
-      :class="{ 'bg-background/30': showTaskSidebar }"
+      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
+      :class="{ 'bg-white/30': showTaskSidebar }"
       @click="$emit('toggle-tasks')"
       aria-label="分组列表"
     >
-      <LayersIcon class="w-4 h-4" />
+      <LayersIcon class="w-5 h-5" />
     </Button>
 
     <!-- 分隔线 -->
-    <div class="w-px h-5 bg-background/30 mx-0.5" />
+    <div class="w-px h-6 bg-white/30" />
 
     <!-- API 配置按钮 -->
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+      class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
       @click="$emit('open-config')"
       aria-label="API 配置"
     >
-      <KeyIcon class="w-4 h-4" />
+      <KeyIcon class="w-5 h-5" />
     </Button>
 
     <!-- 分隔线 -->
-    <div class="w-px h-5 bg-background/30 mx-0.5" />
+    <div class="w-px h-6 bg-white/30" />
 
     <!-- 主题切换下拉 -->
     <DropdownMenu>
@@ -39,11 +39,11 @@
         <Button 
           variant="ghost" 
           size="sm"
-          class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+          class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
           aria-label="切换主题"
         >
-          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-4 h-4" />
-          <MoonIcon v-else class="w-4 h-4" />
+          <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5" />
+          <MoonIcon v-else class="w-5 h-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center">
@@ -66,7 +66,7 @@
     </DropdownMenu>
 
     <!-- 分隔线 -->
-    <div class="w-px h-5 bg-background/30 mx-0.5" />
+    <div class="w-px h-6 bg-white/30" />
 
     <!-- 语言切换下拉 -->
     <DropdownMenu>
@@ -74,10 +74,10 @@
         <Button 
           variant="ghost" 
           size="sm"
-          class="w-8 h-8 p-0 rounded-full text-background hover:text-background hover:bg-background/20 transition-all"
+          class="w-10 h-10 p-0 rounded-full text-white hover:text-white hover:bg-white/20 transition-all"
           aria-label="切换语言"
         >
-          <GlobeIcon class="w-4 h-4" />
+          <GlobeIcon class="w-5 h-5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center">
@@ -143,27 +143,13 @@ function setLocale(lang: string) {
 
 <style scoped>
 .dynamic-island {
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(20px) saturate(180%);
   -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   box-shadow: 
     0 8px 32px rgba(0, 0, 0, 0.4),
     0 2px 8px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-:root.dark .dynamic-island {
-  background: rgba(0, 0, 0, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.6),
-    0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-:root:not(.dark) .dynamic-island {
-  background: rgba(30, 30, 30, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 </style>
