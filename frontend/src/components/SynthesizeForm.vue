@@ -393,7 +393,8 @@ async function handleSubmit() {
       voice: form.value.voice,
       model: form.value.model,
       context: form.value.context || undefined,
-      name: form.value.taskName || undefined,
+      task_name: form.value.taskName || undefined,
+      api_key: configStore.apiKey,
     })
     toast.success('任务已创建')
     form.value.text = ''
@@ -402,7 +403,7 @@ async function handleSubmit() {
     charCount.value = 0
     estimatedTokens.value = 0
     contextCharCount.value = 0
-    emit('submitted', result.id)
+    emit('submitted', result)
   } catch (error: any) {
     toast.error(error.message || '创建任务失败')
   } finally {
