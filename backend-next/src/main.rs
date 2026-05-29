@@ -78,6 +78,8 @@ async fn main() -> std::io::Result<()> {
 
     // ── event bus ─────────────────────────────────────────────────────
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(256);
+    // Second receiver for TaskQueue event listener (broadcast receivers are independent)
+    let task_event_rx = event_tx.subscribe();
 
     // ── SSE bus ───────────────────────────────────────────────────────
     let sse_bus = Arc::new(SseBus::new());
@@ -99,6 +101,7 @@ async fn main() -> std::io::Result<()> {
     let chunk_queue = Arc::new(ChunkQueue::new(
         pool.clone(),
         chunk_repo.clone(),
+        task_repo.clone(),
         client.clone(),
         cache.clone(),
         rate_limiter.clone(),
@@ -132,6 +135,17 @@ async fn main() -> std::io::Result<()> {
         group_service,
         sse_bus,
     };
+
+    // ── start queue workers ──────────────────────────────────────────
+    chunk_queue.run_workers();
+    tracing::info!("ChunkQueue workers started (max_concurrent={max_concurrent})");
+
+    // ── start task queue event listener ─────────────────────────────
+    let tq = task_queue.clone();
+    tokio::spawn(async move {
+        tq.listen(task_event_rx).await;
+    });
+    tracing::info!("TaskQueue event listener started");
 
     // ── HTTP server ───────────────────────────────────────────────────
     tracing::info!("Starting server on 0.0.0.0:{port}");

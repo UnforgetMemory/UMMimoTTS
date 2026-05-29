@@ -191,12 +191,11 @@ impl SqliteBatchRepo {
         let total_chars_sum: i64 = items.iter().map(|i| i.total_chars).sum();
 
         for item in &items {
-            let task = Task::new(CreateTaskRequest {
+            let batch_id_obj = Id::from_str(batch_id)
+                .map_err(|e| AppError::Internal(e.to_string()))?;
+            let mut task = Task::new(CreateTaskRequest {
                 task_type: TaskType::BatchChild,
-                batch_id: Some(
-                    Id::from_str(batch_id)
-                        .map_err(|e| AppError::Internal(e.to_string()))?,
-                ),
+                batch_id: Some(batch_id_obj.clone()),
                 content: item.content.clone(),
                 content_ref: None,
                 title: item.effective_title.clone(),
@@ -207,6 +206,8 @@ impl SqliteBatchRepo {
                 total_chars: item.total_chars,
                 total_tokens: item.token_estimate,
             });
+            // Set group_id = batch_id (batch and group share the same ID)
+            task.group_id = Some(batch_id_obj);
 
             // Insert task
             tx.execute(

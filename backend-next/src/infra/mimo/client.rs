@@ -1,17 +1,71 @@
+use base64::Engine;
 use crate::shared::error::AppError;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 /// HTTP client for the MIMO TTS API.
+///
+/// Uses the `/v1/chat/completions` endpoint with `audio` modality,
+/// which is the correct API format for Xiaomi MiMo TTS.
 pub struct MimoClient {
     http_client: reqwest::Client,
     api_key: String,
     base_url: String,
 }
 
+// ── Request / Response types for MIMO chat completions TTS ──────────
+
+#[derive(Debug, Serialize)]
+struct ChatMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+struct AudioParams {
+    format: String,
+    voice: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatCompletionRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    audio: AudioParams,
+    stream: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AudioData {
+    data: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ResponseMessage {
+    audio: Option<AudioData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Choice {
+    message: ResponseMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<Choice>,
+}
+
 impl MimoClient {
     pub fn new(api_key: &str, base_url: &str) -> Self {
         Self {
-            http_client: reqwest::Client::new(),
+            http_client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(300))
+                .connect_timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|e| {
+                    tracing::error!("Failed to create HTTP client: {}, using default", e);
+                    reqwest::Client::new()
+                }),
             api_key: api_key.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
         }
@@ -53,28 +107,44 @@ impl MimoClient {
             .map_err(|e| AppError::Internal(format!("tokenize parse failed: {e}")))
     }
 
-    /// Synthesize text to speech audio.
+    /// Synthesize text to speech audio via MIMO chat completions API.
     ///
+    /// Uses `POST /v1/chat/completions` with `audio` modality.
     /// Returns raw WAV bytes on success.
     pub async fn synthesize(
         &self,
         text: &str,
         voice: &str,
         model: &str,
-        speed: f64,
+        _speed: f64,
     ) -> Result<Vec<u8>, AppError> {
-        let url = format!("{}/v1/audio/speech", self.base_url);
+        let url = format!("{}/v1/chat/completions", self.base_url);
+
+        let request = ChatCompletionRequest {
+            model: model.to_string(),
+            messages: vec![
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: String::new(),
+                },
+                ChatMessage {
+                    role: "assistant".to_string(),
+                    content: text.to_string(),
+                },
+            ],
+            audio: AudioParams {
+                format: "wav".to_string(),
+                voice: voice.to_string(),
+            },
+            stream: false,
+        };
+
         let resp = self
             .http_client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .json(&json!({
-                "model": model,
-                "input": text,
-                "voice": voice,
-                "response_format": "wav",
-                "speed": speed,
-            }))
+            .header("api-key", &self.api_key)
+            .header("Content-Type", "application/json")
+            .json(&request)
             .send()
             .await
             .map_err(|e| AppError::Internal(format!("synthesize request failed: {e}")))?;
@@ -94,10 +164,25 @@ impl MimoClient {
             )));
         }
 
-        resp.bytes()
+        let completion: ChatCompletionResponse = resp
+            .json()
             .await
-            .map(|b| b.to_vec())
-            .map_err(|e| AppError::Internal(format!("synthesize read body failed: {e}")))
+            .map_err(|e| AppError::Internal(format!("synthesize parse response failed: {e}")))?;
+
+        let choice = completion
+            .choices
+            .first()
+            .ok_or_else(|| AppError::Internal("synthesize returned no choices".to_string()))?;
+
+        let audio = choice
+            .message
+            .audio
+            .as_ref()
+            .ok_or_else(|| AppError::Internal("synthesize returned no audio data".to_string()))?;
+
+        base64::engine::general_purpose::STANDARD
+            .decode(&audio.data)
+            .map_err(|e| AppError::Internal(format!("synthesize base64 decode failed: {e}")))
     }
 }
 

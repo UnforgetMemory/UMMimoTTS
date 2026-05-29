@@ -768,6 +768,7 @@ interface BatchV2TaskSummary {
   created_at: string
   updated_at: string
   completed_at?: string | null
+  group_id?: string | null
 }
 
 interface BatchV2Response {
@@ -885,7 +886,7 @@ function transformV2BatchTask(v2: BatchV2TaskSummary): Task {
     has_audio: !!v2.output_path,
     total_chunks: v2.total_chunks,
     current_chunk: v2.done_chunks,
-    group_id: null,
+    group_id: v2.group_id || null,
   }
 }
 

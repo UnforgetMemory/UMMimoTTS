@@ -150,7 +150,7 @@ impl TaskQueue {
     /// Spawn this as a background task after `run_workers()` has been called
     /// on the `ChunkQueue`.  It will process events until the sender is
     /// dropped (i.e. the queue is shut down).
-    pub async fn listen(self, mut event_rx: broadcast::Receiver<DomainEvent>) {
+    pub async fn listen(&self, mut event_rx: broadcast::Receiver<DomainEvent>) {
         loop {
             match event_rx.recv().await {
                 Ok(event) => {

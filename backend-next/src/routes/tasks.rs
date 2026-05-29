@@ -128,7 +128,7 @@ async fn list_tasks(
     let page = q.page.unwrap_or(0).max(0);
     let page_size = q.page_size.unwrap_or(50).max(1).min(200);
 
-    // Fetch tasks filtered by batch_id if provided
+    // Fetch tasks filtered by batch_id or group_id if provided
     let all: Vec<crate::domain::task::Task> = if let Some(bid) = &q.batch_id {
         match state.task_service.get_by_batch(bid) {
             Ok(t) => t,
@@ -136,9 +136,9 @@ async fn list_tasks(
                 serde_json::json!({"error": e.to_string()})
             ),
         }
-    } else if let Some(_gid) = &q.group_id {
-        // Group tasks via batch_id - fallback to all tasks
-        match state.task_service.task_repo.find_all() {
+    } else if let Some(gid) = &q.group_id {
+        // Filter tasks by group_id using dedicated query
+        match state.task_service.task_repo.find_by_group(gid) {
             Ok(t) => t,
             Err(e) => return HttpResponse::InternalServerError().json(
                 serde_json::json!({"error": e.to_string()})

@@ -503,12 +503,14 @@ async function handleDownloadGroup(groupId: string) {
   }
 }
 
-function handleBatchImported(groupId: string) {
+async function handleBatchImported(groupId: string) {
   selectedGroupId.value = groupId
   showBatchWizard.value = false
-  batchStore.loadGroups()
-  // Also refresh task list so newly created tasks appear
-  taskStore.loadTasks()
+  // Await both so data is ready before user navigates
+  await Promise.all([
+    batchStore.loadGroups(),
+    taskStore.loadTasks(),
+  ])
 }
 
 // Lifecycle

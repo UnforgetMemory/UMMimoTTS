@@ -27,6 +27,7 @@ pub trait TaskRepo: Send + Sync {
     fn update_chunk_progress(&self, id: &str, total: i32, done: i32, failed: i32) -> Result<(), AppError>;
     fn set_output(&self, id: &str, path: &str, duration: f64) -> Result<(), AppError>;
     fn find_by_batch(&self, batch_id: &str) -> Result<Vec<Task>, AppError>;
+    fn find_by_group(&self, group_id: &str) -> Result<Vec<Task>, AppError>;
     fn batch_progress(&self, batch_id: &str) -> Result<BatchProgressAggregate, AppError>;
     fn find_all(&self) -> Result<Vec<Task>, AppError>;
 }
@@ -162,6 +163,18 @@ impl TaskRepo for SqliteTaskRepo {
         )?;
         let tasks = stmt
             .query_map(params![batch_id], Self::row_to_task)?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(tasks)
+    }
+
+    fn find_by_group(&self, group_id: &str) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM tasks WHERE group_id = ?1 ORDER BY created_at DESC",
+        )?;
+        let tasks = stmt
+            .query_map(params![group_id], Self::row_to_task)?
             .filter_map(|r| r.ok())
             .collect();
         Ok(tasks)

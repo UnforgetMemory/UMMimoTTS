@@ -494,9 +494,11 @@ async function handleSubmit() {
 
     submitResult.value = { group_id: groupId, task_count: parsedSegments.value.length }
     currentStep.value = 4
-    // Refresh task + group lists
-    taskStore.loadTasks()
-    batchStore.loadGroups()
+    // Refresh task + group lists (await so data is ready before user navigates)
+    await Promise.all([
+      taskStore.loadTasks(),
+      batchStore.loadGroups(),
+    ])
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : '提交失败'
     submitError.value = msg

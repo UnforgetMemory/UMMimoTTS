@@ -14,6 +14,7 @@ use crate::infra::cache::Cache;
 use crate::infra::mimo::client::MimoClient;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
 use crate::infra::persistence::db::DbPool;
+use crate::infra::persistence::task_repo::TaskRepo;
 use crate::infra::queue::rate_limiter::TokenBucket;
 use crate::shared::error::AppError;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -26,6 +27,7 @@ use tracing::{error, info};
 pub struct ChunkQueue {
     pool: DbPool,
     chunk_repo: Arc<dyn ChunkRepo>,
+    task_repo: Arc<dyn TaskRepo>,
     client: Arc<MimoClient>,
     cache: Arc<Cache>,
     rate_limiter: Arc<TokenBucket>,
@@ -43,6 +45,7 @@ impl ChunkQueue {
     pub fn new(
         pool: DbPool,
         chunk_repo: Arc<dyn ChunkRepo>,
+        task_repo: Arc<dyn TaskRepo>,
         client: Arc<MimoClient>,
         cache: Arc<Cache>,
         rate_limiter: Arc<TokenBucket>,
@@ -54,6 +57,7 @@ impl ChunkQueue {
         Self {
             pool,
             chunk_repo,
+            task_repo,
             client,
             cache,
             rate_limiter,
@@ -76,6 +80,7 @@ impl ChunkQueue {
     pub fn run_workers(&self) {
         for i in 0..self.max_concurrent {
             let chunk_repo = self.chunk_repo.clone();
+            let task_repo = self.task_repo.clone();
             let client = self.client.clone();
             let cache = self.cache.clone();
             let rate_limiter = self.rate_limiter.clone();
@@ -89,6 +94,7 @@ impl ChunkQueue {
                 worker_loop(
                     i,
                     chunk_repo,
+                    task_repo,
                     client,
                     cache,
                     rate_limiter,
@@ -115,6 +121,7 @@ impl ChunkQueue {
 async fn worker_loop(
     worker_id: usize,
     chunk_repo: Arc<dyn ChunkRepo>,
+    task_repo: Arc<dyn TaskRepo>,
     client: Arc<MimoClient>,
     cache: Arc<Cache>,
     rate_limiter: Arc<TokenBucket>,
@@ -155,22 +162,26 @@ async fn worker_loop(
                 chunks.remove(0)
             }
             Err(e) => {
-                error!("worker {worker_id}: find_pending_prioritized failed: {e}");
+                error!("worker {worker_id}: fetch pending failed: {e}");
                 drop(_permit);
-                notify.notified().await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 continue;
             }
         };
 
-        // Mark chunk as processing
-        if let Err(e) = chunk_repo.update_status(&chunk.id.to_string(), &ChunkStatus::Processing) {
-            error!("worker {worker_id}: failed to mark chunk processing: {e}");
+        let chunk_id = chunk.id.to_string();
+        info!("worker {worker_id} picked chunk {chunk_id}");
+
+        // Mark Processing
+        if let Err(e) = chunk_repo.update_status(&chunk_id, &ChunkStatus::Processing) {
+            error!("worker {worker_id}: mark_processing({chunk_id}) failed: {e}");
             drop(_permit);
             continue;
         }
 
         // Process the chunk
         let repo_c = chunk_repo.clone();
+        let task_repo_c = task_repo.clone();
         let client_c = client.clone();
         let cache_c = cache.clone();
         let tx_c = event_tx.clone();
@@ -181,9 +192,11 @@ async fn worker_loop(
         let text = chunk.text.clone();
 
         tokio::spawn(async move {
+            info!("chunk {chunk_id} processing started");
             let result = process_chunk(
                 repo_c.as_ref(),
                 &client_c,
+                task_repo_c.as_ref(),
                 cache_c.as_ref(),
                 &tx_c,
                 &chunk_id,
@@ -194,8 +207,14 @@ async fn worker_loop(
             )
             .await;
 
-            if let Err(e) = result {
-                error!("chunk {chunk_id} processing failed: {e}");
+            match result {
+                Ok(()) => {
+                    info!("chunk {chunk_id} completed successfully");
+                }
+                Err(e) => {
+                    error!("chunk {chunk_id} processing failed: {e}");
+                    let _ = repo_c.mark_failed(&chunk_id, &e.to_string());
+                }
             }
         });
     }
@@ -204,6 +223,7 @@ async fn worker_loop(
 async fn process_chunk(
     chunk_repo: &dyn ChunkRepo,
     client: &MimoClient,
+    task_repo: &dyn TaskRepo,
     cache: &Cache,
     event_tx: &broadcast::Sender<DomainEvent>,
     chunk_id: &str,
@@ -227,8 +247,13 @@ async fn process_chunk(
         return Ok(());
     }
 
-    // 2. Call MIMO API
-    let audio_bytes = client.synthesize(text, "default", "tts-1", 1.0).await?;
+    // 2. Look up task to get voice and model
+    let task = task_repo
+        .find_by_id(task_id)?
+        .ok_or_else(|| AppError::NotFound(format!("task {task_id} not found")))?;
+
+    // 3. Call MIMO API
+    let audio_bytes = client.synthesize(text, &task.voice, &task.model, task.speed).await?;
 
     // 3. Write to disk
     let file_name = format!("chunk_{task_id}_{seq}.wav");
@@ -267,6 +292,7 @@ mod tests {
     use crate::infra::persistence::chunk_repo::SqliteChunkRepo;
     use crate::infra::persistence::db::create_test_pool;
     use crate::infra::persistence::migrate::run_migrations;
+    use crate::infra::persistence::task_repo::SqliteTaskRepo;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -274,6 +300,7 @@ mod tests {
         let pool = create_test_pool();
         run_migrations(&pool.get().unwrap()).unwrap();
         let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
+        let task_repo: Arc<dyn TaskRepo> = Arc::new(SqliteTaskRepo::new(pool.clone()));
         let client = Arc::new(MimoClient::new("test-key", "http://localhost:30231"));
         let cache = Arc::new(Cache::new(
             PathBuf::from("data/test_cache"),
@@ -287,6 +314,7 @@ mod tests {
         let queue = ChunkQueue::new(
             pool.clone(),
             chunk_repo.clone(),
+            task_repo,
             client,
             cache,
             rate_limiter,

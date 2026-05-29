@@ -31,13 +31,20 @@
       <div v-if="activeTab === 'control'" class="flex-1 flex flex-col">
         <!-- 模型 & 音色徽章 -->
         <div class="flex items-center gap-2 mb-3 flex-wrap">
-          <Badge variant="secondary" class="text-xs gap-1">
+          <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
             <SparklesIcon class="w-3 h-3" />
             {{ form.model }}
           </Badge>
-          <Badge v-if="selectedVoice" variant="outline" class="text-xs gap-1">
-            <UserIcon v-if="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'" class="w-3 h-3" />
-            <UserRoundIcon v-else class="w-3 h-3" />
+          <Badge 
+            v-if="selectedVoice" 
+            variant="outline" 
+            class="text-xs gap-1"
+            :class="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'
+              ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300'
+              : 'border-pink-200 dark:border-pink-800 bg-pink-50 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300'"
+          >
+            <UserIcon v-if="selectedVoice.gender === '男性' || selectedVoice.gender === 'Male'" class="w-3 h-3 text-blue-500" />
+            <UserRoundIcon v-else class="w-3 h-3 text-pink-500" />
             {{ selectedVoice.name }}
           </Badge>
           <Badge v-else variant="destructive" class="text-xs">
@@ -141,66 +148,88 @@
         </div>
 
         <!-- 模型选择 -->
-        <div v-if="configTab === 'model'" class="flex-1 overflow-y-auto space-y-2 pr-1">
+        <div v-if="configTab === 'model'" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-2 pr-1 content-start">
           <div
             v-for="model in models"
             :key="model.id"
-            class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all"
+            class="relative flex flex-col items-center text-center p-3 rounded-lg border cursor-pointer transition-all"
             :class="form.model === model.id 
               ? 'bg-primary/5 border-primary/50 shadow-sm' 
               : 'hover:bg-muted/50'"
             @click="form.model = model.id"
           >
-            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center mb-2">
               <SparklesIcon class="w-5 h-5 text-primary" />
             </div>
-            <div class="flex-1 min-w-0">
-              <div class="text-sm font-medium">{{ model.name }}</div>
-              <p class="text-xs text-muted-foreground">{{ model.description }}</p>
+            <div class="text-sm font-medium">{{ model.name }}</div>
+            <p class="text-xs text-muted-foreground mt-1 line-clamp-2">{{ model.description }}</p>
+            <div v-if="form.model === model.id" class="absolute top-2 right-2">
+              <CheckIcon class="w-4 h-4 text-primary" />
             </div>
-            <CheckIcon v-if="form.model === model.id" class="w-5 h-5 text-primary shrink-0" />
           </div>
         </div>
 
         <!-- 音色选择 -->
-        <div v-if="configTab === 'voice'" class="flex-1 overflow-y-auto space-y-2 pr-1">
-          <div v-if="voicesLoading" class="flex items-center justify-center py-8">
+        <div v-if="configTab === 'voice'" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3 pr-1 content-start">
+          <div v-if="voicesLoading" class="col-span-1 sm:col-span-2 flex items-center justify-center py-8">
             <Loader2Icon class="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
           <div
             v-for="voice in voices"
             :key="voice.id"
-            class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all"
+            class="relative group flex flex-col rounded-xl border cursor-pointer transition-all overflow-hidden"
             :class="form.voice === voice.id 
-              ? 'bg-primary/5 border-primary/50 shadow-sm' 
-              : 'hover:bg-muted/50'"
+              ? 'bg-primary/5 border-primary/50 shadow-sm ring-1 ring-primary/20' 
+              : 'hover:bg-muted/50 hover:border-muted-foreground/20'"
             @click="form.voice = voice.id"
           >
-            <div class="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-              <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-5 h-5 text-primary" />
-              <UserRoundIcon v-else class="w-5 h-5 text-primary" />
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="text-sm font-medium">{{ voice.name }}</span>
-                <Badge variant="secondary" class="text-[10px] px-1">{{ voice.language }}</Badge>
+            <!-- 头部：图标 + 名称 -->
+            <div class="flex items-center gap-3 p-3 pb-2">
+              <div 
+                class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors"
+                :class="[
+                  voice.gender === '男性' || voice.gender === 'Male' 
+                    ? 'bg-blue-100 dark:bg-blue-900/30' 
+                    : 'bg-pink-100 dark:bg-pink-900/30',
+                  form.voice === voice.id && 'ring-2 ring-primary/30'
+                ]"
+              >
+                <UserIcon v-if="voice.gender === '男性' || voice.gender === 'Male'" class="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                <UserRoundIcon v-else class="w-4 h-4 text-pink-500 dark:text-pink-400" />
               </div>
-              <p class="text-xs text-muted-foreground">{{ voice.style }}</p>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium truncate">{{ voice.name }}</div>
+                <Badge variant="secondary" class="text-[10px] px-1 mt-0.5">{{ voice.language }}</Badge>
+              </div>
+              <div v-if="form.voice === voice.id" class="shrink-0">
+                <div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                  <CheckIcon class="w-3 h-3 text-primary-foreground" />
+                </div>
+              </div>
             </div>
-            <div class="flex items-center gap-1 shrink-0">
+
+            <!-- 中部：风格描述 -->
+            <div class="px-3 pb-2">
+              <p class="text-xs text-muted-foreground line-clamp-2 leading-relaxed">{{ voice.style }}</p>
+            </div>
+
+            <!-- 底部：试听按钮 -->
+            <div class="px-3 pb-3 mt-auto">
               <Button
                 v-if="voice.preview_url"
                 size="sm"
-                variant="ghost"
-                class="h-8 w-8 p-0"
+                :variant="previewingVoice === voice.id ? 'default' : 'outline'"
+                class="w-full h-7 text-xs opacity-0 group-hover:opacity-100 transition-all duration-200"
+                :class="[
+                  form.voice === voice.id && 'opacity-100',
+                  previewingVoice === voice.id && 'opacity-100 bg-primary/90'
+                ]"
                 @click.stop="playVoicePreview(voice.id)"
-                :aria-label="previewingVoice === voice.id ? '停止' : '试听'"
               >
-                <Loader2Icon v-if="previewingVoice === voice.id && loading" class="w-4 h-4 animate-spin" />
-                <PauseIcon v-else-if="previewingVoice === voice.id" class="w-4 h-4" />
-                <PlayIcon v-else class="w-4 h-4" />
+                <Loader2Icon v-if="previewingVoice === voice.id" class="w-3 h-3 mr-1 animate-spin" />
+                <PlayIcon v-else class="w-3 h-3 mr-1" />
+                {{ previewingVoice === voice.id ? '播放中...' : '试听' }}
               </Button>
-              <CheckIcon v-if="form.voice === voice.id" class="w-5 h-5 text-primary" />
             </div>
           </div>
         </div>
