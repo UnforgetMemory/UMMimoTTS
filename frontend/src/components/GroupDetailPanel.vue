@@ -82,7 +82,7 @@
       </div>
 
       <!-- Kanban Board -->
-      <div class="flex-1 min-h-0 overflow-x-auto p-4 flex flex-col">
+      <div class="flex-1 min-h-0 overflow-x-auto p-4">
         <!-- Loading -->
         <div v-if="loading" class="flex gap-4 h-full">
           <div v-for="i in 4" :key="i" class="flex-1 min-w-[250px]">
@@ -96,14 +96,14 @@
         </div>
 
         <!-- Kanban Columns -->
-        <div v-else class="flex gap-4 flex-1 min-h-0 min-w-[1000px]">
+        <div v-else class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 280px); max-height: 700px;">
           <div
             v-for="(column, columnIndex) in kanbanColumns"
             :key="column.id"
             class="flex-1 min-w-[250px] flex flex-col min-h-0"
           >
             <!-- Column Header -->
-            <div class="flex items-center gap-2 mb-3 pb-2 border-b">
+            <div class="flex items-center gap-2 mb-3 pb-2 border-b shrink-0">
               <div :class="['w-2.5 h-2.5 rounded-full', column.dotClass]" />
               <h4 class="text-sm font-medium">{{ column.title }}</h4>
               <Badge variant="secondary" class="ml-auto text-xs">
@@ -114,7 +114,7 @@
             <!-- Column Content (virtual scroller) -->
             <div
               :ref="(el: any) => { if (el) columnScrollRefs[columnIndex] = el as HTMLElement }"
-              class="flex-1 overflow-y-auto scrollbar-auto pr-1"
+              class="flex-1 min-h-0 overflow-y-auto scrollbar-auto pr-1"
             >
               <!-- Virtual scroller when tasks exist -->
               <template v-if="column.tasks.length > 0">
