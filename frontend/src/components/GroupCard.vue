@@ -93,7 +93,6 @@ import {
   RotateCcw as RotateCcwIcon,
   Trash as TrashIcon,
 } from 'lucide-vue-next'
-import type { BadgeVariants } from '@/components/ui/badge'
 
 const props = defineProps<{
   group: GroupSummary

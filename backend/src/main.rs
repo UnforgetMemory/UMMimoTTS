@@ -1,286 +1,172 @@
+//! UMMimoTTS v3 — Binary entry point.
+//!
+//! Wires together all infrastructure, services, and routes,
+//! then starts the actix-web HTTP server.
+//!
+//! Environment variables:
+//!   MIMO_API_KEY         — MIMO TTS API key (default: "test-key")
+//!   MIMO_BASE_URL        — MIMO API base URL  (default: "http://localhost:30231")
+//!   SERVER_PORT          — HTTP listen port    (default: 30231)
+//!   DB_PATH              — SQLite file path    (default: "data/mimo.db")
+//!   MAX_CONCURRENT       — ChunkQueue concurrency (default: 2)
+//!   CACHE_DIR            — Audio cache directory   (default: "data/cache")
+
 use actix_cors::Cors;
-use actix_web::{middleware, web, App, HttpServer};
-use tracing_subscriber;
+use actix_web::{web, App, HttpServer, middleware};
+use std::sync::Arc;
+use std::time::Duration;
 
-mod config;
-mod db;
-mod embed;
-mod models;
-mod routes;
-mod services;
-mod state;
-// Test modules declared in their respective module files:
-//   test_utils, db_tests → main.rs #[cfg(test)]
-//   stats_cache_tests → services/mod.rs #[cfg(test)]
-//   response_tests → models/mod.rs #[cfg(test)]
-#[cfg(test)]
-pub mod test_utils;
-#[cfg(test)]
-pub mod db_tests;
+use um_mimo_tts_server::domain::events::DomainEvent;
+use um_mimo_tts_server::infra::persistence::db::create_pool;
+use um_mimo_tts_server::infra::persistence::migrate::run_migrations;
+use um_mimo_tts_server::infra::persistence::task_repo::SqliteTaskRepo;
+use um_mimo_tts_server::infra::persistence::chunk_repo::SqliteChunkRepo;
+use um_mimo_tts_server::infra::persistence::batch_repo::SqliteBatchRepo;
+use um_mimo_tts_server::infra::persistence::group_repo::SqliteGroupRepo;
+use um_mimo_tts_server::infra::persistence::batch_repo::BatchRepo;
+use um_mimo_tts_server::infra::persistence::chunk_repo::ChunkRepo;
+use um_mimo_tts_server::infra::persistence::task_repo::TaskRepo;
+use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
+use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
+use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
+use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
+use um_mimo_tts_server::infra::mimo::chunker::MimoChunker;
+use um_mimo_tts_server::infra::mimo::client::MimoClient;
+use um_mimo_tts_server::infra::cache::Cache;
+use um_mimo_tts_server::infra::sse_bus::SseBus;
+use um_mimo_tts_server::service::task_service::TaskService;
+use um_mimo_tts_server::service::batch_service::BatchService;
+use um_mimo_tts_server::service::group_service::GroupService;
+use um_mimo_tts_server::routes::AppState;
 
-use config::Config;
-use services::batch_queue::BatchQueue;
-use state::app_state::AppState;
-
-/// 查找可用端口，如果指定端口被占用则自动递增
-fn find_available_port(preferred: u16) -> u16 {
-    if std::net::TcpListener::bind(("127.0.0.1", preferred)).is_ok() {
-        return preferred;
-    }
-    find_next_port(preferred)
-}
-
-/// 查找下一个可用端口
-fn find_next_port(from: u16) -> u16 {
-    for offset in 1..=100 {
-        let port = from.wrapping_add(offset);
-        if port >= 1024 && std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return port;
-        }
-    }
-    for port in 10000..65535 {
-        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return port;
-        }
-    }
-    tracing::error!("No available port found!");
-    std::process::exit(1);
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // ── load .env if present ──────────────────────────────────────────
+    let _ = dotenvy::dotenv();
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("um_mimo_tts_server=info".parse().unwrap())
-                .add_directive("actix_web=info".parse().unwrap()),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
         )
         .init();
 
-    let mut config = Config::from_args();
-    let app_state = web::Data::new(AppState::new(config.output_dir.clone()));
-    let batch_queue = BatchQueue::new(app_state.rate_limiter.clone(), config.max_concurrent_tasks);
-    let batch_queue = web::Data::new(batch_queue);
+    let port: u16 = env_or("SERVER_PORT", "30231").parse().expect("SERVER_PORT must be a u16");
+    let db_path = env_or("DB_PATH", "data/mimo.db");
+    let mimo_api_key = env_or("MIMO_API_KEY", "test-key");
+    let mimo_base_url = env_or("MIMO_BASE_URL", "http://localhost:30231");
+    let max_concurrent: usize = env_or("MAX_CONCURRENT", "2").parse().expect("MAX_CONCURRENT must be usize");
+    let cache_dir = std::path::PathBuf::from(env_or("CACHE_DIR", "data/cache"));
+    let _max_task_wait = Duration::from_secs(300);
 
-    // Start batch task consumer workers
-    batch_queue.start_consumer(app_state.clone());
+    // ── database ──────────────────────────────────────────────────────
+    let pool = create_pool(&db_path, 10).expect("Failed to create DB pool");
+    {
+        let conn = pool.get().expect("Failed to get DB connection");
+        run_migrations(&conn).expect("Failed to run migrations");
+    }
+    tracing::info!("Database ready at {db_path}");
 
-    // Start cleanup task for old audio files
-    let cleanup_data = app_state.clone();
-    let cleanup_config = config.clone();
-    services::cleanup::spawn_cleanup_task(cleanup_data, cleanup_config);
+    // ── repos ─────────────────────────────────────────────────────────
+    let task_repo: Arc<dyn TaskRepo> = Arc::new(SqliteTaskRepo::new(pool.clone()));
+    let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
+    let batch_repo: Arc<dyn BatchRepo> = Arc::new(SqliteBatchRepo::new(pool.clone()));
+    let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
 
-    // 尝试绑定端口，如果被占用则自动查找可用端口
-    let port = find_available_port(config.server_port);
-    config.server_port = port;
+    // ── event bus ─────────────────────────────────────────────────────
+    let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(256);
+    // Second receiver for TaskQueue event listener (broadcast receivers are independent)
+    let task_event_rx = event_tx.subscribe();
 
-    // 启动提示
-    println!();
-    println!("╔════════════════════════════════════════════════════════════╗");
-    println!("║           UM-MIMO-TTS Server v{}                   ║", env!("CARGO_PKG_VERSION"));
-    println!("╠════════════════════════════════════════════════════════════╣");
-    println!("║  🌐 Web UI:  http://localhost:{:<5}                    ║", config.server_port);
-    println!("║  📡 API:     http://localhost:{:<5}/api/v1             ║", config.server_port);
-    println!("║  ❤️  Health:  http://localhost:{:<5}/health             ║", config.server_port);
-    println!("╠════════════════════════════════════════════════════════════╣");
-    println!("║  按 Ctrl+C 停止服务器                                      ║");
-    println!("╚════════════════════════════════════════════════════════════╝");
-    println!();
+    // ── SSE bus ───────────────────────────────────────────────────────
+    let sse_bus = Arc::new(SseBus::new());
 
-    tracing::info!("Starting UM-MIMO-TTS Server on port {}", config.server_port);
-    tracing::info!("Allowed origins: {:?}", config.allowed_origins);
+    // ── SSE bridge: forward domain events to SSE subscribers ─────────
+    um_mimo_tts_server::infra::sse_bus::spawn_sse_bridge(event_rx, sse_bus.clone());
 
-    // 尝试绑定端口，失败则自动查找可用端口
-    let mut bind_port = config.server_port;
-    let server = loop {
-        let app_state_clone = app_state.clone();
-        let batch_queue_clone = batch_queue.clone();
-        match HttpServer::new(move || {
-            let cors = Cors::default()
-                .allowed_origin_fn(|origin, _req_head| {
-                    origin.as_bytes().starts_with(b"http://localhost:")
-                })
-                .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
-                .allowed_headers(vec![
-                    actix_web::http::header::AUTHORIZATION,
-                    actix_web::http::header::ACCEPT,
-                    actix_web::http::header::CONTENT_TYPE,
-                    actix_web::http::header::RANGE,
-                ])
-                .expose_headers(vec![
-                    actix_web::http::header::ACCEPT_RANGES,
-                    actix_web::http::header::CONTENT_RANGE,
-                    actix_web::http::header::CONTENT_LENGTH,
-                ])
-                .max_age(3600);
+    // ── MIMO client + chunker ─────────────────────────────────────────
+    let client = Arc::new(MimoClient::new(&mimo_api_key, &mimo_base_url));
+    let chunker = MimoChunker::new(&mimo_base_url, 2000, 5000);
 
-            App::new()
-                .app_data(app_state_clone.clone())
-                .app_data(batch_queue_clone.clone())
-                .wrap(cors)
-                .wrap(middleware::Logger::default())
-                .route(
-                    "/api/v1/tts/synthesize",
-                    web::post().to(routes::tts::synthesize),
-                )
-                .route("/api/v1/tasks", web::get().to(routes::tasks::list_tasks))
-                .route(
-                    "/api/v1/tasks/{task_id}",
-                    web::get().to(routes::tasks::get_task),
-                )
-                .route(
-                    "/api/v1/tasks/{task_id}",
-                    web::delete().to(routes::tasks::delete_task),
-                )
-                .route(
-                    "/api/v1/tasks/{task_id}/audio",
-                    web::get().to(routes::tasks::get_audio),
-                )
-                .route(
-                    "/api/v1/tasks/{task_id}/detail",
-                    web::get().to(routes::tasks::get_task_detail),
-                )
-                .route(
-                    "/api/v1/tasks/{task_id}/download",
-                    web::get().to(routes::tasks::download_task_audio),
-                )
-                .route(
-                    "/api/v1/tasks/{task_id}/title",
-                    web::patch().to(routes::tasks::update_task_title),
-                )
-                .route("/api/v1/voices", web::get().to(routes::voices::list_voices))
-                .route(
-                    "/api/v1/voices/{voice_id}/preview",
-                    web::get().to(routes::voices::preview_voice),
-                )
-                .route(
-                    "/api/v1/sse/tasks/{task_id}",
-                    web::get().to(routes::sse::sse_task_events),
-                )
-                .route(
-                    "/api/v1/sse/groups/{group_id}",
-                    web::get().to(routes::sse::sse_group_events),
-                )
-                // Batch import
-                .route(
-                    "/api/v1/batch/import",
-                    web::post().to(routes::batch::import_batch),
-                )
-                // Batch Import v2 (token-based backend cache)
-                .route(
-                    "/api/v1/batch/upload",
-                    web::post().to(routes::batch_import::upload_file),
-                )
-                .route(
-                    "/api/v1/batch/preview",
-                    web::get().to(routes::batch_import::get_preview),
-                )
-                .route(
-                    "/api/v1/batch/extend",
-                    web::post().to(routes::batch_import::extend_ttl),
-                )
-                .route(
-                    "/api/v1/batch/items/{index}",
-                    web::put().to(routes::batch_import::update_item),
-                )
-                .route(
-                    "/api/v1/batch/submit",
-                    web::post().to(routes::batch_import::submit),
-                )
-                .route(
-                    "/api/v1/batch/files",
-                    web::get().to(routes::batch_import::get_file_stats),
-                )
-                .route(
-                    "/api/v1/batch/files/{filename}",
-                    web::delete().to(routes::batch_import::delete_file),
-                )
-                // Group management
-                .route(
-                    "/api/v1/groups",
-                    web::get().to(routes::groups::list_groups),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}",
-                    web::get().to(routes::groups::get_group),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}",
-                    web::delete().to(routes::groups::delete_group),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}",
-                    web::patch().to(routes::groups::update_group),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/pause",
-                    web::post().to(routes::groups::pause_group),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/resume",
-                    web::post().to(routes::groups::resume_group),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/retry-failed",
-                    web::post().to(routes::groups::retry_failed),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/tasks",
-                    web::get().to(routes::groups::get_group_tasks),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/stats",
-                    web::get().to(routes::stats::group_stats),
-                )
-                .route(
-                    "/api/v1/groups/{group_id}/download",
-                    web::get().to(routes::groups::download_group_audio),
-                )
-                .route(
-                    "/api/v1/stats/summary",
-                    web::get().to(routes::stats::stats_summary),
-                )
-                .route(
-                    "/api/v1/stats/groups",
-                    web::get().to(routes::stats::stats_groups),
-                )
-                .route(
-                    "/health",
-                    web::get().to(|| async {
-                        actix_web::HttpResponse::Ok().json(serde_json::json!({
-                            "status": "ok",
-                            "version": env!("CARGO_PKG_VERSION"),
-                            "timestamp": chrono::Utc::now().to_rfc3339()
-                        }))
-                    }),
-                )
-                // 嵌入的前端静态文件（通配路由放在最后）
-                .configure(embed::config_embedded)
-        })
-        .bind(("0.0.0.0", bind_port))
-        {
-            Ok(server) => break server,
-            Err(e) => {
-                tracing::warn!("Port {} bind failed: {}, trying next port...", bind_port, e);
-                bind_port = find_next_port(bind_port);
-                config.server_port = bind_port;
-                // 重新打印启动提示
-                println!("╔════════════════════════════════════════════════════════════╗");
-                println!("║           UM-MIMO-TTS Server v{}                   ║", env!("CARGO_PKG_VERSION"));
-                println!("╠════════════════════════════════════════════════════════════╣");
-                println!("║  🌐 Web UI:  http://localhost:{:<5}                    ║", bind_port);
-                println!("║  📡 API:     http://localhost:{:<5}/api/v1             ║", bind_port);
-                println!("║  ❤️  Health:  http://localhost:{:<5}/health             ║", bind_port);
-                println!("╠════════════════════════════════════════════════════════════╣");
-                println!("║  按 Ctrl+C 停止服务器                                      ║");
-                println!("╚════════════════════════════════════════════════════════════╝");
-                println!();
-            }
-        }
+    // ── cache ─────────────────────────────────────────────────────────
+    let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), 100));
+
+    // ── rate limiter ──────────────────────────────────────────────────
+    let rate_limiter = Arc::new(TokenBucket::new(100));
+    let token_budget = Arc::new(TokenBucket::new(1_000_000));
+
+    // ── queues ────────────────────────────────────────────────────────
+    let chunk_queue = Arc::new(ChunkQueue::new(
+        pool.clone(),
+        chunk_repo.clone(),
+        task_repo.clone(),
+        client.clone(),
+        cache.clone(),
+        rate_limiter.clone(),
+        token_budget.clone(),
+        event_tx.clone(),
+        max_concurrent,
+        Duration::from_secs(30),
+        cache_dir.clone(),
+    ));
+
+    let task_queue = Arc::new(TaskQueue::new(
+        pool.clone(),
+        task_repo.clone(),
+        chunk_repo.clone(),
+        chunk_queue.clone(),
+        event_tx.clone(),
+        chunker,
+    ));
+
+    // ── services ──────────────────────────────────────────────────────
+    let task_service = Arc::new(TaskService::new(task_repo.clone(), chunk_repo.clone(), task_queue.clone()));
+    let group_service = Arc::new(GroupService::new(group_repo.clone()));
+    let batch_service = Arc::new(BatchService::new(
+        batch_repo.clone(),
+        task_service.clone(),
+        sse_bus.clone(),
+    ));
+
+    let app_state = AppState {
+        batch_service,
+        task_service,
+        group_service,
+        sse_bus,
     };
 
-    tracing::info!("Server started at http://0.0.0.0:{}", bind_port);
+    // ── start queue workers ──────────────────────────────────────────
+    chunk_queue.run_workers();
+    tracing::info!("ChunkQueue workers started (max_concurrent={max_concurrent})");
 
-    server.run().await
+    // ── start task queue event listener ─────────────────────────────
+    let tq = task_queue.clone();
+    tokio::spawn(async move {
+        tq.listen(task_event_rx).await;
+    });
+    tracing::info!("TaskQueue event listener started");
+
+    // ── HTTP server ───────────────────────────────────────────────────
+    tracing::info!("Starting server on 0.0.0.0:{port}");
+
+    HttpServer::new(move || {
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+
+        App::new()
+            .wrap(cors)
+            .wrap(middleware::Logger::default())
+            .app_data(web::JsonConfig::default().limit(50 * 1024 * 1024)) // 50 MB for batch add
+            .app_data(web::Data::new(app_state.clone()))
+            .configure(um_mimo_tts_server::routes::configure)
+    })
+    .bind(("0.0.0.0", port))?
+    .run()
+    .await
 }
- 

@@ -8,6 +8,7 @@ import {
   type TaskSummary,
   type GroupUpdateRequest,
   type GroupStatus,
+  type TaskStatus,
   type TaskConfig,
 } from '@/api/client'
 
@@ -165,12 +166,12 @@ export const useBatchStore = defineStore('batch', () => {
    * Load group detail with paginated tasks (lazy).
    * Calls the combined endpoint and stores tasks in the group task cache.
    */
-  async function getGroupDetailWithTasks(groupId: string, page = 0, tasksPerPage = 50) {
+  async function getGroupDetailWithTasks(groupId: string, _page = 0, _tasksPerPage = 50) {
     try {
       // v2: use getBatch for detail + listTasks for paginated tasks
-      const [batch, taskResult] = await Promise.all([
+      const [batch, firstPage] = await Promise.all([
         apiV2.getBatch(groupId),
-        apiV2.listTasks({ group_id: groupId, page, page_size: tasksPerPage }),
+        apiV2.listTasks({ group_id: groupId, page: 0, page_size: 500 }),
       ])
 
       // Update the group in the map
@@ -188,20 +189,30 @@ export const useBatchStore = defineStore('batch', () => {
         total_tokens: batch.total_tokens ?? 0,
       })
 
-      // Store tasks in the per-group cache
-      const existing = groupTaskCache.get(groupId)
-      const tasks: TaskSummary[] = page === 0 || !existing
-        ? taskResult.items
-        : [...existing.tasks, ...taskResult.items]
+      // Fetch remaining pages if there are more
+      let allTasks = [...firstPage.items]
+      if (firstPage.total_pages > 1) {
+        const remainingPages = []
+        for (let p = 1; p < firstPage.total_pages; p++) {
+          remainingPages.push(
+            apiV2.listTasks({ group_id: groupId, page: p, page_size: 500 })
+          )
+        }
+        const results = await Promise.all(remainingPages)
+        for (const r of results) {
+          allTasks.push(...r.items)
+        }
+      }
 
+      // Store all tasks in the per-group cache
       groupTaskCache.set(groupId, {
-        tasks,
-        loaded: page === 0 || (taskResult.page >= taskResult.total_pages - 1),
-        hasMore: taskResult.page < taskResult.total_pages - 1,
-        page: taskResult.page - 1, // store as 0-based internally
+        tasks: allTasks,
+        loaded: true,
+        hasMore: false,
+        page: firstPage.total_pages - 1,
       })
 
-      return { group: batch as GroupSummary, tasks: taskResult }
+      return { group: batch as GroupSummary, tasks: { ...firstPage, items: allTasks } }
     } catch (err) {
       console.error(`Failed to load group detail for ${groupId}:`, err)
       throw err
@@ -516,6 +527,14 @@ export const useBatchStore = defineStore('batch', () => {
               } as Partial<TaskSummary>)
             }
             break
+          case 'TaskStatusChanged':
+            // Real-time status transitions (queued → chunking → processing)
+            if (data.task_id && data.status) {
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: data.status as TaskStatus,
+              } as Partial<TaskSummary>)
+            }
+            break
           case 'TaskCompleted':
             updateGroupInMap(groupId, {
               completed_tasks: data.completed_tasks ?? 0,
@@ -525,7 +544,7 @@ export const useBatchStore = defineStore('batch', () => {
             // Update individual task in cache
             if (data.task_id) {
               updateTaskInGroupCache(groupId, data.task_id, {
-                status: 'done',
+                status: 'done' as TaskStatus,
                 has_audio: true,
               } as Partial<TaskSummary>)
             }

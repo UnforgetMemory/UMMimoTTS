@@ -17,6 +17,7 @@ import {
   Mic as MicIcon,
   Hash as HashIcon,
   AlertCircle as AlertCircleIcon,
+  RotateCcw as RotateCcwIcon,
 } from 'lucide-vue-next'
 import { api, type Task, type TaskStatus } from '@/api/client'
 import type { TaskSummary } from '@/api/client'
@@ -36,6 +37,7 @@ const emit = defineEmits<{
   reuse: [task: Task]
   editTitle: [taskId: string, newTitle: string]
   delete: [taskId: string]
+  retry: [taskId: string]
   'view-text': [task: Task]
 }>()
 
@@ -89,9 +91,12 @@ function getStatusText(status: TaskStatus): string {
   const map: Record<TaskStatus, string> = {
     pending: '等待中',
     queued: '排队中',
-    synthesizing: '合成中',
-    streaming: '流式加载',
-    completed: '已完成',
+    chunking: '分片中',
+    processing: '合成中',
+    merging: '合并中',
+    mergingfailed: '合并失败',
+    paused: '已暂停',
+    done: '已完成',
     failed: '失败',
     cancelled: '已取消',
   }
@@ -102,9 +107,12 @@ function getStatusVariant(status: TaskStatus): BadgeVariants['variant'] {
   const map: Record<TaskStatus, BadgeVariants['variant']> = {
     pending: 'secondary',
     queued: 'secondary',
-    synthesizing: 'default',
-    streaming: 'default',
-    completed: 'default',
+    chunking: 'default',
+    processing: 'default',
+    merging: 'default',
+    mergingfailed: 'destructive',
+    paused: 'warning',
+    done: 'success',
     failed: 'destructive',
     cancelled: 'outline',
   }
@@ -289,6 +297,18 @@ function downloadAudio(taskId: string) {
             <CopyIcon class="w-3.5 h-3.5" />
           </Button>
         </template>
+
+        <!-- Retry (failed mode) -->
+        <Button
+          v-if="mode === 'failed'"
+          variant="ghost"
+          size="sm"
+          class="h-7 w-7 p-0"
+          title="重试任务"
+          @click="$emit('retry', task.id)"
+        >
+          <RotateCcwIcon class="w-3.5 h-3.5" />
+        </Button>
 
         <!-- Spacer -->
         <div class="flex-1" />

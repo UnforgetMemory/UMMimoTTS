@@ -120,6 +120,7 @@ import {
   VolumeX as VolumeXIcon,
 } from 'lucide-vue-next'
 import { api } from '@/api/client'
+import { toast } from 'vue-sonner'
 
 const props = defineProps<{
   open: boolean
@@ -235,6 +236,15 @@ async function loadAudio(taskId: string) {
 
   audio.value.addEventListener('pause', () => {
     isPlaying.value = false
+  })
+
+  // Handle audio loading errors (404, network errors, etc.)
+  audio.value.addEventListener('error', () => {
+    const err = audio.value?.error
+    console.error('Audio load error:', err)
+    toast.error('音频加载失败', {
+      description: '音频文件可能已过期或不存在，请重新合成',
+    })
   })
 }
 

@@ -1,12 +1,9 @@
 [package]
 name = "um-mimo-tts-server"
-version = "1.0.0"
+version = "3.0.0"
 edition = "2021"
 authors = ["UnforgetMemory"]
-description = "MIMO v2.5 TTS Web Service - 智能语音合成平台，支持超长文本分片合成"
-repository = "https://github.com/UnforgetMemory/UMMimoTTS"
-license = "MIT"
-keywords = ["tts", "mimo", "voice-synthesis", "rust", "vue"]
+description = "MIMO v3 TTS Web Service - Layered DDD architecture with SQLite persistence"
 
 [[bin]]
 name = "um-mimo-tts-server"
@@ -18,11 +15,12 @@ actix-multipart = "0.7"
 actix-cors = "0.7"
 actix-files = "0.6"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 dotenvy = "0.15"
-uuid = { version = "1.6", features = ["v4", "v7", "serde"] }
+uuid = { version = "1.6", features = ["v4", "v7", "serde", "fast-rng"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 flume = "0.11"
@@ -45,3 +43,5 @@ r2d2_sqlite = "0.24"
 [dev-dependencies]
 actix-rt = "2"
 actix-test = "0.1"
+wiremock = "0.6"
+tokio-util = { version = "0.7", features = ["rt"] }

@@ -63,9 +63,9 @@ export class BatchImportPage {
     this.stepIndicators = page.locator('.flex.items-center.gap-2 >> template').first();
 
     // Upload step
-    this.dropZone = page.getByText('拖拽文件到此处，或点击选择');
+    this.dropZone = page.locator('.border-dashed');
     this.fileInput = page.locator('input[type="file"]');
-    this.uploadSuccessText = page.getByText(/上传成功，共解析出/);
+    this.uploadSuccessText = page.getByText(/上传成功/);
     this.uploadErrorText = page.locator('.text-destructive').first();
     this.uploadProgress = page.locator('[role="progressbar"]');
 
@@ -83,7 +83,7 @@ export class BatchImportPage {
     this.summaryText = page.locator('.bg-muted\\/30.rounded-lg');
 
     // Done step
-    this.successHeading = page.getByRole('heading', { name: '导入完成' });
+    this.successHeading = page.getByRole('heading', { name: '导入成功' });
     this.successDescription = page.getByText(/成功创建了/);
     this.viewTasksBtn = page.getByRole('button', { name: '查看任务' });
 
@@ -103,9 +103,16 @@ export class BatchImportPage {
     await this.page.waitForLoadState('networkidle');
   }
 
-  /** Open the batch wizard dialog by clicking the sidebar button */
+  /** Open the batch wizard dialog by expanding sidebar then clicking the button */
   async openWizard() {
-    // Try the text button first, then the icon-only button
+    // The sidebar is collapsed by default. First expand it via the toolbar button.
+    const batchListBtn = this.page.getByRole('button', { name: '批量任务列表' });
+    if (await batchListBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await batchListBtn.click();
+      await this.page.waitForTimeout(500);
+    }
+
+    // Now try the text button, then the icon-only button
     try {
       await this.sidebarNewBatchBtn.click({ timeout: 3000 });
     } catch {
@@ -116,33 +123,46 @@ export class BatchImportPage {
 
   // ── Upload step ─────────────────────────────────────────────────────
 
-  /** Upload a single file using the file chooser */
+  /** Upload a single file via webkitdirectory input — writes to temp dir and uses setInputFiles with dir */
   async uploadSingleFile(filePayload: { name: string; mimeType: string; buffer: Buffer }) {
-    // Set up file chooser handler before clicking
-    const fileChooserPromise = this.page.waitForEvent('filechooser');
-    await this.dropZone.click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles({
-      name: filePayload.name,
-      mimeType: filePayload.mimeType,
-      buffer: filePayload.buffer,
-    });
+    const fs = await import('fs');
+    const pathMod = await import('path');
+    const os = await import('os');
+
+    const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'pw-upload-'));
+    const filePath = pathMod.join(tmpDir, filePayload.name);
+    fs.writeFileSync(filePath, filePayload.buffer);
+
+    // webkitdirectory input requires a directory path
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles(tmpDir);
+
+    // Cleanup after a short delay
+    setTimeout(() => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }, 3000);
   }
 
-  /** Upload multiple files */
+  /** Upload multiple files via webkitdirectory input */
   async uploadMultipleFiles(
     filePayloads: Array<{ name: string; mimeType: string; buffer: Buffer }>,
   ) {
-    const fileChooserPromise = this.page.waitForEvent('filechooser');
-    await this.dropZone.click();
-    const fileChooser = await fileChooserPromise;
-    await fileChooser.setFiles(
-      filePayloads.map((f) => ({
-        name: f.name,
-        mimeType: f.mimeType,
-        buffer: f.buffer,
-      })),
-    );
+    const fs = await import('fs');
+    const pathMod = await import('path');
+    const os = await import('os');
+
+    const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'pw-upload-'));
+    for (const f of filePayloads) {
+      const fp = pathMod.join(tmpDir, f.name);
+      fs.writeFileSync(fp, f.buffer);
+    }
+
+    const fileInput = this.page.locator('input[type="file"]');
+    await fileInput.setInputFiles(tmpDir);
+
+    setTimeout(() => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }, 3000);
   }
 
   // ── Preview step ────────────────────────────────────────────────────
@@ -169,19 +189,16 @@ export class BatchImportPage {
 
   // ── Submit step ─────────────────────────────────────────────────────
 
-  /** Fill the submit form and click submit */
-  async submitBatch(voice?: string, model?: string) {
-    // Choose a voice from the default voice select
-    if (voice) {
-      await this.defaultVoiceTrigger.click();
-      await this.page.getByRole('option', { name: voice }).click();
-    }
+  /** Select a voice in the Group Config step (step 2) */
+  async selectDefaultVoice(voiceName: string) {
+    // The voice combobox is labeled "默认音色 *"
+    const voiceCombo = this.page.getByRole('combobox', { name: '默认音色 *' });
+    await voiceCombo.click();
+    await this.page.getByRole('option', { name: voiceName }).click();
+  }
 
-    if (model) {
-      await this.defaultModelTrigger.click();
-      await this.page.getByRole('option', { name: model }).click();
-    }
-
+  /** Click the submit button (voice/model already set in step 2) */
+  async submitBatch(_voice?: string, _model?: string) {
     await this.submitBtn.click();
   }
 

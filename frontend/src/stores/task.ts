@@ -37,7 +37,7 @@ export const useTaskStore = defineStore('task', () => {
   )
 
   const completedTasks = computed(() =>
-    allTasks.value.filter(t => t.status === 'completed')
+    allTasks.value.filter(t => t.status === 'done')
   )
 
   const failedTasks = computed(() =>
@@ -46,7 +46,7 @@ export const useTaskStore = defineStore('task', () => {
 
   const pendingTasks = computed(() =>
     allTasks.value.filter(t =>
-      ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
+      ['pending', 'queued', 'chunking', 'processing', 'merging'].includes(t.status)
     )
   )
 
@@ -225,6 +225,17 @@ export const useTaskStore = defineStore('task', () => {
     await loadPage(0)
   }
 
+  /// Retry a failed task.
+  async function retryTask(taskId: string) {
+    try {
+      await apiV2.retryTask(taskId)
+      await loadPage(0)
+    } catch (err: any) {
+      error.value = err.message || '重试任务失败'
+      throw err
+    }
+  }
+
   /// Update a task's title.
   async function updateTaskTitle(taskId: string, newTitle: string) {
     // v2 has no dedicated PATCH endpoint yet — update locally for now
@@ -253,7 +264,7 @@ export const useTaskStore = defineStore('task', () => {
           break
         case 'completed':
           updateTaskInMap(taskId, {
-            status: 'completed',
+            status: 'done',
             progress: 1.0,
           })
           // 完成后关闭连接
@@ -375,6 +386,7 @@ export const useTaskStore = defineStore('task', () => {
     createTask,
     removeTask,
     enqueueTask,
+    retryTask,
     updateTaskTitle,
 
     // SSE

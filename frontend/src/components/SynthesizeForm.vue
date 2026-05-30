@@ -252,7 +252,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { 
   Play as PlayIcon, 
-  Pause as PauseIcon,
   Loader2 as Loader2Icon, 
   Check as CheckIcon,
   User as UserIcon,

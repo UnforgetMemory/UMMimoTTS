@@ -92,6 +92,7 @@
                 @reuse="handleReuseConfig"
                 @edit-title="handleEditTitle"
                 @delete="handleDelete"
+                @retry="handleRetry"
                 @view-text="handleViewText"
               />
             </template>
@@ -210,12 +211,12 @@ const filteredStandaloneTasks = computed(() => {
 // ─── Group tasks by status ──────────────────────────
 const pendingTasks = computed(() =>
   filteredStandaloneTasks.value.filter(t =>
-    ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
+    ['pending', 'queued', 'chunking', 'processing', 'merging'].includes(t.status)
   )
 )
 
 const completedTasks = computed(() =>
-  filteredStandaloneTasks.value.filter(t => t.status === 'completed')
+  filteredStandaloneTasks.value.filter(t => t.status === 'done')
 )
 
 const failedTasks = computed(() =>
@@ -226,12 +227,12 @@ const failedTasks = computed(() =>
 // ─── Counts for section headers ────────────────────
 const pendingCount = computed(() =>
   filteredStandaloneTasks.value.filter(t =>
-    ['pending', 'queued', 'synthesizing', 'streaming'].includes(t.status)
+    ['pending', 'queued', 'chunking', 'processing', 'merging'].includes(t.status)
   ).length
 )
 
 const completedCount = computed(() =>
-  filteredStandaloneTasks.value.filter(t => t.status === 'completed').length
+  filteredStandaloneTasks.value.filter(t => t.status === 'done').length
 )
 
 const failedCount = computed(() =>
@@ -409,6 +410,15 @@ async function handleEditTitle(taskId: string, newTitle: string) {
 
 function handleDelete(taskId: string) {
   deleteTargetId.value = taskId
+}
+
+async function handleRetry(taskId: string) {
+  try {
+    await taskStore.retryTask(taskId)
+    toast.success('任务已重新提交')
+  } catch (error) {
+    handleApiError(error, '重试任务失败')
+  }
 }
 
 async function confirmDelete() {

@@ -44,95 +44,18 @@
           </div>
 
           <div class="flex-1 overflow-hidden">
-            <div class="h-full overflow-y-auto p-3 sm:p-4 space-y-2">
-              <div
-                v-for="group in batchStore.groups"
-                :key="group.id"
-                class="group relative p-2.5 sm:p-3 rounded-lg border cursor-pointer transition-all hover:shadow-sm"
-                :class="selectedGroupId === group.id ? 'bg-primary/5 border-primary/20 shadow-sm' : 'bg-card hover:bg-muted/50'"
-                @click="selectedGroupId = group.id"
-              >
-                <div class="flex items-start justify-between">
-                  <div class="flex-1 min-w-0">
-                    <h3 class="font-medium text-xs sm:text-sm truncate">{{ group.name }}</h3>
-                    <div class="flex items-center gap-1.5 sm:gap-2 mt-1">
-                      <Badge :variant="getStatusBadge(group.status).variant" class="text-[10px] sm:text-xs px-1 sm:px-1.5">
-                        {{ getStatusBadge(group.status).label }}
-                      </Badge>
-                      <span class="text-[10px] sm:text-xs text-muted-foreground">
-                        {{ group.completed_tasks }}/{{ group.task_count }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-0.5 sm:gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Button
-                      v-if="group.status === 'processing'"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="handlePauseGroup(group.id)"
-                      :disabled="batchStore.loading"
-                    >
-                      <PauseIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    </Button>
-                    <Button
-                      v-if="group.status === 'paused'"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="handleResumeGroup(group.id)"
-                      :disabled="batchStore.loading"
-                    >
-                      <PlayIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    </Button>
-                    <Button
-                      v-if="group.status === 'completed' && group.completed_tasks > 0"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="handleDownloadGroup(group.id)"
-                    >
-                      <DownloadIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    </Button>
-                    <Button
-                      v-if="group.status === 'failed'"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="h-5 w-5 sm:h-6 sm:w-6"
-                      @click.stop="handleRetryGroup(group.id)"
-                      :disabled="batchStore.loading"
-                    >
-                      <RotateCcwIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    </Button>
-                    <Button
-                      v-if="group.status !== 'processing'"
-                      variant="ghost"
-                      size="icon-sm"
-                      class="h-5 w-5 sm:h-6 sm:w-6 text-destructive hover:text-destructive"
-                      @click.stop="handleDeleteGroup(group.id)"
-                      :disabled="batchStore.loading"
-                    >
-                      <TrashIcon class="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                    </Button>
-                  </div>
-                </div>
-                
-                <div v-if="group.status === 'processing' || group.status === 'chunking'" class="mt-2">
-                  <Progress :model-value="group.progress" class="h-1" />
-                </div>
-                
-                <div class="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground">
-                  <ClockIcon class="w-2.5 h-2.5" />
-                  <span>{{ formatRelativeTime(group.created_at) }}</span>
-                </div>
-              </div>
-
-              <div v-if="batchStore.groups.length === 0" class="text-center py-8">
-                <FolderIcon class="w-10 h-10 mx-auto text-muted-foreground/50 mb-3" />
-                <p class="text-sm text-muted-foreground">暂无批量任务</p>
-                <p class="text-xs text-muted-foreground/70 mt-1">点击上方按钮创建</p>
-              </div>
-            </div>
+            <GroupKanban
+              :groups="batchStore.groups"
+              :selected-group-id="selectedGroupId"
+              :loading="batchStore.loading"
+              @select="selectedGroupId = $event"
+              @pause="handlePauseGroup"
+              @resume="handleResumeGroup"
+              @retry="handleRetryGroup"
+              @delete="handleDeleteGroup"
+              @download="handleDownloadGroup"
+              class="h-full"
+            />
           </div>
         </aside>
       </Transition>
@@ -165,7 +88,7 @@
           </div>
         </template>
         <div v-else class="w-full max-w-4xl mt-8 sm:mt-12">
-          <SynthesizeForm ref="synthesizeFormRef" />
+          <SynthesizeForm ref="synthesizeFormRef" @submitted="showTaskSidebar = true" />
         </div>
         
         <!-- 底部信息 -->
@@ -318,27 +241,14 @@ import ApiConfigDialog from './components/ApiConfigDialog.vue'
 import AudioPlayerDialog from './components/AudioPlayerDialog.vue'
 import TextViewerDialog from './components/TextViewerDialog.vue'
 import BatchImportWizard from './components/BatchImportWizard.vue'
+import GroupKanban from './components/GroupKanban.vue'
 import GroupCard from './components/GroupCard.vue'
 import GroupDetailPanel from './components/GroupDetailPanel.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
-import { Progress } from '@/components/ui/progress'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Separator } from '@/components/ui/separator'
 import { 
   X as XIcon, 
-  Plus as PlusIcon, 
-  Layers as LayersIcon, 
-  PanelLeftClose as PanelLeftCloseIcon, 
-  PanelLeftOpen as PanelLeftOpenIcon,
-  Pause as PauseIcon,
-  Play as PlayIcon,
-  Download as DownloadIcon,
-  RotateCcw as RotateCcwIcon,
-  Trash as TrashIcon,
-  Clock as ClockIcon,
-  Folder as FolderIcon
+  Plus as PlusIcon
 } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
@@ -362,36 +272,6 @@ const selectedGroup = computed(() => {
   if (!selectedGroupId.value) return null
   return batchStore.groups.find(g => g.id === selectedGroupId.value) || null
 })
-
-// 获取状态徽章
-function getStatusBadge(status: string) {
-  const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
-    pending: { label: '等待中', variant: 'secondary' },
-    chunking: { label: '分片中', variant: 'secondary' },
-    queued: { label: '排队中', variant: 'secondary' },
-    processing: { label: '处理中', variant: 'default' },
-    completed: { label: '已完成', variant: 'outline' },
-    failed: { label: '失败', variant: 'destructive' },
-    paused: { label: '已暂停', variant: 'secondary' }
-  }
-  return statusMap[status] || { label: status, variant: 'secondary' as const }
-}
-
-// 格式化相对时间
-function formatRelativeTime(dateStr: string) {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diff = now.getTime() - date.getTime()
-  const minutes = Math.floor(diff / 60000)
-  const hours = Math.floor(diff / 3600000)
-  const days = Math.floor(diff / 86400000)
-  
-  if (minutes < 1) return '刚刚'
-  if (minutes < 60) return `${minutes}分钟前`
-  if (hours < 24) return `${hours}小时前`
-  if (days < 30) return `${days}天前`
-  return date.toLocaleDateString('zh-CN')
-}
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {

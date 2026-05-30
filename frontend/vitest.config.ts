@@ -10,6 +10,7 @@ export default defineConfig({
     setupFiles: ['./src/test-utils/setup.ts'],
     css: false,
     passWithNoTests: true,
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
   },
   resolve: {
     alias: {

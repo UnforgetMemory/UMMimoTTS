@@ -58,6 +58,16 @@
               variant="ghost"
               size="sm"
               class="h-8 w-8 p-0"
+              :disabled="refreshing"
+              @click="refreshTasks"
+              title="刷新"
+            >
+              <RefreshCwIcon class="w-4 h-4" :class="refreshing && 'animate-spin'" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="h-8 w-8 p-0"
               @click="$emit('close')"
             >
               <XIcon class="w-4 h-4" />
@@ -72,7 +82,7 @@
       </div>
 
       <!-- Kanban Board -->
-      <div class="flex-1 overflow-x-auto p-4">
+      <div class="flex-1 min-h-0 overflow-x-auto p-4 flex flex-col">
         <!-- Loading -->
         <div v-if="loading" class="flex gap-4 h-full">
           <div v-for="i in 4" :key="i" class="flex-1 min-w-[250px]">
@@ -86,11 +96,11 @@
         </div>
 
         <!-- Kanban Columns -->
-        <div v-else class="flex gap-4 h-full min-w-[1000px]">
+        <div v-else class="flex gap-4 flex-1 min-h-0 min-w-[1000px]">
           <div
-            v-for="column in kanbanColumns"
+            v-for="(column, columnIndex) in kanbanColumns"
             :key="column.id"
-            class="flex-1 min-w-[250px] flex flex-col"
+            class="flex-1 min-w-[250px] flex flex-col min-h-0"
           >
             <!-- Column Header -->
             <div class="flex items-center gap-2 mb-3 pb-2 border-b">
@@ -101,70 +111,85 @@
               </Badge>
             </div>
 
-            <!-- Column Content -->
-            <div class="flex-1 overflow-y-auto space-y-2 scrollbar-auto pr-1">
-              <div
-                v-for="task in column.tasks"
-                :key="task.id"
-                class="p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors"
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium truncate">
-                      {{ task.custom_title || task.filename || task.id.slice(0, 8) }}
-                    </p>
-                    <div class="flex items-center gap-2 mt-1.5">
-                      <Badge :variant="taskStatusVariant(task.status)" class="text-xs">
-                        {{ taskStatusLabel(task.status) }}
-                      </Badge>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-1 shrink-0">
-                    <Button
-                      v-if="task.status === 'done' && task.has_audio"
-                      variant="ghost"
-                      size="sm"
-                      class="h-7 w-7 p-0"
-                      title="播放"
-                      @click="$emit('play', task)"
-                    >
-                      <PlayIcon class="w-3.5 h-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      class="h-7 w-7 p-0"
-                      title="查看原文"
-                      @click="$emit('view-text', task)"
-                    >
-                      <FileTextIcon class="w-3.5 h-3.5" />
-                    </Button>
-                  </div>
-                </div>
+            <!-- Column Content (virtual scroller) -->
+            <div
+              :ref="(el: any) => { if (el) columnScrollRefs[columnIndex] = el as HTMLElement }"
+              class="flex-1 overflow-y-auto scrollbar-auto pr-1"
+            >
+              <!-- Virtual scroller when tasks exist -->
+              <template v-if="column.tasks.length > 0">
+                <div
+                  :style="{ height: `${columnVirtualizers[columnIndex]?.value?.getTotalSize() ?? 0}px` }"
+                  class="relative w-full"
+                >
+                  <div
+                    v-for="virtualRow in columnVirtualizers[columnIndex]?.value?.getVirtualItems() ?? []"
+                    :key="`col-${columnIndex}-${virtualRow.index}`"
+                    :data-index="virtualRow.index"
+                    :ref="(el: any) => { if (el?.nodeType === 1) columnVirtualizers[columnIndex]?.value?.measureElement(el) }"
+                    class="absolute left-0 w-full"
+                    :style="{ transform: `translateY(${virtualRow.start}px)` }"
+                  >
+                    <div class="mx-0 mb-2 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
+                      <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                          <p class="text-sm font-medium truncate">
+                            {{ columnTask(column, virtualRow.index).custom_title || columnTask(column, virtualRow.index).title || columnTask(column, virtualRow.index).id.slice(0, 8) }}
+                          </p>
+                          <div class="flex items-center gap-2 mt-1.5">
+                            <Badge :variant="taskStatusVariant(columnTask(column, virtualRow.index).status)" class="text-xs">
+                              {{ taskStatusLabel(columnTask(column, virtualRow.index).status) }}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-1 shrink-0">
+                          <Button
+                            v-if="columnTask(column, virtualRow.index).status === 'done' && columnTask(column, virtualRow.index).has_audio"
+                            variant="ghost"
+                            size="sm"
+                            class="h-7 w-7 p-0"
+                            title="播放"
+                            @click="$emit('play', columnTask(column, virtualRow.index))"
+                          >
+                            <PlayIcon class="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            class="h-7 w-7 p-0"
+                            title="查看原文"
+                            @click="$emit('view-text', columnTask(column, virtualRow.index))"
+                          >
+                            <FileTextIcon class="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
 
-                <!-- Progress bar for active tasks -->
-                <div v-if="isActiveStatus(task.status)" class="mt-2">
-                  <div class="flex items-center gap-2">
-                    <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        class="h-full bg-primary rounded-full transition-all duration-500 animate-pulse"
-                        :style="{ width: `${statusProgress(task.status)}%` }"
-                      />
+                      <!-- Progress bar for active tasks -->
+                      <div v-if="isActiveStatus(columnTask(column, virtualRow.index).status)" class="mt-2">
+                        <div class="flex items-center gap-2">
+                          <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                            <div
+                              class="h-full bg-primary rounded-full transition-all duration-500 animate-pulse"
+                              :style="{ width: `${statusProgress(columnTask(column, virtualRow.index).status)}%` }"
+                            />
+                          </div>
+                          <span class="text-xs text-muted-foreground">
+                            {{ statusProgress(columnTask(column, virtualRow.index).status) }}%
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <span class="text-xs text-muted-foreground">
-                      {{ statusProgress(task.status) }}%
-                    </span>
                   </div>
                 </div>
-              </div>
+              </template>
 
               <!-- Empty column message -->
-              <div
-                v-if="column.tasks.length === 0"
-                class="text-center py-8 text-muted-foreground text-sm"
-              >
-                {{ column.emptyText }}
-              </div>
+              <template v-else>
+                <div class="text-center py-8 text-muted-foreground text-sm">
+                  {{ column.emptyText }}
+                </div>
+              </template>
             </div>
           </div>
         </div>
@@ -182,7 +207,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { GroupSummary, TaskSummary } from '@/api/client'
 import { useBatchStore } from '@/stores/batch'
 import { Badge } from '@/components/ui/badge'
@@ -196,6 +222,7 @@ import {
   RotateCcw as RotateCcwIcon,
   Download as DownloadIcon,
   FileText as FileTextIcon,
+  RefreshCw as RefreshCwIcon,
 } from 'lucide-vue-next'
 import type { BadgeVariants } from '@/components/ui/badge'
 
@@ -204,7 +231,7 @@ const props = defineProps<{
   downloading?: boolean
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   close: []
   pause: [groupId: string]
   resume: [groupId: string]
@@ -216,6 +243,47 @@ const emit = defineEmits<{
 
 const batchStore = useBatchStore()
 const loading = ref(false)
+const refreshing = ref(false)
+let pollingTimer: ReturnType<typeof setInterval> | null = null
+
+// ─── Refresh tasks ────────────────────────────────────
+async function refreshTasks() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try {
+    await batchStore.getGroupDetailWithTasks(props.group.id, 0, 100)
+  } catch (error) {
+    console.error('Failed to refresh group tasks:', error)
+  } finally {
+    refreshing.value = false
+  }
+}
+
+// ─── Auto-polling for active groups ───────────────────
+function startPolling() {
+  stopPolling()
+  pollingTimer = setInterval(() => {
+    if (isActiveStatus(props.group.status)) {
+      refreshTasks()
+    }
+  }, 5000) // Poll every 5s
+}
+
+function stopPolling() {
+  if (pollingTimer) {
+    clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+}
+
+// Watch group status to start/stop polling
+watch(() => props.group.status, (status) => {
+  if (isActiveStatus(status)) {
+    startPolling()
+  } else {
+    stopPolling()
+  }
+}, { immediate: true })
 
 // ─── Group tasks from store cache ─────────────────────
 const groupTasks = computed<TaskSummary[]>(() => {
@@ -270,6 +338,29 @@ const kanbanColumns = computed<KanbanColumn[]>(() => {
     },
   ]
 })
+
+// ─── Virtual scrolling for columns ────────────────────
+const columnScrollRefs = ref<HTMLElement[]>([null!, null!, null!, null!])
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const columnVirtualizers: any[] = []
+for (let i = 0; i < 4; i++) {
+  const idx = i
+  columnVirtualizers.push(
+    useVirtualizer({
+      get count() {
+        return kanbanColumns.value[idx]?.tasks.length ?? 0
+      },
+      getScrollElement: () => columnScrollRefs.value[idx],
+      estimateSize: () => 120,
+      overscan: 5,
+    }),
+  )
+}
+
+function columnTask(column: KanbanColumn, index: number): TaskSummary {
+  return column.tasks[index]
+}
 
 // ─── UI helpers ──────────────────────────────────────
 
@@ -379,5 +470,13 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  // Start polling if group is active
+  if (isActiveStatus(props.group.status)) {
+    startPolling()
+  }
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>
