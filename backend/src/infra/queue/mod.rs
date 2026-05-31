@@ -1,7 +1,11 @@
 pub mod rate_limiter;
 pub mod chunk_queue;
 pub mod task_queue;
+pub mod watchdog;
+pub mod chunk_recovery;
 
 pub use rate_limiter::TokenBucket;
 pub use chunk_queue::ChunkQueue;
 pub use task_queue::TaskQueue;
+pub use watchdog::{TaskWatchdog, WatchdogConfig};
+pub use chunk_recovery::{ChunkRecovery, ChunkRecoveryConfig};

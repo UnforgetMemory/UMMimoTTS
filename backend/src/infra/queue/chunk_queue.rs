@@ -10,6 +10,7 @@
 
 use crate::domain::chunk::ChunkStatus;
 use crate::domain::events::DomainEvent;
+use crate::domain::task::TaskStatus;
 use crate::shared::id::Id;
 use crate::infra::cache::Cache;
 use crate::infra::mimo::client::MimoClient;
@@ -226,11 +227,28 @@ async fn worker_loop(
             continue;
         }
 
-        // Mark Processing
+        // Mark chunk Processing
         if let Err(e) = chunk_repo.update_status(&chunk_id, &ChunkStatus::Processing) {
             error!("worker {worker_id}: mark_processing({chunk_id}) failed: {e}");
             drop(_permit);
             continue;
+        }
+
+        // Transition task to Processing if it's still in Chunking state.
+        // This is the REAL "processing started" moment — a chunk worker picked it up.
+        let task_id_str = chunk.task_id.to_string();
+        if let Ok(Some(task)) = task_repo.find_by_id(&task_id_str) {
+            if task.status == TaskStatus::Chunking {
+                if let Err(e) = task_repo.update_status(&task_id_str, &TaskStatus::Processing) {
+                    warn!("worker {worker_id}: failed to transition task {task_id_str} to Processing: {e}");
+                } else {
+                    let _ = event_tx.send(DomainEvent::TaskStatusChanged {
+                        task_id: chunk.task_id.clone(),
+                        batch_id: task.batch_id.clone(),
+                        status: "processing".to_string(),
+                    });
+                }
+            }
         }
 
         // Process the chunk

@@ -24,6 +24,8 @@ pub trait ChunkRepo: Send + Sync {
     fn count_by_task_status(&self, task_id: &str, status: &ChunkStatus) -> Result<i64, AppError>;
     fn count_by_task_all(&self, task_id: &str) -> Result<i64, AppError>;
     fn reset_processing_to_pending(&self) -> Result<usize, AppError>;
+    /// Reset chunks stuck in Processing for longer than `stale_minutes` back to Pending.
+    fn reset_stale_processing_to_pending(&self, stale_minutes: i64) -> Result<usize, AppError>;
     fn delete_by_task(&self, task_id: &str) -> Result<usize, AppError>;
 }
 
@@ -272,6 +274,21 @@ impl ChunkRepo for SqliteChunkRepo {
         Ok(affected)
     }
 
+    fn reset_stale_processing_to_pending(&self, stale_minutes: i64) -> Result<usize, AppError> {
+        let conn = self.pool.get()?;
+        let cutoff = (Utc::now() - chrono::Duration::minutes(stale_minutes)).to_rfc3339();
+        let affected = conn.execute(
+            "UPDATE chunks SET status = ?1, updated_at = ?2 WHERE status = ?3 AND updated_at < ?4",
+            params![
+                serde_json::to_string(&ChunkStatus::Pending).unwrap(),
+                Utc::now().to_rfc3339(),
+                serde_json::to_string(&ChunkStatus::Processing).unwrap(),
+                cutoff,
+            ],
+        )?;
+        Ok(affected)
+    }
+
     fn delete_by_task(&self, task_id: &str) -> Result<usize, AppError> {
         let conn = self.pool.get()?;
         let affected = conn.execute("DELETE FROM chunks WHERE task_id = ?1", params![task_id])?;
@@ -282,7 +299,6 @@ impl ChunkRepo for SqliteChunkRepo {
 #[cfg(test)]
 mod tests {
     use super::*;
-use crate::domain::task::{Task, TaskType, CreateTaskRequest};
 use crate::infra::persistence::db::create_test_pool;
 use crate::infra::persistence::migrate::run_migrations;
 use rusqlite::Connection;

@@ -138,12 +138,10 @@ impl TaskQueue {
         let total = chunks.len() as i32;
         self.chunk_repo.insert_batch(&chunks)?;
         self.task_repo.update_chunk_progress(task_id, total, 0, 0)?;
-        self.task_repo.update_status(task_id, &TaskStatus::Processing)?;
-        let _ = self.event_tx.send(DomainEvent::TaskStatusChanged {
-            task_id: task.id.clone(),
-            batch_id: task.batch_id.clone(),
-            status: "processing".into(),
-        });
+
+        // NOTE: Do NOT set Processing here — chunks haven't started yet.
+        // The ChunkQueue worker will transition the task to Processing
+        // when the first chunk actually begins synthesis.
 
         // Fire event.
         let _ = self.event_tx.send(DomainEvent::TaskEnqueued {
@@ -165,23 +163,94 @@ impl TaskQueue {
     /// Spawn this as a background task after `run_workers()` has been called
     /// on the `ChunkQueue`.  It will process events until the sender is
     /// dropped (i.e. the queue is shut down).
+    ///
+    /// Includes a periodic DB poll fallback (every 60s) to catch tasks that
+    /// may have been missed due to broadcast channel lag.
     pub async fn listen(&self, mut event_rx: broadcast::Receiver<DomainEvent>) {
+        let mut poll_interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        poll_interval.tick().await; // first tick completes immediately
+
         loop {
-            match event_rx.recv().await {
-                Ok(event) => {
-                    if let Err(e) = self.handle_event(event).await {
-                        error!("event handler error: {e}");
+            tokio::select! {
+                result = event_rx.recv() => {
+                    match result {
+                        Ok(event) => {
+                            if let Err(e) = self.handle_event(event).await {
+                                error!("event handler error: {e}");
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            info!("task-queue event listener: channel closed, exiting");
+                            break;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("task-queue event listener lagged by {n} events — triggering DB poll fallback");
+                            if let Err(e) = self.poll_and_reconcile().await {
+                                error!("DB poll fallback failed: {e}");
+                            }
+                        }
                     }
                 }
-                Err(broadcast::error::RecvError::Closed) => {
-                    info!("task-queue event listener: channel closed, exiting");
-                    break;
-                }
-                Err(broadcast::error::RecvError::Lagged(n)) => {
-                    warn!("task-queue event listener lagged by {n} events");
+                _ = poll_interval.tick() => {
+                    // Periodic DB poll to catch any missed events
+                    if let Err(e) = self.poll_and_reconcile().await {
+                        error!("periodic DB poll failed: {e}");
+                    }
                 }
             }
         }
+    }
+
+    /// DB poll fallback: find Processing tasks whose chunks are all resolved
+    /// and trigger completion. This catches tasks missed due to event loss.
+    async fn poll_and_reconcile(&self) -> Result<(), AppError> {
+        // Find all tasks in Processing or Chunking status
+        let all_tasks = self.task_repo.find_all()?;
+        let active_tasks: Vec<_> = all_tasks
+            .iter()
+            .filter(|t| matches!(t.status, TaskStatus::Processing | TaskStatus::Chunking))
+            .collect();
+
+        if active_tasks.is_empty() {
+            return Ok(());
+        }
+
+        let mut reconciled = 0;
+        for task in active_tasks {
+            let task_id = task.id.to_string();
+            let done = self.chunk_repo.count_by_task_status(&task_id, &ChunkStatus::Done)?;
+            let failed = self.chunk_repo.count_by_task_status(&task_id, &ChunkStatus::Failed)?;
+            let total = self.chunk_repo.count_by_task_all(&task_id)?;
+
+            if total > 0 && done + failed == total {
+                // All chunks resolved but task still in Processing/Chunking — event was lost
+                warn!(
+                    "poll_and_reconcile: task {task_id} has all chunks resolved ({done} done, {failed} failed) but status is {:?} — triggering completion",
+                    task.status
+                );
+                reconciled += 1;
+
+                if done > 0 {
+                    let _ = self.event_tx.send(DomainEvent::AllChunksDone {
+                        task_id: task.id.clone(),
+                        total_chunks: total as i32,
+                    });
+                } else {
+                    // All failed
+                    self.task_repo.update_status(&task_id, &TaskStatus::Failed)?;
+                    let _ = self.event_tx.send(DomainEvent::TaskFailed {
+                        task_id: task.id.clone(),
+                        error: format!("All {total} chunks failed"),
+                    });
+                }
+            }
+        }
+
+        if reconciled > 0 {
+            info!("poll_and_reconcile: reconciled {reconciled} stuck tasks");
+        }
+
+        Ok(())
     }
 
     async fn handle_event(&self, event: DomainEvent) -> Result<(), AppError> {
@@ -599,7 +668,7 @@ use crate::shared::id::Id;
     // -----------------------------------------------------------------
     #[actix_rt::test]
     async fn test_task_queue_enqueue_creates_chunks() {
-        let (pool, task_repo, chunk_repo, _chunk_queue, task_queue, mock_server) = setup().await;
+        let (_pool, task_repo, chunk_repo, _chunk_queue, task_queue, mock_server) = setup().await;
 
         // Mock the tokenize endpoint (used by MimoChunker).
         Mock::given(method("POST"))
@@ -632,7 +701,9 @@ use crate::shared::id::Id;
         task_queue.enqueue(&task_id).await.unwrap();
 
         let stored = task_repo.find_by_id(&task_id).unwrap().unwrap();
-        assert_eq!(stored.status, TaskStatus::Processing);
+        // After enqueue, task should be in Chunking status (not Processing).
+        // Processing is set by ChunkQueue worker when first chunk starts.
+        assert_eq!(stored.status, TaskStatus::Chunking);
 
         let chunks = chunk_repo.find_by_task(&task_id).unwrap();
         assert!(!chunks.is_empty(), "should have created chunks");
@@ -646,7 +717,7 @@ use crate::shared::id::Id;
     // -----------------------------------------------------------------
     #[actix_rt::test]
     async fn test_task_queue_continue_cache_miss() {
-        let (pool, task_repo, chunk_repo, _chunk_queue, task_queue, _mock_server) = setup().await;
+        let (_pool, task_repo, chunk_repo, _chunk_queue, task_queue, _mock_server) = setup().await;
 
         // Create a parent task for FK compliance.
         let task_id = Id::new();

@@ -32,6 +32,9 @@ pub trait TaskRepo: Send + Sync {
     fn find_by_group(&self, group_id: &str) -> Result<Vec<Task>, AppError>;
     fn batch_progress(&self, batch_id: &str) -> Result<BatchProgressAggregate, AppError>;
     fn find_all(&self) -> Result<Vec<Task>, AppError>;
+    /// Find tasks stuck in Processing status for more than `stale_minutes`.
+    /// Returns tasks that have no active (pending/processing) chunks.
+    fn find_stale_processing(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
 }
 
 pub struct SqliteTaskRepo {
@@ -221,6 +224,30 @@ impl TaskRepo for SqliteTaskRepo {
         let mut stmt = conn.prepare("SELECT * FROM tasks ORDER BY created_at DESC")?;
         let tasks = stmt
             .query_map([], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    fn find_stale_processing(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let cutoff = Utc::now() - chrono::Duration::minutes(stale_minutes);
+        let cutoff_str = cutoff.to_rfc3339();
+        let processing_status = serde_json::to_string(&TaskStatus::Processing).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT t.* FROM tasks t
+             WHERE t.status = ?1
+               AND t.updated_at < ?2
+               AND NOT EXISTS (
+                   SELECT 1 FROM chunks c
+                   WHERE c.task_id = t.id
+                     AND c.status IN ('pending', 'processing')
+               )
+             ORDER BY t.updated_at ASC"
+        )?;
+
+        let tasks = stmt
+            .query_map(params![processing_status, cutoff_str], Self::row_to_task)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(tasks)
     }

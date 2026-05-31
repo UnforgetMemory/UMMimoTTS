@@ -216,8 +216,6 @@ impl BatchService {
 
         // 2. Spawn background enqueue so the HTTP response returns quickly
         let task_service = self.task_service.clone();
-        let sse_bus = self.sse_bus.clone();
-        let batch_id_owned = batch_id.to_string();
         let task_ids: Vec<String> = results.iter().map(|r| r.id.clone()).collect();
 
         tokio::spawn(async move {
@@ -229,13 +227,8 @@ impl BatchService {
                 }
                 match task_service.enqueue(task_id).await {
                     Ok(()) => {
-                        sse_bus.publish(
-                            &format!("batch:{batch_id_owned}"),
-                            &DomainEvent::TaskEnqueued {
-                                task_id: Id::from_str(task_id).unwrap(),
-                                batch_id: Some(Id::from_str(&batch_id_owned).unwrap()),
-                            },
-                        );
+                        // TaskEnqueued event is already sent by task_queue.enqueue()
+                        // via the event_tx broadcast channel → sse_bridge → sse_bus.
                     }
                     Err(e) => {
                         error!("Failed to enqueue task {task_id}: {e}");
@@ -338,21 +331,13 @@ impl BatchService {
 
         // Spawn background enqueue for the resumed tasks
         let task_service = self.task_service.clone();
-        let sse_bus = self.sse_bus.clone();
-        let batch_id_owned = batch_id.to_string();
         let ids = paused_ids.clone();
 
         tokio::spawn(async move {
             for task_id in &ids {
                 match task_service.enqueue(task_id).await {
                     Ok(()) => {
-                        sse_bus.publish(
-                            &format!("batch:{batch_id_owned}"),
-                            &DomainEvent::TaskEnqueued {
-                                task_id: Id::from_str(task_id).unwrap(),
-                                batch_id: Some(Id::from_str(&batch_id_owned).unwrap()),
-                            },
-                        );
+                        // TaskEnqueued event is already sent by task_queue.enqueue()
                     }
                     Err(e) => {
                         error!("Failed to enqueue task {task_id} on resume: {e}");
@@ -412,20 +397,12 @@ impl BatchService {
 
         // Background retry
         let task_service = self.task_service.clone();
-        let sse_bus = self.sse_bus.clone();
-        let batch_id_owned = batch_id.to_string();
 
         tokio::spawn(async move {
             for task_id in &failed_ids {
                 match task_service.retry(task_id).await {
                     Ok(()) => {
-                        sse_bus.publish(
-                            &format!("batch:{batch_id_owned}"),
-                            &DomainEvent::TaskEnqueued {
-                                task_id: Id::from_str(task_id).unwrap(),
-                                batch_id: Some(Id::from_str(&batch_id_owned).unwrap()),
-                            },
-                        );
+                        // TaskEnqueued event is already sent by task_queue.enqueue()
                     }
                     Err(e) => {
                         error!("Failed to retry task {task_id}: {e}");

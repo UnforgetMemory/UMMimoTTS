@@ -30,6 +30,8 @@ use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
 use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
+use um_mimo_tts_server::infra::queue::watchdog::{TaskWatchdog, WatchdogConfig};
+use um_mimo_tts_server::infra::queue::chunk_recovery::{ChunkRecovery, ChunkRecoveryConfig};
 use um_mimo_tts_server::infra::mimo::chunker::MimoChunker;
 use um_mimo_tts_server::infra::mimo::client::MimoClient;
 use um_mimo_tts_server::infra::cache::Cache;
@@ -77,7 +79,7 @@ async fn main() -> std::io::Result<()> {
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
 
     // ── event bus ─────────────────────────────────────────────────────
-    let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(256);
+    let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
     // Second receiver for TaskQueue event listener (broadcast receivers are independent)
     let task_event_rx = event_tx.subscribe();
 
@@ -141,6 +143,24 @@ async fn main() -> std::io::Result<()> {
     // ── start queue workers ──────────────────────────────────────────
     chunk_queue.run_workers();
     tracing::info!("ChunkQueue workers started (max_concurrent={max_concurrent})");
+
+    // ── start task watchdog ─────────────────────────────────────────
+    let watchdog = TaskWatchdog::new(
+        task_repo.clone() as Arc<dyn TaskRepo>,
+        chunk_repo.clone() as Arc<dyn ChunkRepo>,
+        event_tx.clone(),
+        WatchdogConfig::default(),
+    );
+    watchdog.start();
+    tracing::info!("TaskWatchdog started — patrols for stuck tasks every 15s (stale threshold 60s)");
+
+    // ── start chunk recovery ───────────────────────────────────────
+    let chunk_recovery = ChunkRecovery::new(
+        chunk_repo.clone() as Arc<dyn ChunkRepo>,
+        ChunkRecoveryConfig::default(),
+    );
+    chunk_recovery.start();
+    tracing::info!("ChunkRecovery started — resets orphaned Processing chunks every 30s");
 
     // ── start task queue event listener ─────────────────────────────
     let tq = task_queue.clone();
