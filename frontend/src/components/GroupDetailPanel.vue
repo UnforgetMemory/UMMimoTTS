@@ -84,9 +84,26 @@
       <!-- Kanban Board -->
       <div class="flex-1 min-h-0 overflow-x-auto p-4">
         <!-- Loading -->
-        <div v-if="loading" class="flex gap-4 h-full">
-          <div v-for="i in 4" :key="i" class="flex-1 min-w-[250px]">
-            <Skeleton class="h-full w-full" />
+        <div v-if="loading" class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 280px); max-height: 700px;">
+          <div v-for="col in 4" :key="col" class="flex-1 min-w-[250px] flex flex-col min-h-0">
+            <!-- Column header skeleton -->
+            <div class="flex items-center gap-2 mb-3 pb-2 border-b shrink-0">
+              <Skeleton class="w-2.5 h-2.5 rounded-full" />
+              <Skeleton class="h-4 w-16" />
+              <Skeleton class="h-5 w-8 ml-auto rounded-md" />
+            </div>
+            <!-- Card skeletons -->
+            <div class="flex-1 min-h-0 overflow-hidden space-y-2">
+              <div v-for="card in 5" :key="card" class="p-3 rounded-lg border bg-card">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex-1 space-y-2">
+                    <Skeleton class="h-4 w-3/4" />
+                    <Skeleton class="h-5 w-20 rounded-md" />
+                  </div>
+                  <Skeleton class="h-7 w-7 rounded" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
