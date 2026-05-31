@@ -444,6 +444,8 @@ async fn worker_loop(
                 }
             }
         });
+        // Wake another worker to pick up the next pending chunk immediately
+        notify.notify_one();
     }
 }
 
