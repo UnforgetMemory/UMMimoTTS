@@ -60,7 +60,8 @@ async fn main() -> std::io::Result<()> {
     let db_path = env_or("DB_PATH", "data/mimo.db");
     let mimo_api_key = env_or("MIMO_API_KEY", "test-key");
     let mimo_base_url = env_or("MIMO_BASE_URL", "http://localhost:30231");
-    let max_concurrent: usize = env_or("MAX_CONCURRENT", "2").parse().expect("MAX_CONCURRENT must be usize");
+    let max_concurrent: usize = env_or("MAX_CONCURRENT", "10").parse().expect("MAX_CONCURRENT must be usize");
+    let max_active_tasks: usize = env_or("MAX_ACTIVE_TASKS", "20").parse().expect("MAX_ACTIVE_TASKS must be usize");
     let cache_dir = std::path::PathBuf::from(env_or("CACHE_DIR", "data/cache"));
     let _max_task_wait = Duration::from_secs(300);
 
@@ -97,7 +98,7 @@ async fn main() -> std::io::Result<()> {
     let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), 100));
 
     // ── rate limiter ──────────────────────────────────────────────────
-    let rate_limiter = Arc::new(TokenBucket::new(100));
+    let rate_limiter = Arc::new(TokenBucket::new(10));
     let token_budget = Arc::new(TokenBucket::new(1_000_000));
 
     // ── queues ────────────────────────────────────────────────────────
@@ -111,6 +112,7 @@ async fn main() -> std::io::Result<()> {
         token_budget.clone(),
         event_tx.clone(),
         max_concurrent,
+        max_active_tasks,
         Duration::from_secs(30),
         cache_dir.clone(),
     ));
@@ -142,7 +144,7 @@ async fn main() -> std::io::Result<()> {
 
     // ── start queue workers ──────────────────────────────────────────
     chunk_queue.run_workers();
-    tracing::info!("ChunkQueue workers started (max_concurrent={max_concurrent})");
+    tracing::info!("ChunkQueue workers started (max_concurrent={max_concurrent}, max_active_tasks={max_active_tasks})");
 
     // ── start task watchdog ─────────────────────────────────────────
     let watchdog = TaskWatchdog::new(

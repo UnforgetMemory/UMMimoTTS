@@ -22,7 +22,8 @@ use crate::shared::error::AppError;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, Notify, Semaphore};
+use tokio::sync::{broadcast, Mutex, Notify, Semaphore};
+use std::collections::HashSet;
 use tracing::{error, info, warn};
 
 /// Manages concurrent synthesis of audio chunks via the MIMO API.
@@ -49,6 +50,12 @@ pub struct ChunkQueue {
     paused: Arc<AtomicBool>,
     /// When true, indicates recent 429 responses. Workers slow down their polling.
     rate_limited: Arc<AtomicBool>,
+    /// Task-level concurrency: tracks which tasks currently have chunks in-flight.
+    active_tasks: Arc<Mutex<HashSet<String>>>,
+    /// Semaphore limiting how many tasks can be actively processing concurrently.
+    task_semaphore: Arc<Semaphore>,
+    /// Maximum number of tasks that can be actively processing at once.
+    max_active_tasks: usize,
 }
 
 /// Maximum consecutive failures before pausing all chunk processing.
@@ -66,6 +73,7 @@ impl ChunkQueue {
         token_budget: Arc<TokenBucket>,
         event_tx: broadcast::Sender<DomainEvent>,
         max_concurrent: usize,
+        max_active_tasks: usize,
         max_task_wait: Duration,
         cache_dir: std::path::PathBuf,
     ) -> Self {
@@ -87,6 +95,9 @@ impl ChunkQueue {
             consecutive_failures: Arc::new(AtomicU32::new(0)),
             paused: Arc::new(AtomicBool::new(false)),
             rate_limited: Arc::new(AtomicBool::new(false)),
+            active_tasks: Arc::new(Mutex::new(HashSet::new())),
+            task_semaphore: Arc::new(Semaphore::new(max_active_tasks)),
+            max_active_tasks,
         }
     }
 
@@ -112,6 +123,8 @@ impl ChunkQueue {
             let consecutive_failures = self.consecutive_failures.clone();
             let paused = self.paused.clone();
             let rate_limited = self.rate_limited.clone();
+            let active_tasks = self.active_tasks.clone();
+            let task_semaphore = self.task_semaphore.clone();
 
             tokio::spawn(async move {
                 worker_loop(
@@ -130,6 +143,8 @@ impl ChunkQueue {
                     consecutive_failures,
                     paused,
                     rate_limited,
+                    active_tasks,
+                    task_semaphore,
                 )
                 .await;
             });
@@ -162,6 +177,8 @@ async fn worker_loop(
     consecutive_failures: Arc<AtomicU32>,
     paused: Arc<AtomicBool>,
     rate_limited: Arc<AtomicBool>,
+    active_tasks: Arc<Mutex<HashSet<String>>>,
+    task_semaphore: Arc<Semaphore>,
 ) {
     info!("ChunkQueue worker {worker_id} started");
 
@@ -190,7 +207,7 @@ async fn worker_loop(
             continue;
         }
 
-        // Acquire concurrency permit
+        // Acquire chunk-level concurrency permit
         let _permit = match semaphore.acquire().await {
             Ok(p) => p,
             Err(_) => return,
@@ -215,6 +232,63 @@ async fn worker_loop(
         };
 
         let chunk_id = chunk.id.to_string();
+        let task_id_str = chunk.task_id.to_string();
+
+        // ── Task-level concurrency gate ──
+        // Check if this task already has chunks in-flight.
+        let is_new_task = {
+            let active = active_tasks.lock().await;
+            !active.contains(&task_id_str)
+        };
+
+        if is_new_task {
+            // New task — acquire task semaphore permit (blocks if max_active_tasks reached).
+            // This gates task transitions: only N tasks can be "processing" at once.
+            let task_permit = match task_semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    drop(_permit);
+                    return;
+                }
+            };
+            // Mark task as active
+            {
+                let mut active = active_tasks.lock().await;
+                active.insert(task_id_str.clone());
+            }
+            info!("worker {worker_id}: new task {task_id_str} acquired task slot (active tasks tracked)");
+
+            // Spawn a background task that releases the permit when all chunks for this task are done.
+            let active_tasks_release = active_tasks.clone();
+            let chunk_repo_release = chunk_repo.clone();
+            let task_id_release = task_id_str.clone();
+            tokio::spawn(async move {
+                // Wait until no pending/processing chunks remain for this task.
+                // Poll every 2 seconds.
+                loop {
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    let has_more = chunk_repo_release
+                        .count_by_task_status(&task_id_release, &ChunkStatus::Pending)
+                        .unwrap_or(0)
+                        > 0
+                        || chunk_repo_release
+                            .count_by_task_status(&task_id_release, &ChunkStatus::Processing)
+                            .unwrap_or(0)
+                            > 0;
+                    if !has_more {
+                        break;
+                    }
+                }
+                // All chunks done — remove from active set and release permit.
+                {
+                    let mut active = active_tasks_release.lock().await;
+                    active.remove(&task_id_release);
+                }
+                drop(task_permit); // releases the semaphore permit
+                info!("task {task_id_release} released task slot");
+            });
+        }
+
         info!("worker {worker_id} picked chunk {chunk_id}");
 
         // Estimate token budget for this chunk (rough: 1 token ≈ 2 chars for Chinese text)
@@ -236,7 +310,6 @@ async fn worker_loop(
 
         // Transition task to Processing if it's still in Chunking state.
         // This is the REAL "processing started" moment — a chunk worker picked it up.
-        let task_id_str = chunk.task_id.to_string();
         if let Ok(Some(task)) = task_repo.find_by_id(&task_id_str) {
             if task.status == TaskStatus::Chunking {
                 if let Err(e) = task_repo.update_status(&task_id_str, &TaskStatus::Processing) {
@@ -448,6 +521,7 @@ mod tests {
             token_budget,
             event_tx,
             2,
+            20,
             Duration::from_millis(100),
             cache_dir,
         );

@@ -82,6 +82,7 @@ macro_rules! build_app {
             token_budget,
             event_tx.clone(),
             1,
+            20,
             Duration::from_secs(30),
             std::path::PathBuf::from("/tmp/test-cache"),
         ));

@@ -616,6 +616,7 @@ use crate::shared::id::Id;
             token_budget,
             event_tx.clone(),
             2,
+            20,
             Duration::from_secs(300),
             cache_dir,
         ));
