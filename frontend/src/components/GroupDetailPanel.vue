@@ -1,63 +1,77 @@
 <template>
   <div class="w-full h-full">
-    <div class="flex flex-col h-full border rounded-lg bg-card shadow-sm">
+    <div class="flex flex-col h-full border rounded-xl bg-card shadow-sm overflow-hidden">
       <!-- Header -->
-      <div class="p-4 border-b shrink-0">
-        <div class="flex items-center justify-between">
+      <div class="p-4 sm:p-5 border-b shrink-0 bg-card">
+        <div class="flex items-start justify-between gap-3">
           <div class="min-w-0 flex-1">
-            <h3 class="text-lg font-semibold truncate">{{ group.name }}</h3>
-            <div class="flex items-center gap-3 mt-1">
-              <Badge :variant="statusVariant">{{ statusLabel }}</Badge>
-              <span class="text-sm text-muted-foreground">
-                {{ group.completed_tasks }}/{{ group.total_tasks }} 完成
+            <div class="flex items-center gap-2.5">
+              <h3 class="text-base sm:text-lg font-semibold truncate text-foreground">{{ group.name }}</h3>
+              <Badge :variant="statusVariant" class="shrink-0 text-[10px] leading-tight px-1.5 py-0">
+                {{ statusLabel }}
+              </Badge>
+            </div>
+            <div class="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+              <span class="tabular-nums">
+                {{ group.completed_tasks }}/{{ group.total_tasks }}
+                <span class="text-muted-foreground/60">完成</span>
               </span>
-              <span v-if="group.failed_tasks > 0" class="text-sm text-destructive">
-                {{ group.failed_tasks }} 失败
+              <span v-if="group.failed_tasks > 0" class="text-destructive tabular-nums font-medium">
+                {{ group.failed_tasks }}
+                <span class="text-destructive/70">失败</span>
+              </span>
+              <span class="tabular-nums text-muted-foreground/60">
+                {{ formatTokens(group.total_tokens) }}
+                <span class="text-muted-foreground/50">tokens</span>
               </span>
             </div>
           </div>
-          <div class="flex items-center gap-2">
+          <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
             <Button
               v-if="group.status === 'processing'"
               variant="outline"
               size="sm"
+              class="h-8 text-xs"
               @click="$emit('pause', group.id)"
             >
-              <PauseIcon class="w-4 h-4 mr-1" />
+              <PauseIcon class="w-3.5 h-3.5 mr-1" />
               暂停
             </Button>
             <Button
               v-if="group.status === 'paused'"
               variant="outline"
               size="sm"
+              class="h-8 text-xs"
               @click="$emit('resume', group.id)"
             >
-              <PlayIcon class="w-4 h-4 mr-1" />
+              <PlayIcon class="w-3.5 h-3.5 mr-1" />
               恢复
             </Button>
             <Button
               v-if="group.failed_tasks > 0"
               variant="outline"
               size="sm"
+              class="h-8 text-xs"
               @click="$emit('retry', group.id)"
             >
-              <RotateCcwIcon class="w-4 h-4 mr-1" />
+              <RotateCcwIcon class="w-3.5 h-3.5 mr-1" />
               重试
             </Button>
             <Button
               v-if="group.completed_tasks > 0"
               variant="outline"
               size="sm"
+              class="h-8 text-xs"
               :disabled="downloading"
               @click="$emit('download', group.id)"
             >
-              <DownloadIcon class="w-4 h-4 mr-1" />
+              <DownloadIcon class="w-3.5 h-3.5 mr-1" />
               {{ downloading ? '打包中...' : '下载全部' }}
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              class="h-8 w-8 p-0"
+              class="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               :disabled="refreshing"
               @click="refreshTasks"
               title="刷新"
@@ -67,7 +81,7 @@
             <Button
               variant="ghost"
               size="sm"
-              class="h-8 w-8 p-0"
+              class="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
               @click="$emit('close')"
             >
               <XIcon class="w-4 h-4" />
@@ -77,30 +91,38 @@
 
         <!-- Progress -->
         <div v-if="group.status === 'processing' || group.status === 'paused'" class="mt-3">
-          <Progress :model-value="progress" class="h-2" />
+          <div class="flex items-center gap-2">
+            <div class="flex-1 h-2 bg-muted/60 rounded-full overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all duration-500 ease-out"
+                :class="group.status === 'paused' ? 'bg-muted-foreground/40' : 'bg-primary'"
+                :style="{ width: `${progress}%` }"
+              />
+            </div>
+            <span class="text-xs tabular-nums text-muted-foreground font-medium shrink-0">
+              {{ Math.round(progress) }}%
+            </span>
+          </div>
         </div>
       </div>
 
       <!-- Kanban Board -->
-      <div class="flex-1 min-h-0 overflow-x-auto p-4">
+      <div class="flex-1 min-h-0 overflow-x-auto p-4 sm:p-5">
         <!-- Loading -->
-        <div v-if="loading" class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 280px); max-height: 700px;">
-          <div v-for="col in 4" :key="col" class="flex-1 min-w-[250px] flex flex-col min-h-0">
+        <div v-if="loading" class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 300px); max-height: 700px;">
+          <div v-for="col in 4" :key="col" class="flex-1 min-w-[240px] flex flex-col min-h-0">
             <!-- Column header skeleton -->
-            <div class="flex items-center gap-2 mb-3 pb-2 border-b shrink-0">
-              <Skeleton class="w-2.5 h-2.5 rounded-full" />
+            <div class="flex items-center gap-2 mb-3 pb-2 shrink-0">
+              <Skeleton class="w-2 h-2 rounded-full" />
               <Skeleton class="h-4 w-16" />
-              <Skeleton class="h-5 w-8 ml-auto rounded-md" />
+              <Skeleton class="h-4 w-7 ml-auto rounded" />
             </div>
             <!-- Card skeletons -->
             <div class="flex-1 min-h-0 overflow-hidden space-y-2">
-              <div v-for="card in 5" :key="card" class="p-3 rounded-lg border bg-card">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex-1 space-y-2">
-                    <Skeleton class="h-4 w-3/4" />
-                    <Skeleton class="h-5 w-20 rounded-md" />
-                  </div>
-                  <Skeleton class="h-7 w-7 rounded" />
+              <div v-for="card in 4" :key="card" class="p-3 rounded-lg border bg-card">
+                <div class="space-y-2">
+                  <Skeleton class="h-4 w-4/5" />
+                  <Skeleton class="h-4 w-12 rounded-md" />
                 </div>
               </div>
             </div>
@@ -108,30 +130,36 @@
         </div>
 
         <!-- Empty -->
-        <div v-else-if="groupTasks.length === 0" class="flex items-center justify-center h-full text-muted-foreground">
-          暂无任务
+        <div v-else-if="groupTasks.length === 0" class="flex flex-col items-center justify-center h-full text-muted-foreground gap-3">
+          <div class="w-14 h-14 rounded-full bg-muted/50 flex items-center justify-center">
+            <ListIcon class="w-7 h-7 text-muted-foreground/40" />
+          </div>
+          <div class="text-center">
+            <p class="text-sm font-medium">暂无任务数据</p>
+            <p class="text-xs text-muted-foreground/60 mt-1">该分组尚未加载任务详情</p>
+          </div>
         </div>
 
         <!-- Kanban Columns -->
-        <div v-else class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 280px); max-height: 700px;">
+        <div v-else class="flex gap-4 min-w-[1000px]" style="height: calc(100vh - 300px); max-height: 700px;">
           <div
             v-for="(column, columnIndex) in kanbanColumns"
             :key="column.id"
-            class="flex-1 min-w-[250px] flex flex-col min-h-0"
+            class="flex-1 min-w-[240px] flex flex-col min-h-0"
           >
             <!-- Column Header -->
-            <div class="flex items-center gap-2 mb-3 pb-2 border-b shrink-0">
-              <div :class="['w-2.5 h-2.5 rounded-full', column.dotClass]" />
-              <h4 class="text-sm font-medium">{{ column.title }}</h4>
-              <Badge variant="secondary" class="ml-auto text-xs">
+            <div class="flex items-center gap-2 mb-3 pb-2.5 border-b shrink-0">
+              <div :class="['w-2 h-2 rounded-full', column.dotClass]" />
+              <h4 class="text-sm font-medium text-foreground/90">{{ column.title }}</h4>
+              <div class="ml-auto text-xs tabular-nums font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
                 {{ column.tasks.length }}
-              </Badge>
+              </div>
             </div>
 
             <!-- Column Content (virtual scroller) -->
             <div
               :ref="(el: any) => { if (el) columnScrollRefs[columnIndex] = el as HTMLElement }"
-              class="flex-1 min-h-0 overflow-y-auto scrollbar-auto pr-1"
+              class="flex-1 min-h-0 overflow-y-auto scrollbar-auto pr-1 -mr-1"
             >
               <!-- Virtual scroller when tasks exist -->
               <template v-if="column.tasks.length > 0">
@@ -147,24 +175,27 @@
                     class="absolute left-0 w-full"
                     :style="{ transform: `translateY(${virtualRow.start}px)` }"
                   >
-                    <div class="mx-0 mb-2 p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
+                    <div class="mx-0 mb-2 p-3 rounded-lg border bg-card hover:bg-muted/40 transition-colors group/task">
                       <div class="flex items-start justify-between gap-2">
-                        <div class="min-w-0 flex-1">
-                          <p class="text-sm font-medium truncate">
+                        <div class="min-w-0 flex-1 space-y-1.5">
+                          <p class="text-sm font-medium truncate text-foreground/90">
                             {{ columnTask(column, virtualRow.index).custom_title || columnTask(column, virtualRow.index).title || columnTask(column, virtualRow.index).id.slice(0, 8) }}
                           </p>
-                          <div class="flex items-center gap-2 mt-1.5">
-                            <Badge :variant="taskStatusVariant(columnTask(column, virtualRow.index).status)" class="text-xs">
+                          <div class="flex items-center gap-2">
+                            <Badge :variant="taskStatusVariant(columnTask(column, virtualRow.index).status)" class="text-[10px] leading-tight px-1.5 py-0">
                               {{ taskStatusLabel(columnTask(column, virtualRow.index).status) }}
                             </Badge>
+                            <span class="text-[11px] tabular-nums text-muted-foreground/60">
+                              {{ columnTask(column, virtualRow.index).token_count || 0 }} tokens
+                            </span>
                           </div>
                         </div>
-                        <div class="flex items-center gap-1 shrink-0">
+                        <div class="flex items-center gap-0.5 shrink-0 -mr-0.5">
                           <Button
                             v-if="columnTask(column, virtualRow.index).status === 'done' && columnTask(column, virtualRow.index).has_audio"
                             variant="ghost"
                             size="sm"
-                            class="h-7 w-7 p-0"
+                            class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                             title="播放"
                             @click="$emit('play', columnTask(column, virtualRow.index))"
                           >
@@ -174,7 +205,7 @@
                             v-if="canCancelTask(columnTask(column, virtualRow.index).status)"
                             variant="ghost"
                             size="sm"
-                            class="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            class="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
                             title="取消"
                             @click="handleCancelTask(columnTask(column, virtualRow.index).id)"
                           >
@@ -183,7 +214,7 @@
                           <Button
                             variant="ghost"
                             size="sm"
-                            class="h-7 w-7 p-0"
+                            class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                             title="查看原文"
                             @click="$emit('view-text', columnTask(column, virtualRow.index))"
                           >
@@ -195,13 +226,13 @@
                       <!-- Progress bar for active tasks -->
                       <div v-if="isActiveStatus(columnTask(column, virtualRow.index).status)" class="mt-2">
                         <div class="flex items-center gap-2">
-                          <div class="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div class="flex-1 h-1.5 bg-muted/60 rounded-full overflow-hidden">
                             <div
-                              class="h-full bg-primary rounded-full transition-all duration-500 animate-pulse"
+                              class="h-full rounded-full transition-all duration-500 bg-primary"
                               :style="{ width: `${statusProgress(columnTask(column, virtualRow.index).status)}%` }"
                             />
                           </div>
-                          <span class="text-xs text-muted-foreground">
+                          <span class="text-[11px] tabular-nums text-muted-foreground shrink-0 w-8 text-right">
                             {{ statusProgress(columnTask(column, virtualRow.index).status) }}%
                           </span>
                         </div>
@@ -213,8 +244,11 @@
 
               <!-- Empty column message -->
               <template v-else>
-                <div class="text-center py-8 text-muted-foreground text-sm">
-                  {{ column.emptyText }}
+                <div class="flex flex-col items-center justify-center py-10 text-muted-foreground gap-2">
+                  <div class="w-8 h-8 rounded-full bg-muted/60 flex items-center justify-center">
+                    <component :is="column.icon" class="w-4 h-4 text-muted-foreground/40" />
+                  </div>
+                  <p class="text-xs text-muted-foreground/60">{{ column.emptyText }}</p>
                 </div>
               </template>
             </div>
@@ -223,10 +257,16 @@
       </div>
 
       <!-- Stats Footer -->
-      <div class="p-3 border-t text-xs text-muted-foreground shrink-0">
-        <div class="flex justify-between">
-          <span>总 Tokens: {{ formatTokens(group.total_tokens) }}</span>
-          <span>创建于: {{ formatDate(group.created_at) }}</span>
+      <div class="px-4 sm:px-5 py-2.5 border-t shrink-0 bg-muted/20">
+        <div class="flex items-center justify-between text-xs text-muted-foreground">
+          <div class="flex items-center gap-4">
+            <span class="tabular-nums">总 Tokens: <span class="font-medium text-foreground/80">{{ formatTokens(group.total_tokens) }}</span></span>
+            <span class="hidden sm:inline tabular-nums">创建于: <span class="font-medium text-foreground/80">{{ formatDate(group.created_at) }}</span></span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500/60" />
+            <span class="tabular-nums">{{ group.completed_tasks }}/{{ group.total_tasks }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -241,7 +281,6 @@ import { apiV2 } from '@/api/client'
 import { useBatchStore } from '@/stores/batch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   X as XIcon,
@@ -252,6 +291,11 @@ import {
   FileText as FileTextIcon,
   RefreshCw as RefreshCwIcon,
   XCircle as XCircleIcon,
+  List as ListIcon,
+  Clock as ClockIcon,
+  Loader2 as Loader2Icon,
+  CheckCircle2 as CheckCircle2Icon,
+  AlertCircle as AlertCircleIcon,
 } from 'lucide-vue-next'
 import type { BadgeVariants } from '@/components/ui/badge'
 
@@ -296,7 +340,7 @@ function startPolling() {
     if (isActiveStatus(props.group.status)) {
       refreshTasks()
     }
-  }, 5000) // Poll every 5s
+  }, 5000)
 }
 
 function stopPolling() {
@@ -306,7 +350,6 @@ function stopPolling() {
   }
 }
 
-// Watch group status to start/stop polling
 watch(() => props.group.status, (status) => {
   if (isActiveStatus(status)) {
     startPolling()
@@ -328,19 +371,22 @@ interface KanbanColumn {
   emptyText: string
   tasks: TaskSummary[]
   statuses: string[]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  icon: any
 }
 
 const kanbanColumns = computed<KanbanColumn[]>(() => {
   const tasks = groupTasks.value
-  
+
   return [
     {
       id: 'queued',
       title: '等待中',
-      dotClass: 'bg-yellow-500',
+      dotClass: 'bg-amber-500',
       emptyText: '无等待任务',
       statuses: ['pending', 'queued'],
       tasks: tasks.filter(t => ['pending', 'queued'].includes(t.status)),
+      icon: ClockIcon,
     },
     {
       id: 'processing',
@@ -349,14 +395,16 @@ const kanbanColumns = computed<KanbanColumn[]>(() => {
       emptyText: '无处理中任务',
       statuses: ['chunking', 'processing', 'merging'],
       tasks: tasks.filter(t => ['chunking', 'processing', 'merging'].includes(t.status)),
+      icon: Loader2Icon,
     },
     {
       id: 'done',
       title: '已完成',
-      dotClass: 'bg-green-500',
+      dotClass: 'bg-emerald-500',
       emptyText: '无已完成任务',
       statuses: ['completed', 'done'],
       tasks: tasks.filter(t => ['completed', 'done'].includes(t.status)),
+      icon: CheckCircle2Icon,
     },
     {
       id: 'failed',
@@ -365,6 +413,7 @@ const kanbanColumns = computed<KanbanColumn[]>(() => {
       emptyText: '无失败任务',
       statuses: ['failed', 'merging_failed', 'cancelled'],
       tasks: tasks.filter(t => ['failed', 'merging_failed', 'cancelled'].includes(t.status)),
+      icon: AlertCircleIcon,
     },
   ]
 })
@@ -492,13 +541,12 @@ function formatDate(dateStr: string): string {
 // ─── Cancel task ────────────────────────────────────
 
 function canCancelTask(status: string): boolean {
-  return ['pending', 'queued', 'chunking', 'processing', 'merging', 'mergingfailed', 'paused'].includes(status)
+  return ['pending', 'queued', 'chunking', 'processing', 'merging', 'merging_failed', 'paused'].includes(status)
 }
 
 async function handleCancelTask(taskId: string) {
   try {
     await apiV2.cancelTask(taskId)
-    // Refresh to reflect the cancelled state
     await refreshTasks()
   } catch (error) {
     console.error('Failed to cancel task:', error)
@@ -516,7 +564,6 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
-  // Start polling if group is active
   if (isActiveStatus(props.group.status)) {
     startPolling()
   }

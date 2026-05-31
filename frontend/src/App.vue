@@ -9,49 +9,54 @@
       <Transition name="slide-in-left">
         <aside
           v-if="!sidebarCollapsed"
-          class="fixed left-0 top-0 h-full bg-background text-foreground border-r shadow-xl z-50 flex flex-col
-                 w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[32rem]"
+          class="fixed left-0 top-0 h-full bg-background text-foreground border-r shadow-lg z-50 flex flex-col
+                 w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[30rem]"
           role="complementary"
           aria-label="批量任务面板"
           aria-modal="true"
           tabindex="-1"
         >
-          <div class="p-3 sm:p-4 border-b flex items-center justify-between">
-            <div class="min-w-0 flex-1">
-              <h2 class="text-base sm:text-lg font-semibold truncate">批量任务</h2>
-              <p class="text-xs text-muted-foreground mt-0.5 sm:mt-1">管理批量合成分组</p>
+          <!-- Header -->
+          <div class="px-4 sm:px-5 py-3.5 border-b shrink-0">
+            <div class="flex items-center justify-between">
+              <div class="min-w-0 flex-1">
+                <h2 class="text-base sm:text-lg font-semibold tracking-tight text-foreground">批量任务</h2>
+                <p class="text-xs text-muted-foreground/70 mt-0.5">管理批量合成分组</p>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2 text-muted-foreground hover:text-foreground"
+                @click="sidebarCollapsed = true"
+              >
+                <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </Button>
             </div>
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2"
-              @click="sidebarCollapsed = true"
-            >
-              <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            </Button>
           </div>
           
-          <div class="p-3 sm:p-4 border-b">
+          <!-- New task button -->
+          <div class="px-4 sm:px-5 py-3 border-b">
             <Button
-              class="w-full"
+              class="w-full h-9 text-xs"
               size="sm"
               :disabled="!configStore.hasValidKey"
               @click="showBatchWizard = true"
             >
-              <PlusIcon class="w-4 h-4 mr-1" />
+              <PlusIcon class="w-4 h-4 mr-1.5" />
               {{ configStore.hasValidKey ? '新建批量任务' : '请先配置 API Key' }}
             </Button>
           </div>
 
-          <div class="flex items-center justify-between px-3 sm:px-4 py-1.5 border-b">
-            <span class="text-xs text-muted-foreground">
+          <!-- Group count + clear all -->
+          <div class="flex items-center justify-between px-4 sm:px-5 py-2 border-b bg-muted/10">
+            <span class="text-xs font-medium text-muted-foreground">
               {{ batchStore.groups.length }} 个分组
             </span>
             <Button
               v-if="hasActiveGroups"
               variant="ghost"
               size="sm"
-              class="h-7 text-xs text-destructive hover:text-destructive px-2"
+              class="h-7 text-xs text-muted-foreground hover:text-destructive px-2 -mr-1"
               @click="handleCancelAll"
             >
               <XCircleIcon class="w-3.5 h-3.5 mr-1" />
@@ -59,6 +64,7 @@
             </Button>
           </div>
 
+          <!-- Group list -->
           <div class="flex-1 overflow-hidden">
             <GroupKanban
               :groups="batchStore.groups"
@@ -77,18 +83,18 @@
         </aside>
       </Transition>
 
-      <!-- 遮罩层 -->
+      <!-- Overlay -->
       <Transition name="fade">
         <div 
           v-if="!sidebarCollapsed"
-          class="fixed inset-0 bg-black/20 z-40"
+          class="fixed inset-0 bg-black/15 z-40"
           @click="sidebarCollapsed = true"
         />
       </Transition>
 
-      <!-- 中心内容区 -->
-      <main class="flex-1 flex flex-col items-center justify-start px-4 py-8 sm:py-12 overflow-y-auto scrollbar-auto">
-        <!-- 选中分组详情 或 合成表单 -->
+      <!-- Center content area -->
+      <main class="flex-1 flex flex-col items-center justify-start px-4 py-6 sm:py-10 overflow-y-auto scrollbar-auto">
+        <!-- Selected group detail or synthesize form -->
         <template v-if="selectedGroup">
           <div class="w-full h-full">
             <GroupDetailPanel
@@ -104,16 +110,16 @@
             />
           </div>
         </template>
-        <div v-else class="w-full max-w-4xl mt-8 sm:mt-12">
+        <div v-else class="w-full max-w-4xl mt-6 sm:mt-10">
           <SynthesizeForm ref="synthesizeFormRef" @submitted="showTaskSidebar = true" />
         </div>
         
-        <!-- 底部信息 -->
+        <!-- Footer -->
         <FooterInfo />
       </main>
     </div>
 
-    <!-- 悬浮工具栏 -->
+    <!-- Floating toolbar -->
     <FloatingToolbar 
       :show-batch-sidebar="!sidebarCollapsed"
       :show-task-sidebar="showTaskSidebar"
@@ -123,27 +129,27 @@
       class="z-50"
     />
 
-    <!-- 任务列表面板（保持现有逻辑） -->
+    <!-- Right task list panel -->
     <Transition name="slide-in-right">
       <aside 
         ref="sidebarRef"
         v-if="showTaskSidebar" 
-        class="fixed right-0 top-0 h-full bg-background text-foreground border-l shadow-xl z-50 flex flex-col
-               w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[32rem]"
+        class="fixed right-0 top-0 h-full bg-background text-foreground border-l shadow-lg z-50 flex flex-col
+               w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[30rem]"
         role="complementary"
         aria-label="任务列表面板"
         aria-modal="true"
         tabindex="-1"
       >
-        <div class="p-3 sm:p-4 border-b flex items-center justify-between">
+        <div class="px-4 sm:px-5 py-3.5 border-b shrink-0 flex items-center justify-between">
           <div class="min-w-0 flex-1">
-            <h2 class="text-base sm:text-lg font-semibold truncate">任务列表</h2>
-            <p class="text-xs text-muted-foreground mt-0.5 sm:mt-1">查看和管理合成任务</p>
+            <h2 class="text-base sm:text-lg font-semibold tracking-tight text-foreground">任务列表</h2>
+            <p class="text-xs text-muted-foreground/70 mt-0.5">查看和管理合成任务</p>
           </div>
           <Button 
             variant="ghost" 
             size="sm" 
-            class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2"
+            class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2 text-muted-foreground hover:text-foreground"
             @click="showTaskSidebar = false"
           >
             <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -164,24 +170,24 @@
     <Transition name="fade">
       <div 
         v-if="showTaskSidebar"
-        class="fixed inset-0 bg-black/20 z-40"
+        class="fixed inset-0 bg-black/15 z-40"
         @click="showTaskSidebar = false"
         aria-hidden="true"
       ></div>
     </Transition>
 
-    <!-- 移动端批量任务面板 -->
+    <!-- Mobile batch sidebar -->
     <Transition name="slide-in-left">
       <aside
         v-if="showMobileBatchSidebar"
-        class="fixed left-0 top-0 h-full w-72 bg-background border-r shadow-xl z-50 flex flex-col lg:hidden"
+        class="fixed left-0 top-0 h-full w-72 bg-background border-r shadow-lg z-50 flex flex-col lg:hidden"
       >
-        <div class="p-4 border-b flex items-center justify-between">
-          <h2 class="text-base font-semibold">批量任务</h2>
+        <div class="px-4 py-3.5 border-b flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-foreground">批量任务</h2>
           <Button
             variant="ghost"
             size="sm"
-            class="h-7 w-7 p-0"
+            class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
             @click="showMobileBatchSidebar = false"
           >
             <XIcon class="w-4 h-4" />
@@ -189,11 +195,11 @@
         </div>
         <div class="flex-1 overflow-y-auto scrollbar-auto p-3 space-y-2">
           <Button
-            class="w-full"
+            class="w-full h-9 text-xs"
             size="sm"
             @click="showMobileBatchSidebar = false; showBatchWizard = true"
           >
-            <PlusIcon class="w-4 h-4 mr-1" />
+            <PlusIcon class="w-4 h-4 mr-1.5" />
             新建批量任务
           </Button>
           <GroupCard
@@ -215,7 +221,7 @@
     <Transition name="fade">
       <div
         v-if="showMobileBatchSidebar"
-        class="fixed inset-0 bg-black/20 z-40 lg:hidden"
+        class="fixed inset-0 bg-black/15 z-40 lg:hidden"
         @click="showMobileBatchSidebar = false"
         aria-hidden="true"
       ></div>
@@ -296,7 +302,7 @@ const hasActiveGroups = computed(() =>
   batchStore.groups.some(g => ['pending', 'queued', 'processing', 'paused'].includes(g.status)),
 )
 
-// 键盘事件处理 - ESC 键关闭侧边栏
+// Keyboard event - ESC to close sidebars
 function handleKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') {
     if (showTaskSidebar.value) {
@@ -307,7 +313,6 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-// 监听侧边栏状态变化，管理焦点
 watch(showTaskSidebar, async (newValue) => {
   if (newValue) {
     await nextTick()
@@ -351,7 +356,6 @@ async function handleOpenTextViewer(task: Task | TaskSummary) {
   showTextDialog.value = true
 }
 
-// Get current task text for audio player
 function getCurrentTaskText(): string {
   return currentAudioTaskText.value
 }
@@ -428,7 +432,6 @@ async function handleDownloadGroup(groupId: string) {
 async function handleBatchImported(groupId: string) {
   selectedGroupId.value = groupId
   showBatchWizard.value = false
-  // Await both so data is ready before user navigates
   await Promise.all([
     batchStore.loadGroups(),
     taskStore.loadTasks(),
@@ -452,7 +455,7 @@ onUnmounted(() => {
 <style>
 .slide-in-right-enter-active,
 .slide-in-right-leave-active {
-  transition: transform 0.3s ease;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .slide-in-right-enter-from,
 .slide-in-right-leave-to {
@@ -461,7 +464,7 @@ onUnmounted(() => {
 
 .slide-in-left-enter-active,
 .slide-in-left-leave-active {
-  transition: transform 0.3s ease;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .slide-in-left-enter-from,
 .slide-in-left-leave-to {

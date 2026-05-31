@@ -1,10 +1,8 @@
 <template>
   <div class="h-full flex flex-col">
     <!-- Loading skeleton -->
-    <div v-if="loading && groups.length === 0" class="space-y-2 p-3 sm:p-4">
-      <Skeleton class="h-20 w-full" />
-      <Skeleton class="h-20 w-full" />
-      <Skeleton class="h-20 w-full" />
+    <div v-if="loading && groups.length === 0" class="p-4 space-y-3">
+      <Skeleton class="h-16 w-full rounded-lg" v-for="n in 3" :key="n" />
     </div>
 
     <!-- Scroll container -->
@@ -29,41 +27,19 @@
             <!-- Section Header -->
             <template v-if="getRowData(virtualRow.index).type === 'section-header'">
               <div
-                class="flex items-center gap-2 py-2 cursor-pointer select-none group -mx-3 sm:-mx-4 px-3 sm:px-4 hover:bg-muted/30 transition-colors"
+                class="group-section-header flex items-center gap-2.5 py-2 px-3 -mx-3 sm:-mx-4 rounded-none cursor-pointer select-none hover:bg-muted/40 transition-colors"
+                :class="sectionHeaderBorder(getRowSection(virtualRow.index))"
                 @click="toggleCollapsed(getRowSection(virtualRow.index))"
               >
                 <ChevronRightIcon
                   class="w-4 h-4 transition-transform duration-200 shrink-0 text-muted-foreground"
                   :class="{ 'rotate-90': openSections.has(getRowSection(virtualRow.index)) }"
                 />
-                <!-- Processing section icon -->
-                <template v-if="getRowSection(virtualRow.index) === 'processing'">
-                  <Loader2Icon
-                    v-if="openSections.has('processing')"
-                    class="w-4 h-4 animate-spin text-primary shrink-0"
-                  />
-                  <Loader2Icon v-else class="w-4 h-4 text-muted-foreground shrink-0" />
-                </template>
-                <!-- Pending section icon -->
-                <ClockIcon
-                  v-else-if="getRowSection(virtualRow.index) === 'pending'"
-                  class="w-4 h-4 text-muted-foreground shrink-0"
-                />
-                <!-- Completed section icon -->
-                <CheckCircle2Icon
-                  v-else-if="getRowSection(virtualRow.index) === 'completed'"
-                  class="w-4 h-4 text-emerald-500 shrink-0"
-                />
-                <!-- Failed section icon -->
-                <XCircleIcon
-                  v-else-if="getRowSection(virtualRow.index) === 'failed'"
-                  class="w-4 h-4 text-destructive shrink-0"
-                />
-                <span class="text-xs font-medium text-foreground">
+                <span class="text-xs font-semibold tracking-wide text-foreground/80 uppercase">
                   {{ sectionLabel(getRowSection(virtualRow.index)) }}
                 </span>
                 <span
-                  class="text-xs tabular-nums ml-auto"
+                  class="text-xs tabular-nums font-medium ml-auto"
                   :class="sectionCountClass(getRowSection(virtualRow.index))"
                 >
                   {{ sectionCount(getRowSection(virtualRow.index)) }}
@@ -101,10 +77,12 @@
       </div>
 
       <!-- Empty state -->
-      <div v-else class="flex flex-col items-center justify-center py-12 text-center">
-        <FolderIcon class="w-10 h-10 text-muted-foreground/50 mb-3" />
-        <p class="text-sm text-muted-foreground">暂无批量任务</p>
-        <p class="text-xs text-muted-foreground/70 mt-1">点击上方按钮创建</p>
+      <div v-else class="flex flex-col items-center justify-center py-16 text-center px-6">
+        <div class="w-12 h-12 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+          <FolderIcon class="w-6 h-6 text-muted-foreground/50" />
+        </div>
+        <p class="text-sm font-medium text-muted-foreground">暂无批量任务</p>
+        <p class="text-xs text-muted-foreground/60 mt-1.5">点击上方按钮创建新的批量合成分组</p>
       </div>
     </div>
   </div>
@@ -119,10 +97,6 @@ import { Button } from '@/components/ui/button'
 import GroupCard from './GroupCard.vue'
 import {
   ChevronRight as ChevronRightIcon,
-  Loader2 as Loader2Icon,
-  Clock as ClockIcon,
-  CheckCircle2 as CheckCircle2Icon,
-  XCircle as XCircleIcon,
   Folder as FolderIcon,
   Download as DownloadIcon,
 } from 'lucide-vue-next'
@@ -207,10 +181,19 @@ function sectionCount(section: SectionKey): number {
 
 function sectionCountClass(section: SectionKey): string {
   switch (section) {
-    case 'processing': return 'text-primary font-medium'
+    case 'processing': return 'text-primary'
     case 'pending': return 'text-muted-foreground'
-    case 'completed': return 'text-emerald-500 font-medium'
-    case 'failed': return 'text-destructive font-medium'
+    case 'completed': return 'text-emerald-500'
+    case 'failed': return 'text-destructive'
+  }
+}
+
+function sectionHeaderBorder(section: SectionKey): string {
+  switch (section) {
+    case 'processing': return 'border-l-[3px] border-primary/40'
+    case 'pending': return 'border-l-[3px] border-muted-foreground/20'
+    case 'completed': return 'border-l-[3px] border-emerald-500/40'
+    case 'failed': return 'border-l-[3px] border-destructive/40'
   }
 }
 

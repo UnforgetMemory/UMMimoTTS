@@ -171,7 +171,7 @@ export const useBatchStore = defineStore('batch', () => {
       // v2: use getBatch for detail + listTasks for paginated tasks
       const [batch, firstPage] = await Promise.all([
         apiV2.getBatch(groupId),
-        apiV2.listTasks({ group_id: groupId, page: 0, page_size: 500 }),
+        apiV2.listTasks({ batch_id: groupId, page: 0, page_size: 500 }),
       ])
 
       // Update the group in the map
@@ -195,7 +195,7 @@ export const useBatchStore = defineStore('batch', () => {
         const remainingPages = []
         for (let p = 1; p < firstPage.total_pages; p++) {
           remainingPages.push(
-            apiV2.listTasks({ group_id: groupId, page: p, page_size: 500 })
+            apiV2.listTasks({ batch_id: groupId, page: p, page_size: 500 })
           )
         }
         const results = await Promise.all(remainingPages)
@@ -227,7 +227,7 @@ export const useBatchStore = defineStore('batch', () => {
     if (cache && cache.loaded && !force && page === 0) return
 
     try {
-      const result = await apiV2.listTasks({ group_id: groupId, page, page_size: 50 })
+      const result = await apiV2.listTasks({ batch_id: groupId, page, page_size: 50 })
 
       const existing = groupTaskCache.get(groupId)
       const tasks: TaskSummary[] = page === 0 || !existing
