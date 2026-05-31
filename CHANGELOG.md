@@ -2,6 +2,52 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-05-31
+
+### Queue System Overhaul
+
+#### Fixed
+- **Rate limiter integer division bug**: `refill_per_sec` used `rpm/60` (integer division), causing 10 rpm to become 60 rpm. Replaced with `nanos_per_token = 60_000_000_000 / rpm` for precise nanosecond-based refill.
+- **Rate limiter refill deadlock**: `last_refill` was updated every 100ms even when `earned == 0`, resetting the timer so tokens never accumulated. Now only updates via CAS when `earned > 0`.
+- **Chunk queue deadlock**: Workers used `try_acquire()` + `notify.notified().await` which caused infinite wait when rate limiter had no tokens. Changed to `rate_limiter.acquire().await` (sleeps internally with 100ms retry).
+- **Batch status never updated in DB**: `check_batch_completion()` emitted SSE events but never wrote to `batches` table. Added `UPDATE batches SET status` with timestamp.
+- **Queue "parking lot" bug**: After `tokio::spawn`, workers looped back to sleep without waking next worker. Added `notify.notify_one()` after spawn.
+- **Duplicate TaskEnqueued events**: Removed 3 redundant `sse_bus.publish(TaskEnqueued)` calls from `batch_service.rs`.
+- **Misleading Chunking status**: Tasks showed "chunking" while waiting in queue. Removed Chunking transition — tasks stay Queued until worker picks first chunk.
+- **Group ID mismatch**: Tasks had `group_id = batch_id` instead of actual group UUID. Fixed `batch_repo.rs` to look up group by batch_id.
+- **Group counters NULL crash**: `increment_done/failed_tasks` SQL failed on NULL values. Added `COALESCE(done_tasks, 0)`.
+- **Task-level concurrency gap**: No task-level gate — all tasks instantly became "processing". Added `task_semaphore` (20) + `active_tasks` HashSet.
+
+#### Added
+- **Chunk recovery module** (`chunk_recovery.rs`): Resets orphaned Processing chunks (>2min) to Pending every 30s.
+- **Task watchdog** (`watchdog.rs`): Patrols every 15s for stuck Processing/Merging tasks (>60s). Marks Failed + emits events.
+- **Poll and reconcile DB fallback**: Finds tasks with all chunks resolved, triggers completion. On broadcast Lagged + every 60s.
+- **Cancel/stop APIs**: `POST /tasks/{id}/cancel`, `POST /tasks/cancel-all`, `POST /batches/{id}/cancel`.
+- **Frontend cancel buttons**: Per-task cancel, per-group cancel, "一键清空" button.
+- **Group status auto-transitions**: `check_group_completion()` auto-sets Completed/Failed when all tasks terminal.
+- **Batch status auto-transitions**: `check_batch_completion()` now updates DB status.
+
+#### Changed
+- **Broadcast channel**: 256 → 4096
+- **Rate limiter**: `TokenBucket::new(100)` → `TokenBucket::new(10)` (10 rpm)
+- **Max concurrent chunks**: 2 → 10
+- **Max active tasks**: New `MAX_ACTIVE_TASKS` env var, default 20
+- **Watchdog timing**: patrol 30s→15s, stale 300s→60s
+- **Pagination cap**: 1000 → 5000
+
+### Frontend (2026-05-31)
+
+#### Fixed
+- **Group detail kanban empty data**: Used `batch_id` instead of `group_id` for `listTasks` API call.
+- **Card/CardContent imports**: GroupCard.vue missing shadcn-vue component imports.
+
+#### Changed
+- **Layout refactoring**: Improved spacing, typography, visual hierarchy.
+- **Loading skeleton**: Structured skeleton with column headers and card placeholders.
+- **Kanban column height**: `flex-1` → `calc(100vh - 280px); max-height: 700px`.
+
+---
+
 ## [Unreleased] - 2026-05-30
 
 ### Backend
