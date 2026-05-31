@@ -142,7 +142,7 @@ async fn list_tasks(
 ) -> impl Responder {
     let q = query.into_inner();
     let page = q.page.unwrap_or(0).max(0);
-    let page_size = q.page_size.unwrap_or(50).max(1).min(1000);
+    let page_size = q.page_size.unwrap_or(50).max(1).min(5000);
 
     // Fetch tasks filtered by batch_id or group_id if provided
     let all: Vec<crate::domain::task::Task> = if let Some(bid) = &q.batch_id {

@@ -23,6 +23,7 @@ impl TaskStatus {
         matches!((self, next),
             (Self::Pending, Self::Queued)
             | (Self::Queued, Self::Chunking)
+            | (Self::Queued, Self::Processing)  // worker picks first chunk
             | (Self::Chunking, Self::Processing)
             | (Self::Processing, Self::Merging)
             | (Self::Merging, Self::Done)
@@ -151,6 +152,7 @@ mod tests {
         let transitions = [
             (TaskStatus::Pending, TaskStatus::Queued),
             (TaskStatus::Queued, TaskStatus::Chunking),
+            (TaskStatus::Queued, TaskStatus::Processing),  // worker picks first chunk
             (TaskStatus::Chunking, TaskStatus::Processing),
             (TaskStatus::Processing, TaskStatus::Merging),
             (TaskStatus::Merging, TaskStatus::Done),

@@ -94,18 +94,13 @@ impl TaskQueue {
             )));
         }
 
-        // Step through intermediate states.
+        // Transition to Queued — task stays here until a ChunkQueue worker
+        // picks up the first chunk and transitions it to Processing.
         self.task_repo.update_status(task_id, &TaskStatus::Queued)?;
         let _ = self.event_tx.send(DomainEvent::TaskStatusChanged {
             task_id: task.id.clone(),
             batch_id: task.batch_id.clone(),
             status: "queued".to_string(),
-        });
-        self.task_repo.update_status(task_id, &TaskStatus::Chunking)?;
-        let _ = self.event_tx.send(DomainEvent::TaskStatusChanged {
-            task_id: task.id.clone(),
-            batch_id: task.batch_id.clone(),
-            status: "chunking".to_string(),
         });
 
         // Tokenize and split into chunks — on failure, reset status so caller can retry.
@@ -210,11 +205,11 @@ impl TaskQueue {
     /// DB poll fallback: find Processing tasks whose chunks are all resolved
     /// and trigger completion. This catches tasks missed due to event loss.
     async fn poll_and_reconcile(&self) -> Result<(), AppError> {
-        // Find all tasks in Processing or Chunking status
+        // Find all tasks in Processing or Queued status (Queued = waiting for worker pickup)
         let all_tasks = self.task_repo.find_all()?;
         let active_tasks: Vec<_> = all_tasks
             .iter()
-            .filter(|t| matches!(t.status, TaskStatus::Processing | TaskStatus::Chunking))
+            .filter(|t| matches!(t.status, TaskStatus::Processing | TaskStatus::Queued))
             .collect();
 
         if active_tasks.is_empty() {
@@ -781,9 +776,9 @@ use crate::shared::id::Id;
         task_queue.enqueue(&task_id).await.unwrap();
 
         let stored = task_repo.find_by_id(&task_id).unwrap().unwrap();
-        // After enqueue, task should be in Chunking status (not Processing).
+        // After enqueue, task should be in Queued status (not Processing).
         // Processing is set by ChunkQueue worker when first chunk starts.
-        assert_eq!(stored.status, TaskStatus::Chunking);
+        assert_eq!(stored.status, TaskStatus::Queued);
 
         let chunks = chunk_repo.find_by_task(&task_id).unwrap();
         assert!(!chunks.is_empty(), "should have created chunks");

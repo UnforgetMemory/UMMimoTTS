@@ -333,10 +333,10 @@ async fn worker_loop(
             continue;
         }
 
-        // Transition task to Processing if it's still in Chunking state.
-        // This is the REAL "processing started" moment — a chunk worker picked it up.
+        // Transition task to Processing if it's still in Queued state.
+        // Tasks stay Queued after enqueue; first chunk pickup → Processing.
         if let Ok(Some(task)) = task_repo.find_by_id(&task_id_str) {
-            if task.status == TaskStatus::Chunking {
+            if task.status == TaskStatus::Queued {
                 if let Err(e) = task_repo.update_status(&task_id_str, &TaskStatus::Processing) {
                     warn!("worker {worker_id}: failed to transition task {task_id_str} to Processing: {e}");
                 } else {
