@@ -81,6 +81,7 @@
                 @pause="(id: string) => $emit('pause', id)"
                 @resume="(id: string) => $emit('resume', id)"
                 @retry="(id: string) => $emit('retry', id)"
+                @cancel="(id: string) => $emit('cancel', id)"
                 @delete="(id: string) => $emit('delete', id)"
               />
               <!-- Download overlay button for completed groups -->
@@ -139,6 +140,7 @@ defineEmits<{
   pause: [groupId: string]
   resume: [groupId: string]
   retry: [groupId: string]
+  cancel: [groupId: string]
   delete: [groupId: string]
   download: [groupId: string]
 }>()

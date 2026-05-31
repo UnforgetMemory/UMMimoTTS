@@ -8,27 +8,79 @@
 
 #![allow(dead_code)]
 
-use crate::domain::task::{CreateTaskRequest, Task, TaskType};
+use crate::domain::events::DomainEvent;
+use crate::domain::task::{CreateTaskRequest, Task, TaskStatus, TaskType};
 use crate::infra::persistence::task_repo::TaskRepo;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
 use crate::infra::queue::task_queue::TaskQueue;
 use crate::shared::error::AppError;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 /// Stateless service that wraps TaskRepo persistence and TaskQueue orchestration.
 pub struct TaskService {
     pub task_repo: Arc<dyn TaskRepo>,
     pub chunk_repo: Arc<dyn ChunkRepo>,
     task_queue: Arc<TaskQueue>,
+    event_tx: broadcast::Sender<DomainEvent>,
 }
 
 impl TaskService {
-    pub fn new(task_repo: Arc<dyn TaskRepo>, chunk_repo: Arc<dyn ChunkRepo>, task_queue: Arc<TaskQueue>) -> Self {
+    pub fn new(
+        task_repo: Arc<dyn TaskRepo>,
+        chunk_repo: Arc<dyn ChunkRepo>,
+        task_queue: Arc<TaskQueue>,
+        event_tx: broadcast::Sender<DomainEvent>,
+    ) -> Self {
         Self {
             task_repo,
             chunk_repo,
             task_queue,
+            event_tx,
         }
+    }
+
+    /// Cancel a single task — sets status to Cancelled, cancels all pending/processing chunks.
+    pub fn cancel(&self, task_id: &str) -> Result<(), AppError> {
+        let task = self
+            .task_repo
+            .find_by_id(task_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Task {task_id}")))?;
+
+        // Cancelled is reachable from: Pending, Queued, Chunking, Processing, Merging, MergingFailed, Paused, Failed
+        let cancellable = matches!(
+            task.status,
+            TaskStatus::Pending
+                | TaskStatus::Queued
+                | TaskStatus::Chunking
+                | TaskStatus::Processing
+                | TaskStatus::Merging
+                | TaskStatus::MergingFailed
+                | TaskStatus::Paused
+                | TaskStatus::Failed
+        );
+
+        if !cancellable {
+            return Err(AppError::InvalidInput(format!(
+                "Task status {:?} is not cancellable",
+                task.status
+            )));
+        }
+
+        // Set task status to Cancelled
+        self.task_repo.update_status(task_id, &TaskStatus::Cancelled)?;
+
+        // Cancel all pending/processing chunks
+        let _ = self.chunk_repo.cancel_pending_by_task(task_id)?;
+
+        // Emit TaskStatusChanged event
+        let _ = self.event_tx.send(DomainEvent::TaskStatusChanged {
+            task_id: task.id.clone(),
+            batch_id: task.batch_id.clone(),
+            status: "cancelled".to_string(),
+        });
+
+        Ok(())
     }
 
     /// Create a brand-new single (non-batch) task with `Pending` status.

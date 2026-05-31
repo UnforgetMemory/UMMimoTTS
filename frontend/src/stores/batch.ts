@@ -462,6 +462,45 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
+   * 取消分组处理
+   */
+  async function cancelGroup(groupId: string) {
+    error.value = null
+    try {
+      await api.cancelGroup(groupId)
+      updateGroupInMap(groupId, { status: 'cancelled' as GroupStatus })
+      // 关闭 SSE 连接
+      const es = eventSources.get(groupId)
+      if (es) {
+        es.close()
+        eventSources.delete(groupId)
+      }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '取消分组失败'
+      error.value = message
+      console.error('Failed to cancel group:', err)
+      throw err
+    }
+  }
+
+  /**
+   * 取消所有正在处理的任务
+   */
+  async function cancelAllTasks() {
+    error.value = null
+    try {
+      await apiV2.cancelAllTasks()
+      // 刷新分组列表
+      await loadGroups()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '取消全部任务失败'
+      error.value = message
+      console.error('Failed to cancel all tasks:', err)
+      throw err
+    }
+  }
+
+  /**
    * 删除分组及其关联任务
    */
   async function removeGroup(groupId: string) {
@@ -578,6 +617,15 @@ export const useBatchStore = defineStore('batch', () => {
               failed_tasks: data.failed_tasks ?? 0,
             })
             // 失败后关闭连接并刷新
+            eventSources.delete(groupId)
+            eventSource.close()
+            loadGroups()
+            break
+          case 'BatchCancelled':
+            updateGroupInMap(groupId, {
+              status: 'cancelled' as GroupStatus,
+            })
+            // 取消后关闭连接并刷新
             eventSources.delete(groupId)
             eventSource.close()
             loadGroups()
@@ -728,6 +776,8 @@ export const useBatchStore = defineStore('batch', () => {
     pauseGroup,
     resumeGroup,
     retryFailed,
+    cancelGroup,
+    cancelAllTasks,
     removeGroup,
     downloadGroupAudio,
 

@@ -96,11 +96,14 @@ pub fn configure(cfg: &mut actix_web::web::ServiceConfig) {
         web::scope("/api/v2/tasks")
             .route("", web::post().to(create_task))
             .route("", web::get().to(list_tasks))
+            // cancel-all must come before /{id} routes to avoid path conflict
+            .route("/cancel-all", web::post().to(cancel_all_tasks))
             .route("/{id}", web::get().to(get_task))
             .route("/{id}", web::delete().to(delete_task))
             .route("/{id}/enqueue", web::post().to(enqueue_task))
             .route("/{id}/retry", web::post().to(retry_task))
             .route("/{id}/continue", web::post().to(continue_task))
+            .route("/{id}/cancel", web::post().to(cancel_task))
             .route("/{id}/audio", web::get().to(get_audio))
             .route("/{id}/download", web::get().to(download_task_audio))
             .route("/{id}/title", web::patch().to(update_task_title)),
@@ -351,6 +354,28 @@ async fn delete_task(
     // Delete from database
     match state.task_service.delete(&id) {
         Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+/// POST /api/v2/tasks/{id}/cancel — Cancel a single task.
+async fn cancel_task(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let id = path.into_inner();
+    match state.task_service.cancel(&id) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"cancelled": true})),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+/// POST /api/v2/tasks/cancel-all — Cancel ALL non-terminal tasks.
+async fn cancel_all_tasks(
+    state: web::Data<AppState>,
+) -> impl Responder {
+    match state.batch_service.cancel_all() {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"cancelled": true})),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }

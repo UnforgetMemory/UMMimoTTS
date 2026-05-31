@@ -91,6 +91,62 @@ impl TaskWatchdog {
             }
         };
 
+        // ── Phase 2: Check for stale Merging tasks ──
+        let stale_merging = match self.task_repo.find_stale_merging(stale_minutes) {
+            Ok(tasks) => tasks,
+            Err(e) => {
+                error!("Watchdog: failed to query stale merging tasks: {e}");
+                return;
+            }
+        };
+
+        if !stale_merging.is_empty() {
+            warn!("Watchdog: found {} stale merging tasks", stale_merging.len());
+
+            for task in &stale_merging {
+                let task_id = task.id.to_string();
+
+                // Count chunk statuses
+                let done = self
+                    .chunk_repo
+                    .count_by_task_status(&task_id, &ChunkStatus::Done)
+                    .unwrap_or(0);
+                let failed = self
+                    .chunk_repo
+                    .count_by_task_status(&task_id, &ChunkStatus::Failed)
+                    .unwrap_or(0);
+                let total = self
+                    .chunk_repo
+                    .count_by_task_all(&task_id)
+                    .unwrap_or(0);
+
+                if total > 0 && done + failed == total && done > 0 {
+                    // All chunks done but still stuck in Merging — re-trigger merge
+                    info!("Watchdog: re-emitting AllChunksDone for stuck merging task {task_id} ({done} done, {failed} failed, {total} total)");
+                    let _ = self.event_tx.send(DomainEvent::AllChunksDone {
+                        task_id: task.id.clone(),
+                        total_chunks: total as i32,
+                    });
+                } else if total > 0 && done + failed == total && done == 0 {
+                    // All failed — mark as MergingFailed
+                    warn!("Watchdog: marking stuck merging task {task_id} as MergingFailed (all {failed} chunks failed)");
+                    let _ = self.task_repo.update_status(&task_id, &TaskStatus::MergingFailed);
+                    let _ = self.event_tx.send(DomainEvent::TaskFailed {
+                        task_id: task.id.clone(),
+                        error: format!("Merge stuck — all {failed} chunks failed"),
+                    });
+                } else {
+                    // Some chunks still pending/processing — mark as MergingFailed
+                    warn!("Watchdog: marking stuck merging task {task_id} as MergingFailed (incomplete chunks)");
+                    let _ = self.task_repo.update_status(&task_id, &TaskStatus::MergingFailed);
+                    let _ = self.event_tx.send(DomainEvent::TaskFailed {
+                        task_id: task.id.clone(),
+                        error: "Task stuck in Merging with incomplete chunks".into(),
+                    });
+                }
+            }
+        }
+
         if stale_tasks.is_empty() {
             return; // nothing to do
         }

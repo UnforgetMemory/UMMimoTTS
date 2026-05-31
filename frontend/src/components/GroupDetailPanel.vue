@@ -154,6 +154,16 @@
                             <PlayIcon class="w-3.5 h-3.5" />
                           </Button>
                           <Button
+                            v-if="canCancelTask(columnTask(column, virtualRow.index).status)"
+                            variant="ghost"
+                            size="sm"
+                            class="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            title="取消"
+                            @click="handleCancelTask(columnTask(column, virtualRow.index).id)"
+                          >
+                            <XCircleIcon class="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
                             variant="ghost"
                             size="sm"
                             class="h-7 w-7 p-0"
@@ -210,6 +220,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useVirtualizer } from '@tanstack/vue-virtual'
 import type { GroupSummary, TaskSummary } from '@/api/client'
+import { apiV2 } from '@/api/client'
 import { useBatchStore } from '@/stores/batch'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -223,6 +234,7 @@ import {
   Download as DownloadIcon,
   FileText as FileTextIcon,
   RefreshCw as RefreshCwIcon,
+  XCircle as XCircleIcon,
 } from 'lucide-vue-next'
 import type { BadgeVariants } from '@/components/ui/badge'
 
@@ -239,6 +251,7 @@ defineEmits<{
   download: [groupId: string]
   play: [task: TaskSummary]
   'view-text': [task: TaskSummary]
+  'cancel-task': [taskId: string]
 }>()
 
 const batchStore = useBatchStore()
@@ -457,6 +470,22 @@ function formatDate(dateStr: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+// ─── Cancel task ────────────────────────────────────
+
+function canCancelTask(status: string): boolean {
+  return ['pending', 'queued', 'chunking', 'processing', 'merging', 'mergingfailed', 'paused'].includes(status)
+}
+
+async function handleCancelTask(taskId: string) {
+  try {
+    await apiV2.cancelTask(taskId)
+    // Refresh to reflect the cancelled state
+    await refreshTasks()
+  } catch (error) {
+    console.error('Failed to cancel task:', error)
+  }
 }
 
 // ─── Load tasks on mount ─────────────────────────────

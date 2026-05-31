@@ -35,6 +35,8 @@ pub trait TaskRepo: Send + Sync {
     /// Find tasks stuck in Processing status for more than `stale_minutes`.
     /// Returns tasks that have no active (pending/processing) chunks.
     fn find_stale_processing(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
+    /// Find tasks stuck in Merging status for more than `stale_minutes`.
+    fn find_stale_merging(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
 }
 
 pub struct SqliteTaskRepo {
@@ -248,6 +250,25 @@ impl TaskRepo for SqliteTaskRepo {
 
         let tasks = stmt
             .query_map(params![processing_status, cutoff_str], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    fn find_stale_merging(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let cutoff = Utc::now() - chrono::Duration::minutes(stale_minutes);
+        let cutoff_str = cutoff.to_rfc3339();
+        let merging_status = serde_json::to_string(&TaskStatus::Merging).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT t.* FROM tasks t
+             WHERE t.status = ?1
+               AND t.updated_at < ?2
+             ORDER BY t.updated_at ASC"
+        )?;
+
+        let tasks = stmt
+            .query_map(params![merging_status, cutoff_str], Self::row_to_task)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(tasks)
     }

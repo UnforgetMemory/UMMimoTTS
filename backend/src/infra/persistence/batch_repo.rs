@@ -185,6 +185,15 @@ impl SqliteBatchRepo {
             ));
         }
 
+        // Look up the group's actual id for this batch (groups have their own id, not batch_id)
+        let group_id_str: String = tx.query_row(
+            "SELECT id FROM groups WHERE batch_id = ?1",
+            params![batch_id],
+            |row| row.get(0),
+        ).map_err(|_| AppError::NotFound(format!("Group for batch {batch_id} not found")))?;
+        let group_id_obj = Id::from_str(&group_id_str)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
         // Create a Task for each pending item (temporary — INSERT only, then dropped)
         let mut results = Vec::with_capacity(items.len());
         let total_items = items.len() as i32;
@@ -207,8 +216,8 @@ impl SqliteBatchRepo {
                 total_chars: item.total_chars,
                 total_tokens: item.token_estimate,
             });
-            // Set group_id = batch_id (batch and group share the same ID)
-            task.group_id = Some(batch_id_obj);
+            // Set group_id to the actual group's id (NOT batch_id)
+            task.group_id = Some(group_id_obj.clone());
 
             // Insert task
             tx.execute(
@@ -272,6 +281,12 @@ impl SqliteBatchRepo {
                 now_rfc,
                 batch_id,
             ],
+        )?;
+
+        // Update group total_tasks so check_group_completion can detect when all tasks are done
+        tx.execute(
+            "UPDATE groups SET total_tasks = ?1, status = '\"queued\"', updated_at = ?2 WHERE batch_id = ?3",
+            params![total_items, now_rfc, batch_id],
         )?;
 
         tx.commit()?;
@@ -665,6 +680,8 @@ mod tests {
     use crate::domain::batch::{Batch, BatchPendingItem};
     use crate::infra::persistence::db::create_test_pool;
     use crate::infra::persistence::migrate::run_migrations;
+    use crate::infra::persistence::group_repo::{GroupRepo, SqliteGroupRepo};
+    use crate::domain::group::Group;
 
     fn create_test_batch() -> Batch {
         Batch::new("Test Batch".into(), "v1".into(), "m1".into(), None, 1.0)
@@ -782,9 +799,14 @@ mod tests {
     fn test_submit_batch() {
         let pool = create_test_pool();
         run_migrations(&pool.get().unwrap()).unwrap();
-        let repo = SqliteBatchRepo::new(pool);
+        let repo = SqliteBatchRepo::new(pool.clone());
         let batch = create_test_batch();
         repo.insert_batch(&batch).unwrap();
+
+        // Create a group for this batch (required for submit_batch)
+        let group_repo = SqliteGroupRepo::new(pool);
+        let mut group = Group::new(batch.id.clone(), "Test Group".into());
+        group_repo.insert(&group).unwrap();
 
         // Add pending items
         for i in 0..3 {

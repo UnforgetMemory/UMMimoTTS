@@ -420,6 +420,11 @@ export const api = {
     await apiClient.post(`/api/v2/batches/${groupId}/retry-failed`)
   },
 
+  /** 取消分组处理 */
+  async cancelGroup(groupId: string): Promise<void> {
+    await apiClient.post(`/api/v2/batches/${groupId}/cancel`)
+  },
+
   /** 下载分组所有已完成音频为ZIP */
   async downloadGroupAudio(groupId: string): Promise<Blob> {
     const response = await apiClient.get(`/api/v2/batches/${groupId}/download`, {
@@ -704,6 +709,14 @@ export const apiV2 = {
 
   async continueTask(id: string): Promise<void> {
     await apiClient.post(`/api/v2/tasks/${id}/continue`)
+  },
+
+  async cancelTask(id: string): Promise<void> {
+    await apiClient.post(`/api/v2/tasks/${id}/cancel`)
+  },
+
+  async cancelAllTasks(): Promise<void> {
+    await apiClient.post('/api/v2/tasks/cancel-all')
   },
 
   // ── Batches ──────────────────────────────────────────────────

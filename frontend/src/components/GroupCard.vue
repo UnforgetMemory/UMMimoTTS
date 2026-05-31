@@ -51,6 +51,16 @@
             <RotateCcwIcon class="w-3.5 h-3.5" />
           </Button>
           <Button
+            v-if="['pending', 'queued', 'processing', 'paused'].includes(group.status)"
+            variant="ghost"
+            size="sm"
+            class="h-7 w-7 p-0 text-destructive hover:text-destructive"
+            @click.stop="$emit('cancel', group.id)"
+            title="停止"
+          >
+            <XCircleIcon class="w-3.5 h-3.5" />
+          </Button>
+          <Button
             variant="ghost"
             size="sm"
             class="h-7 w-7 p-0 text-destructive hover:text-destructive"
@@ -93,6 +103,7 @@ import {
   Play as PlayIcon,
   RotateCcw as RotateCcwIcon,
   Trash as TrashIcon,
+  XCircle as XCircleIcon,
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -105,6 +116,7 @@ defineEmits<{
   pause: [groupId: string]
   resume: [groupId: string]
   retry: [groupId: string]
+  cancel: [groupId: string]
   delete: [groupId: string]
 }>()
 

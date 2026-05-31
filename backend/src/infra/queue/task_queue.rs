@@ -286,6 +286,16 @@ impl TaskQueue {
             DomainEvent::TaskFailed { task_id, .. } => {
                 self.on_task_failed(task_id.as_str()).await?;
             }
+            DomainEvent::TaskStatusChanged { task_id, status, .. } if status == "cancelled" => {
+                // Cancelled tasks count as failed for group completion tracking
+                let task = self.task_repo.find_by_id(task_id.as_str())?;
+                if let Some(ref task) = task {
+                    if let Some(ref gid) = task.group_id {
+                        info!("Task {task_id} cancelled — updating group {gid} counter");
+                        self.check_group_completion(gid.as_str(), false).await?;
+                    }
+                }
+            }
             _ => {}
         }
         Ok(())
@@ -433,6 +443,7 @@ impl TaskQueue {
     /// Check if all tasks in a group are terminal (done or failed).
     /// If so, update group status and emit GroupCompleted or GroupFailed.
     async fn check_group_completion(&self, group_id: &str, task_succeeded: bool) -> Result<(), AppError> {
+        info!("check_group_completion called: group={group_id}, task_succeeded={task_succeeded}");
         let group = if task_succeeded {
             self.group_repo.increment_done_tasks(group_id)?
         } else {

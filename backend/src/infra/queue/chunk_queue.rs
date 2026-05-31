@@ -234,6 +234,28 @@ async fn worker_loop(
         let chunk_id = chunk.id.to_string();
         let task_id_str = chunk.task_id.to_string();
 
+        // ── Check parent task status before processing ──
+        match task_repo.find_by_id(&task_id_str) {
+            Ok(Some(task)) => {
+                if matches!(task.status, TaskStatus::Cancelled | TaskStatus::Paused | TaskStatus::Failed | TaskStatus::Done) {
+                    info!("worker {worker_id}: skipping chunk {chunk_id}, parent task {task_id_str} is {:?}", task.status);
+                    drop(_permit);
+                    continue;
+                }
+            }
+            Ok(None) => {
+                warn!("worker {worker_id}: chunk {chunk_id} parent task {task_id_str} not found");
+                drop(_permit);
+                continue;
+            }
+            Err(e) => {
+                error!("worker {worker_id}: failed to check task status for {task_id_str}: {e}");
+                drop(_permit);
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        }
+
         // ── Task-level concurrency gate ──
         // Check if this task already has chunks in-flight.
         let is_new_task = {
@@ -242,13 +264,17 @@ async fn worker_loop(
         };
 
         if is_new_task {
-            // New task — acquire task semaphore permit (blocks if max_active_tasks reached).
-            // This gates task transitions: only N tasks can be "processing" at once.
-            let task_permit = match task_semaphore.clone().acquire_owned().await {
+            // New task — try to acquire task semaphore permit NON-BLOCKING.
+            // If max_active_tasks reached, release chunk permit and skip this chunk
+            // so other workers can continue processing. The chunk stays Pending
+            // and will be retried when a task slot opens up.
+            let task_permit = match task_semaphore.clone().try_acquire_owned() {
                 Ok(p) => p,
                 Err(_) => {
+                    // Can't start this task yet — release chunk permit and try later.
                     drop(_permit);
-                    return;
+                    notify.notify_one();
+                    continue;
                 }
             };
             // Mark task as active
@@ -262,6 +288,7 @@ async fn worker_loop(
             let active_tasks_release = active_tasks.clone();
             let chunk_repo_release = chunk_repo.clone();
             let task_id_release = task_id_str.clone();
+            let notify_release = notify.clone();
             tokio::spawn(async move {
                 // Wait until no pending/processing chunks remain for this task.
                 // Poll every 2 seconds.
@@ -285,6 +312,7 @@ async fn worker_loop(
                     active.remove(&task_id_release);
                 }
                 drop(task_permit); // releases the semaphore permit
+                notify_release.notify_one(); // wake a worker to pick up the freed slot
                 info!("task {task_id_release} released task slot");
             });
         }

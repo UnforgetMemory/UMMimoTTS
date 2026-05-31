@@ -27,6 +27,8 @@ pub trait ChunkRepo: Send + Sync {
     /// Reset chunks stuck in Processing for longer than `stale_minutes` back to Pending.
     fn reset_stale_processing_to_pending(&self, stale_minutes: i64) -> Result<usize, AppError>;
     fn delete_by_task(&self, task_id: &str) -> Result<usize, AppError>;
+    /// Cancel all pending/processing chunks for a task — marks them as Failed with "Cancelled by user".
+    fn cancel_pending_by_task(&self, task_id: &str) -> Result<usize, AppError>;
 }
 
 pub struct SqliteChunkRepo {
@@ -284,6 +286,26 @@ impl ChunkRepo for SqliteChunkRepo {
                 Utc::now().to_rfc3339(),
                 serde_json::to_string(&ChunkStatus::Processing).unwrap(),
                 cutoff,
+            ],
+        )?;
+        Ok(affected)
+    }
+
+    fn cancel_pending_by_task(&self, task_id: &str) -> Result<usize, AppError> {
+        let conn = self.pool.get()?;
+        let pending_str = serde_json::to_string(&ChunkStatus::Pending).unwrap();
+        let processing_str = serde_json::to_string(&ChunkStatus::Processing).unwrap();
+        let failed_str = serde_json::to_string(&ChunkStatus::Failed).unwrap();
+        let affected = conn.execute(
+            "UPDATE chunks SET status = ?1, error_message = ?2, updated_at = ?3 \
+             WHERE task_id = ?4 AND status IN (?5, ?6)",
+            params![
+                failed_str,
+                "Cancelled by user",
+                Utc::now().to_rfc3339(),
+                task_id,
+                pending_str,
+                processing_str,
             ],
         )?;
         Ok(affected)

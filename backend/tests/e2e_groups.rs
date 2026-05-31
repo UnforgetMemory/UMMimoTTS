@@ -93,7 +93,7 @@ macro_rules! build_app {
             chunker,
         ));
 
-        let task_service = Arc::new(TaskService::new(task_repo, chunk_repo, task_queue));
+        let task_service = Arc::new(TaskService::new(task_repo, chunk_repo, task_queue, event_tx.clone()));
 
         let group_service = Arc::new(GroupService::new(group_repo));
 

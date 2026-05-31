@@ -477,6 +477,79 @@ impl BatchService {
             .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(finished.into_inner())
     }
+
+    // ── cancel / cancel-all ──────────────────────────────────────────
+
+    /// Cancel a batch and all its non-terminal child tasks.
+    pub fn cancel(&self, batch_id: &str) -> Result<(), AppError> {
+        use crate::domain::batch::BatchStatus;
+        use crate::domain::task::TaskStatus;
+
+        let mut batch = self
+            .batch_repo
+            .find_batch(batch_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Batch {batch_id}")))?;
+
+        batch
+            .transition_to(BatchStatus::Cancelled)
+            .map_err(|e| AppError::InvalidInput(e.to_string()))?;
+        self.batch_repo
+            .update_batch_status(batch_id, &BatchStatus::Cancelled)?;
+
+        // Cancel all running/pending child tasks
+        let tasks = self.task_service.get_by_batch(batch_id)?;
+        for task in &tasks {
+            if matches!(
+                task.status,
+                TaskStatus::Pending
+                    | TaskStatus::Queued
+                    | TaskStatus::Chunking
+                    | TaskStatus::Processing
+                    | TaskStatus::Merging
+                    | TaskStatus::MergingFailed
+                    | TaskStatus::Paused
+                    | TaskStatus::Failed
+            ) {
+                let _ = self.task_service.cancel(&task.id.to_string());
+            }
+        }
+
+        // Notify via SSE
+        let batch_id_obj = Id::from_str(batch_id)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        self.sse_bus.publish(
+            &format!("batch:{batch_id}"),
+            &DomainEvent::BatchPaused {
+                batch_id: batch_id_obj,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Cancel ALL non-terminal tasks across all batches.
+    pub fn cancel_all(&self) -> Result<(), AppError> {
+        use crate::domain::task::TaskStatus;
+
+        let all_tasks = self.task_service.task_repo.find_all()?;
+        for task in &all_tasks {
+            if matches!(
+                task.status,
+                TaskStatus::Pending
+                    | TaskStatus::Queued
+                    | TaskStatus::Chunking
+                    | TaskStatus::Processing
+                    | TaskStatus::Merging
+                    | TaskStatus::MergingFailed
+                    | TaskStatus::Paused
+                    | TaskStatus::Failed
+            ) {
+                let _ = self.task_service.cancel(&task.id.to_string());
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Lightweight result returned by `submit()` for each child task.

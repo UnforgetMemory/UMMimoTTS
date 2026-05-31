@@ -128,7 +128,7 @@ async fn main() -> std::io::Result<()> {
     ));
 
     // ── services ──────────────────────────────────────────────────────
-    let task_service = Arc::new(TaskService::new(task_repo.clone(), chunk_repo.clone(), task_queue.clone()));
+    let task_service = Arc::new(TaskService::new(task_repo.clone(), chunk_repo.clone(), task_queue.clone(), event_tx.clone()));
     let group_service = Arc::new(GroupService::new(group_repo.clone()));
     let batch_service = Arc::new(BatchService::new(
         batch_repo.clone(),

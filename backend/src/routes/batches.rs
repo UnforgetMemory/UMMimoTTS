@@ -65,6 +65,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/{id}/items/{seq}", web::delete().to(delete_item))
             .route("/{id}/submit", web::post().to(submit_batch))
             .route("/{id}/pause", web::post().to(pause_batch))
+            .route("/{id}/cancel", web::post().to(cancel_batch))
             .route("/{id}/resume", web::post().to(resume_batch))
             .route("/{id}/retry-failed", web::post().to(retry_failed_batch))
             .route("/{id}/download", web::get().to(download_batch_audio))
@@ -242,6 +243,24 @@ async fn pause_batch(
 ) -> impl Responder {
     let id = path.into_inner();
     match state.batch_service.pause(&id) {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
+        Err(e) => {
+            let status = match &e {
+                crate::shared::error::AppError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
+                _ => actix_web::http::StatusCode::BAD_REQUEST,
+            };
+            HttpResponse::build(status).json(serde_json::json!({"error": e.to_string()}))
+        }
+    }
+}
+
+/// POST /api/v2/batches/{id}/cancel — cancel batch
+async fn cancel_batch(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let id = path.into_inner();
+    match state.batch_service.cancel(&id) {
         Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
         Err(e) => {
             let status = match &e {

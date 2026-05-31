@@ -43,6 +43,22 @@
             </Button>
           </div>
 
+          <div class="flex items-center justify-between px-3 sm:px-4 py-1.5 border-b">
+            <span class="text-xs text-muted-foreground">
+              {{ batchStore.groups.length }} 个分组
+            </span>
+            <Button
+              v-if="hasActiveGroups"
+              variant="ghost"
+              size="sm"
+              class="h-7 text-xs text-destructive hover:text-destructive px-2"
+              @click="handleCancelAll"
+            >
+              <XCircleIcon class="w-3.5 h-3.5 mr-1" />
+              一键清空
+            </Button>
+          </div>
+
           <div class="flex-1 overflow-hidden">
             <GroupKanban
               :groups="batchStore.groups"
@@ -52,6 +68,7 @@
               @pause="handlePauseGroup"
               @resume="handleResumeGroup"
               @retry="handleRetryGroup"
+              @cancel="handleCancelGroup"
               @delete="handleDeleteGroup"
               @download="handleDownloadGroup"
               class="h-full"
@@ -188,6 +205,7 @@
             @pause="handlePauseGroup"
             @resume="handleResumeGroup"
             @retry="handleRetryGroup"
+            @cancel="handleCancelGroup"
             @delete="handleDeleteGroup"
           />
         </div>
@@ -248,7 +266,8 @@ import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { 
   X as XIcon, 
-  Plus as PlusIcon
+  Plus as PlusIcon,
+  XCircle as XCircleIcon,
 } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
@@ -272,6 +291,10 @@ const selectedGroup = computed(() => {
   if (!selectedGroupId.value) return null
   return batchStore.groups.find(g => g.id === selectedGroupId.value) || null
 })
+
+const hasActiveGroups = computed(() =>
+  batchStore.groups.some(g => ['pending', 'queued', 'processing', 'paused'].includes(g.status)),
+)
 
 // 键盘事件处理 - ESC 键关闭侧边栏
 function handleKeydown(event: KeyboardEvent) {
@@ -371,6 +394,25 @@ async function handleDeleteGroup(groupId: string) {
     toast.success('分组已删除')
   } catch (error) {
     toast.error('删除失败')
+  }
+}
+
+async function handleCancelGroup(groupId: string) {
+  try {
+    await batchStore.cancelGroup(groupId)
+    toast.success('分组已停止')
+  } catch (error) {
+    toast.error('停止失败')
+  }
+}
+
+async function handleCancelAll() {
+  if (!confirm('确定要取消所有正在处理的任务吗？已完成的任务将保留。')) return
+  try {
+    await batchStore.cancelAllTasks()
+    toast.success('所有任务已取消')
+  } catch (error) {
+    toast.error('取消失败')
   }
 }
 
