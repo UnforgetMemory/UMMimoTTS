@@ -22,6 +22,7 @@ use crate::infra::audio::merger::merge_wavs;
 use crate::infra::mimo::chunker::MimoChunker;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
 use crate::infra::persistence::db::DbPool;
+use crate::infra::persistence::group_repo::GroupRepo;
 use crate::infra::persistence::task_repo::TaskRepo;
 use crate::infra::queue::chunk_queue::ChunkQueue;
 use crate::shared::error::AppError;
@@ -36,6 +37,7 @@ pub struct TaskQueue {
     task_repo: Arc<dyn TaskRepo>,
     chunk_repo: Arc<dyn ChunkRepo>,
     chunk_queue: Arc<ChunkQueue>,
+    group_repo: Arc<dyn GroupRepo>,
     /// Event bus sender for domain events.
     /// This is a clone — the original is held by the service layer.
     event_tx: broadcast::Sender<DomainEvent>,
@@ -49,6 +51,7 @@ impl TaskQueue {
         task_repo: Arc<dyn TaskRepo>,
         chunk_repo: Arc<dyn ChunkRepo>,
         chunk_queue: Arc<ChunkQueue>,
+        group_repo: Arc<dyn GroupRepo>,
         event_tx: broadcast::Sender<DomainEvent>,
         chunker: MimoChunker,
     ) -> Self {
@@ -57,6 +60,7 @@ impl TaskQueue {
             task_repo,
             chunk_repo,
             chunk_queue,
+            group_repo,
             event_tx,
             chunker,
         }
@@ -377,9 +381,15 @@ impl TaskQueue {
         Ok(())
     }
 
-    async fn on_task_completed(&self, _task_id: &str, batch_id: Option<&Id>) -> Result<(), AppError> {
+    async fn on_task_completed(&self, task_id: &str, batch_id: Option<&Id>) -> Result<(), AppError> {
         if let Some(bid) = batch_id {
             self.check_batch_completion(bid.as_str()).await?;
+        }
+        // Check group completion
+        if let Some(task) = self.task_repo.find_by_id(task_id)? {
+            if let Some(ref gid) = task.group_id {
+                self.check_group_completion(gid.as_str(), true).await?;
+            }
         }
         Ok(())
     }
@@ -389,6 +399,10 @@ impl TaskQueue {
         if let Some(task) = self.task_repo.find_by_id(task_id)? {
             if let Some(ref bid) = task.batch_id {
                 self.check_batch_completion(bid.as_str()).await?;
+            }
+            // Check group completion
+            if let Some(ref gid) = task.group_id {
+                self.check_group_completion(gid.as_str(), false).await?;
             }
         }
         Ok(())
@@ -411,6 +425,43 @@ impl TaskQueue {
                     error: format!("All {} tasks failed", progress.failed_tasks),
                     failed_count: progress.failed_tasks,
                 });
+            }
+        }
+        Ok(())
+    }
+
+    /// Check if all tasks in a group are terminal (done or failed).
+    /// If so, update group status and emit GroupCompleted or GroupFailed.
+    async fn check_group_completion(&self, group_id: &str, task_succeeded: bool) -> Result<(), AppError> {
+        let group = if task_succeeded {
+            self.group_repo.increment_done_tasks(group_id)?
+        } else {
+            self.group_repo.increment_failed_tasks(group_id)?
+        };
+
+        // If group transitioned to terminal status (Completed/Failed), emit event
+        match group.status {
+            crate::domain::group::GroupStatus::Completed => {
+                let _ = self.event_tx.send(DomainEvent::GroupCompleted {
+                    group_id: group.id.clone(),
+                    batch_id: group.batch_id.clone(),
+                });
+                info!("Group {group_id} completed: {}/{} done, {} failed",
+                    group.done_tasks, group.total_tasks, group.failed_tasks);
+            }
+            crate::domain::group::GroupStatus::Failed => {
+                let _ = self.event_tx.send(DomainEvent::GroupFailed {
+                    group_id: group.id.clone(),
+                    batch_id: group.batch_id.clone(),
+                    error: format!("Group failed: {}/{} failed", group.failed_tasks, group.total_tasks),
+                });
+                info!("Group {group_id} failed: {}/{} done, {} failed",
+                    group.done_tasks, group.total_tasks, group.failed_tasks);
+            }
+            _ => {
+                // Group still in progress — just log progress
+                info!("Group {group_id} progress: {}/{} done, {} failed",
+                    group.done_tasks, group.total_tasks, group.failed_tasks);
             }
         }
         Ok(())
@@ -622,12 +673,15 @@ use crate::shared::id::Id;
         ));
 
         let chunker = MimoChunker::new(&mock_server.uri(), 2000, 5000);
+        let group_repo: Arc<dyn crate::infra::persistence::group_repo::GroupRepo> =
+            Arc::new(crate::infra::persistence::group_repo::SqliteGroupRepo::new(pool.clone()));
 
         let task_queue = TaskQueue::new(
             pool.clone(),
             task_repo.clone(),
             chunk_repo.clone(),
             chunk_queue.clone(),
+            group_repo,
             event_tx,
             chunker,
         );

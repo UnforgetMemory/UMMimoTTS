@@ -92,6 +92,7 @@ macro_rules! build_app {
             task_repo.clone(),
             chunk_repo.clone(),
             chunk_queue,
+            group_repo.clone(),
             event_tx.clone(),
             chunker,
         ));

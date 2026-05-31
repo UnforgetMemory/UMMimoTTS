@@ -15,6 +15,10 @@ pub trait GroupRepo: Send + Sync {
     fn update_status(&self, id: &str, status: &GroupStatus) -> Result<(), AppError>;
     fn find_by_batch(&self, batch_id: &str) -> Result<Vec<Group>, AppError>;
     fn find_all(&self) -> Result<Vec<Group>, AppError>;
+    /// Atomically increment `done_tasks` and return the updated group.
+    fn increment_done_tasks(&self, id: &str) -> Result<Group, AppError>;
+    /// Atomically increment `failed_tasks` and return the updated group.
+    fn increment_failed_tasks(&self, id: &str) -> Result<Group, AppError>;
 }
 
 pub struct SqliteGroupRepo {
@@ -128,6 +132,64 @@ impl GroupRepo for SqliteGroupRepo {
             .filter_map(|r| r.ok())
             .collect();
         Ok(groups)
+    }
+
+    fn increment_done_tasks(&self, id: &str) -> Result<Group, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.pool.get()?;
+        // Atomically increment done_tasks. SQLite doesn't have RETURNING in older versions,
+        // so we do UPDATE + SELECT.
+        let affected = conn.execute(
+            "UPDATE groups SET done_tasks = done_tasks + 1, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("Group {} not found", id)));
+        }
+        // If all tasks are now terminal, transition status.
+        // Done: done_tasks + failed_tasks >= total_tasks
+        conn.execute(
+            "UPDATE groups SET status = CASE
+                WHEN done_tasks + failed_tasks >= total_tasks AND done_tasks > 0 THEN '\"completed\"'
+                WHEN done_tasks + failed_tasks >= total_tasks AND done_tasks = 0 THEN '\"failed\"'
+                ELSE status
+            END,
+            completed_at = CASE
+                WHEN done_tasks + failed_tasks >= total_tasks THEN ?1
+                ELSE completed_at
+            END
+            WHERE id = ?2 AND done_tasks + failed_tasks >= total_tasks",
+            params![now, id],
+        )?;
+        // Re-read the updated group.
+        self.find_by_id(id)?.ok_or_else(|| AppError::NotFound(format!("Group {} not found after increment", id)))
+    }
+
+    fn increment_failed_tasks(&self, id: &str) -> Result<Group, AppError> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.pool.get()?;
+        let affected = conn.execute(
+            "UPDATE groups SET failed_tasks = failed_tasks + 1, updated_at = ?1 WHERE id = ?2",
+            params![now, id],
+        )?;
+        if affected == 0 {
+            return Err(AppError::NotFound(format!("Group {} not found", id)));
+        }
+        // If all tasks are now terminal, transition status.
+        conn.execute(
+            "UPDATE groups SET status = CASE
+                WHEN done_tasks + failed_tasks >= total_tasks AND done_tasks > 0 THEN '\"completed\"'
+                WHEN done_tasks + failed_tasks >= total_tasks AND done_tasks = 0 THEN '\"failed\"'
+                ELSE status
+            END,
+            completed_at = CASE
+                WHEN done_tasks + failed_tasks >= total_tasks THEN ?1
+                ELSE completed_at
+            END
+            WHERE id = ?2 AND done_tasks + failed_tasks >= total_tasks",
+            params![now, id],
+        )?;
+        self.find_by_id(id)?.ok_or_else(|| AppError::NotFound(format!("Group {} not found after increment", id)))
     }
 }
 

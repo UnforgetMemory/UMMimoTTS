@@ -122,6 +122,7 @@ async fn main() -> std::io::Result<()> {
         task_repo.clone(),
         chunk_repo.clone(),
         chunk_queue.clone(),
+        group_repo.clone(),
         event_tx.clone(),
         chunker,
     ));
