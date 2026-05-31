@@ -23,6 +23,8 @@ use crate::infra::mimo::chunker::MimoChunker;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
 use crate::infra::persistence::db::DbPool;
 use crate::infra::persistence::group_repo::GroupRepo;
+use chrono;
+use rusqlite;
 use crate::infra::persistence::task_repo::TaskRepo;
 use crate::infra::queue::chunk_queue::ChunkQueue;
 use crate::shared::error::AppError;
@@ -419,17 +421,29 @@ impl TaskQueue {
     }
 
     /// Check if all tasks in a batch are terminal (done or failed).
-    /// If so, emit BatchCompleted or BatchFailed.
+    /// If so, update batch status in DB and emit BatchCompleted or BatchFailed.
     async fn check_batch_completion(&self, batch_id: &str) -> Result<(), AppError> {
         let progress = self.task_repo.batch_progress(batch_id)?;
         let terminal = progress.done_tasks + progress.failed_tasks;
 
         if terminal >= progress.total_tasks && progress.total_tasks > 0 {
+            let now = chrono::Utc::now().to_rfc3339();
+            let conn = self.pool.get()?;
             if progress.done_tasks > 0 {
+                conn.execute(
+                    "UPDATE batches SET status = '\"completed\"', updated_at = ?1, completed_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, batch_id],
+                )?;
+                info!("Batch {batch_id} marked as completed in DB ({}/{} done)", progress.done_tasks, progress.total_tasks);
                 let _ = self.event_tx.send(DomainEvent::BatchCompleted {
                     batch_id: Id::from_str(batch_id)?,
                 });
             } else {
+                conn.execute(
+                    "UPDATE batches SET status = '\"failed\"', updated_at = ?1, completed_at = ?1 WHERE id = ?2",
+                    rusqlite::params![now, batch_id],
+                )?;
+                info!("Batch {batch_id} marked as failed in DB (all {} tasks failed)", progress.failed_tasks);
                 let _ = self.event_tx.send(DomainEvent::BatchFailed {
                     batch_id: Id::from_str(batch_id)?,
                     error: format!("All {} tasks failed", progress.failed_tasks),

@@ -201,11 +201,8 @@ async fn worker_loop(
             continue;
         }
 
-        // Check if rate-limited first
-        if !rate_limiter.try_acquire() {
-            notify.notified().await;
-            continue;
-        }
+        // Wait for rate limiter token (sleeps internally, no deadlock)
+        rate_limiter.acquire().await;
 
         // Acquire chunk-level concurrency permit
         let _permit = match semaphore.acquire().await {

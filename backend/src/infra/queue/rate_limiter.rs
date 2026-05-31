@@ -29,17 +29,24 @@ fn now_nanos() -> u64 {
 pub struct TokenBucket {
     tokens: AtomicU64,
     capacity: u64,
-    refill_per_sec: u64,
+    /// Nanoseconds between token refills.  Stored as `60_000_000_000 / rpm`
+    /// to avoid integer-division precision loss at low rpm values.
+    nanos_per_token: u64,
     last_refill: AtomicU64,
 }
 
 impl TokenBucket {
     /// Create a new rate limiter allowing `rpm` requests per minute.
     pub fn new(rpm: u64) -> Self {
+        let nanos_per_token = if rpm == 0 {
+            u64::MAX // effectively disabled
+        } else {
+            60_000_000_000 / rpm
+        };
         Self {
             tokens: AtomicU64::new(rpm),
             capacity: rpm,
-            refill_per_sec: if rpm == 0 { 0 } else { std::cmp::max(1, rpm / 60) },
+            nanos_per_token,
             last_refill: AtomicU64::new(now_nanos()),
         }
     }
@@ -74,13 +81,12 @@ impl TokenBucket {
             if self.try_acquire() {
                 return;
             }
-            let wait_ms = if self.refill_per_sec > 0 {
-                1000 / self.refill_per_sec
-            } else {
-                1000
-            };
-            // Cap at 100ms polling interval for responsive wake-ups.
-            sleep(Duration::from_millis(std::cmp::min(wait_ms, 100))).await;
+            // Wait proportional to nanos_per_token, capped at 100ms for responsiveness
+            let wait_ms = std::cmp::min(
+                std::cmp::max(1, self.nanos_per_token / 1_000_000),
+                100,
+            );
+            sleep(Duration::from_millis(wait_ms)).await;
         }
     }
 
@@ -110,11 +116,11 @@ impl TokenBucket {
             if self.try_acquire_n(n) {
                 return;
             }
-            let wait_ms = if self.refill_per_sec > 0 {
-                std::cmp::max(1, (n * 1000) / self.refill_per_sec)
-            } else {
-                1000
-            };
+            // Wait time proportional to nanos_per_token, capped at 100ms for responsiveness
+            let wait_ms = std::cmp::min(
+                std::cmp::max(1, self.nanos_per_token / 1_000_000),
+                100,
+            );
             sleep(Duration::from_millis(std::cmp::min(wait_ms, 100))).await;
         }
     }
@@ -132,18 +138,21 @@ impl TokenBucket {
             return;
         }
 
-        // Try to claim this refill window.  If another thread beat us, bail.
-        if self
-            .last_refill
-            .compare_exchange(last, now, Ordering::Acquire, Ordering::Relaxed)
-            .is_err()
-        {
-            return;
-        }
+        // Compute earned tokens
+        let earned = elapsed / self.nanos_per_token;
 
-        let elapsed_secs = elapsed as f64 / 1_000_000_000.0;
-        let earned = (elapsed_secs * self.refill_per_sec as f64) as u64;
+        // Only update last_refill if we actually earned tokens,
+        // otherwise the timer resets every 100ms and never accumulates
         if earned > 0 {
+            // Try to claim this refill window.  If another thread beat us, bail.
+            if self
+                .last_refill
+                .compare_exchange(last, now, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
+                return;
+            }
+
             let current = self.tokens.load(Ordering::Relaxed);
             let new_val = std::cmp::min(current + earned, self.capacity);
             self.tokens.store(new_val, Ordering::Release);
