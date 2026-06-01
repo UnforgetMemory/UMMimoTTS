@@ -805,7 +805,7 @@ mod tests {
 
         // Create a group for this batch (required for submit_batch)
         let group_repo = SqliteGroupRepo::new(pool);
-        let mut group = Group::new(batch.id.clone(), "Test Group".into());
+        let group = Group::new(batch.id.clone(), "Test Group".into());
         group_repo.insert(&group).unwrap();
 
         // Add pending items

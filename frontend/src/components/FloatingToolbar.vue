@@ -8,12 +8,13 @@
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+      class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
       :class="{ 'bg-black/15 dark:bg-white/30': showBatchSidebar }"
       @click="$emit('toggle-batch')"
       aria-label="批量任务列表"
     >
       <LayersIcon class="w-5 h-5" />
+      <span class="text-xs ml-1.5 hidden sm:inline">任务</span>
     </Button>
 
     <!-- 分隔线 -->
@@ -23,11 +24,12 @@
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+      class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
       @click="$emit('open-config')"
       aria-label="API 配置"
     >
       <KeyIcon class="w-5 h-5" />
+      <span class="text-xs ml-1.5 hidden sm:inline">配置</span>
     </Button>
 
     <!-- 分隔线 -->
@@ -39,11 +41,12 @@
         <Button 
           variant="ghost" 
           size="sm"
-          class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+          class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
           aria-label="切换主题"
         >
           <SunIcon v-if="themeStore.actualTheme === 'light'" class="w-5 h-5" />
           <MoonIcon v-else class="w-5 h-5" />
+          <span class="text-xs ml-1.5 hidden sm:inline">主题</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="center">
@@ -72,12 +75,13 @@
     <Button 
       variant="ghost" 
       size="sm"
-      class="w-10 h-10 p-0 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+      class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
       :class="{ 'bg-black/15 dark:bg-white/30': showTaskSidebar }"
       @click="$emit('toggle-tasks')"
       aria-label="单任务列表"
     >
       <ListIcon class="w-5 h-5" />
+      <span class="text-xs ml-1.5 hidden sm:inline">单任务</span>
     </Button>
   </div>
 </template>

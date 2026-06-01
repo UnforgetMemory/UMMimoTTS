@@ -212,6 +212,27 @@
                             <XCircleIcon class="w-3.5 h-3.5" />
                           </Button>
                           <Button
+                            v-if="['failed', 'merging_failed', 'cancelled'].includes(columnTask(column, virtualRow.index).status)"
+                            variant="ghost"
+                            size="sm"
+                            class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                            title="重试"
+                            @click="handleRetryTask(columnTask(column, virtualRow.index).id)"
+                          >
+                            <RotateCcwIcon class="w-3.5 h-3.5" />
+                          </Button>
+                          <!-- Force-process single queued task -->
+                          <Button
+                            v-if="columnTask(column, virtualRow.index).status === 'queued'"
+                            variant="ghost"
+                            size="sm"
+                            class="h-7 w-7 p-0 text-muted-foreground hover:text-amber-500"
+                            title="强制处理"
+                            @click="handleForceTask(columnTask(column, virtualRow.index).id)"
+                          >
+                            <ZapIcon class="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
                             variant="ghost"
                             size="sm"
                             class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
@@ -220,6 +241,14 @@
                           >
                             <FileTextIcon class="w-3.5 h-3.5" />
                           </Button>
+                        </div>
+                      </div>
+
+                      <!-- Error message for failed tasks -->
+                      <div v-if="['failed', 'merging_failed'].includes(columnTask(column, virtualRow.index).status)" class="mt-1.5">
+                        <div class="flex items-start gap-1.5">
+                          <AlertCircleIcon class="w-3 h-3 text-destructive shrink-0 mt-0.5" />
+                          <p class="text-[11px] text-destructive/80 leading-tight">{{ (columnTask(column, virtualRow.index) as any).error || '任务执行失败' }}</p>
                         </div>
                       </div>
 
@@ -292,6 +321,7 @@ import {
   RefreshCw as RefreshCwIcon,
   XCircle as XCircleIcon,
   List as ListIcon,
+  Zap as ZapIcon,
   Clock as ClockIcon,
   Loader2 as Loader2Icon,
   CheckCircle2 as CheckCircle2Icon,
@@ -550,6 +580,28 @@ async function handleCancelTask(taskId: string) {
     await refreshTasks()
   } catch (error) {
     console.error('Failed to cancel task:', error)
+  }
+}
+
+// ─── Retry task ────────────────────────────────────
+
+async function handleRetryTask(taskId: string) {
+  try {
+    await apiV2.retryTask(taskId)
+    await refreshTasks()
+  } catch (error) {
+    console.error('Failed to retry task:', error)
+  }
+}
+
+// ─── Force process task ─────────────────────────────────
+
+async function handleForceTask(taskId: string) {
+  try {
+    await batchStore.forceTask(taskId)
+    await refreshTasks()
+  } catch (error) {
+    console.error('Failed to force task:', error)
   }
 }
 

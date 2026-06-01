@@ -711,6 +711,10 @@ export const apiV2 = {
     await apiClient.post(`/api/v2/tasks/${id}/continue`)
   },
 
+  async forceTask(id: string): Promise<void> {
+    await apiClient.post(`/api/v2/tasks/${id}/force`)
+  },
+
   async cancelTask(id: string): Promise<void> {
     await apiClient.post(`/api/v2/tasks/${id}/cancel`)
   },

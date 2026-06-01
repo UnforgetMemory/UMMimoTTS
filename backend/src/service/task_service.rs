@@ -175,6 +175,11 @@ impl TaskService {
         self.task_queue.enqueue(task_id).await
     }
 
+    /// Force a Queued task into processing — resets chunks to Pending and wakes all workers.
+    pub fn force_process(&self, task_id: &str) -> Result<(), AppError> {
+        self.task_queue.force_process(task_id)
+    }
+
     /// Delete a task by ID.
     pub fn delete(&self, id: &str) -> Result<(), AppError> {
         self.task_repo.delete(id)

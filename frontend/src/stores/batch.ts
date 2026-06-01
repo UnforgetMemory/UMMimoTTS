@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, shallowRef, type ShallowRef } from 'vue'
+import { ref, computed, shallowRef, reactive, type ShallowRef } from 'vue'
 import {
   api,
   apiV2,
@@ -34,12 +34,12 @@ export const useBatchStore = defineStore('batch', () => {
   })
 
   // ── Per-group task cache ───────────────────────────────────────
-  const groupTaskCache = new Map<string, {
+  const groupTaskCache = reactive(new Map<string, {
     tasks: TaskSummary[]
     loaded: boolean
     hasMore: boolean
     page: number
-  }>()
+  }>())
 
   // ── SSE 连接管理 ──────────────────────────────────────────────
   const eventSources = new Map<string, EventSource>()
@@ -203,6 +203,21 @@ export const useBatchStore = defineStore('batch', () => {
           allTasks.push(...r.items)
         }
       }
+
+      // Fix: recompute completed/failed/total from fetched tasks
+      // (batch detail API does NOT embed tasks, so completed_tasks/failed_tasks
+      // from transformV2Batch are always 0)
+      const totalFromTasks = allTasks.length
+      const doneFromTasks = allTasks.filter(t => t.status === 'done').length
+      const failedFromTasks = allTasks.filter(t => t.status === 'failed').length
+      // total_tokens from fetched tasks (approximate)
+      const tokensFromTasks = allTasks.reduce((sum, t) => sum + (t.token_count || 0), 0)
+      updateGroupInMap(groupId, {
+        total_tasks: Math.max(batch.total_tasks ?? 0, totalFromTasks),
+        completed_tasks: doneFromTasks,
+        failed_tasks: failedFromTasks,
+        total_tokens: tokensFromTasks,
+      })
 
       // Store all tasks in the per-group cache
       groupTaskCache.set(groupId, {
@@ -501,6 +516,20 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
+   * 强制处理单个任务
+   */
+  async function forceTask(taskId: string) {
+    error.value = null
+    try {
+      await apiV2.forceTask(taskId)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '强制处理任务失败'
+      error.value = message
+      console.error('Failed to force task:', err)
+    }
+  }
+
+  /**
    * 删除分组及其关联任务
    */
   async function removeGroup(groupId: string) {
@@ -536,10 +565,24 @@ export const useBatchStore = defineStore('batch', () => {
     }
 
     const eventSource = new EventSource(`/api/v2/events?channel=batch:${groupId}`)
+    // SSE 自动重连（指数退避）
+    let reconnectAttempt = 0
+    const maxReconnectDelay = 30000
+    eventSource.onerror = () => {
+      eventSource.close()
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), maxReconnectDelay)
+      reconnectAttempt++
+      console.warn(`SSE disconnected for group ${groupId}, reconnecting in ${delay}ms (attempt ${reconnectAttempt})`)
+      setTimeout(() => {
+        if (!eventSources.has(groupId)) return // 已被主动关闭
+        subscribeToGroupEvents(groupId)
+      }, delay)
+    }
 
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data)
+        reconnectAttempt = 0 // 成功收到消息，重置重试计数
         console.log('Batch SSE v2 event:', data)
 
         switch (data.type) {
@@ -778,6 +821,7 @@ export const useBatchStore = defineStore('batch', () => {
     retryFailed,
     cancelGroup,
     cancelAllTasks,
+    forceTask,
     removeGroup,
     downloadGroupAudio,
 

@@ -103,6 +103,7 @@ pub fn configure(cfg: &mut actix_web::web::ServiceConfig) {
             .route("/{id}/enqueue", web::post().to(enqueue_task))
             .route("/{id}/retry", web::post().to(retry_task))
             .route("/{id}/continue", web::post().to(continue_task))
+            .route("/{id}/force", web::post().to(force_process_task))
             .route("/{id}/cancel", web::post().to(cancel_task))
             .route("/{id}/audio", web::get().to(get_audio))
             .route("/{id}/download", web::get().to(download_task_audio))
@@ -226,6 +227,17 @@ async fn continue_task(
 ) -> impl Responder {
     let id = path.into_inner();
     match state.task_service.continue_task(&id).await {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
+        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+async fn force_process_task(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> impl Responder {
+    let id = path.into_inner();
+    match state.task_service.force_process(&id) {
         Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
     }

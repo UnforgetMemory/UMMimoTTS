@@ -235,6 +235,8 @@ impl TaskRepo for SqliteTaskRepo {
         let cutoff = Utc::now() - chrono::Duration::minutes(stale_minutes);
         let cutoff_str = cutoff.to_rfc3339();
         let processing_status = serde_json::to_string(&TaskStatus::Processing).unwrap();
+        let chunk_pending = serde_json::to_string(&crate::domain::chunk::ChunkStatus::Pending).unwrap();
+        let chunk_processing = serde_json::to_string(&crate::domain::chunk::ChunkStatus::Processing).unwrap();
 
         let mut stmt = conn.prepare(
             "SELECT t.* FROM tasks t
@@ -243,13 +245,16 @@ impl TaskRepo for SqliteTaskRepo {
                AND NOT EXISTS (
                    SELECT 1 FROM chunks c
                    WHERE c.task_id = t.id
-                     AND c.status IN ('pending', 'processing')
+                     AND c.status IN (?3, ?4)
                )
              ORDER BY t.updated_at ASC"
         )?;
 
         let tasks = stmt
-            .query_map(params![processing_status, cutoff_str], Self::row_to_task)?
+            .query_map(
+                params![processing_status, cutoff_str, chunk_pending, chunk_processing],
+                Self::row_to_task,
+            )?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(tasks)
     }

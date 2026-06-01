@@ -106,6 +106,11 @@ impl ChunkQueue {
         self.notify.notify_one();
     }
 
+    /// Wake all workers — used to expedite priority-boosted tasks.
+    pub fn wake_all(&self) {
+        self.notify.notify_waiters();
+    }
+
     /// Spawn `max_concurrent` background worker tasks.
     pub fn run_workers(&self) {
         for i in 0..self.max_concurrent {

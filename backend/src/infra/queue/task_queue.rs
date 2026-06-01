@@ -487,6 +487,41 @@ impl TaskQueue {
         Ok(())
     }
 
+    /// Force a Queued task into processing by waking all workers.
+    ///
+    /// Workers are sleeping on `notify.notified()`, rate limiter, or chunk semaphore.
+    /// `wake_all()` wakes them all; the next polling cycle picks up any pending
+    /// chunks belonging to this task.
+    pub fn force_process(&self, task_id: &str) -> Result<(), AppError> {
+        let task = self
+            .task_repo
+            .find_by_id(task_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Task {task_id}")))?;
+
+        // Only Queued tasks are eligible — they already have pending chunks.
+        if task.status != TaskStatus::Queued {
+            return Err(AppError::InvalidInput(format!(
+                "Task {task_id} status is {:?}, only Queued tasks can be force-processed",
+                task.status
+            )));
+        }
+
+        // Reset any non-Pending chunks back to Pending so workers pick them up.
+        let chunks = self.chunk_repo.find_by_task(task_id)?;
+        for chunk in &chunks {
+            if chunk.status != ChunkStatus::Pending {
+                let _ = self
+                    .chunk_repo
+                    .update_status(&chunk.id.to_string(), &ChunkStatus::Pending);
+            }
+        }
+
+        // Wake all workers so they immediately scan for pending chunks.
+        self.chunk_queue.wake_all();
+        info!("force-process: woke all workers for task {task_id}");
+        Ok(())
+    }
+
     /// Re-enqueue chunks that are still `Pending`, `Failed`, or `Done`
     /// but missing audio (cache miss / incomplete restart).
     pub fn continue_task(&self, task_id: &str) -> Result<(), AppError> {

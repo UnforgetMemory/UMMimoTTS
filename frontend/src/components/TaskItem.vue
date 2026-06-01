@@ -257,7 +257,7 @@ function downloadAudio(taskId: string) {
     <div v-if="mode === 'failed'" class="px-3 pt-1">
       <div class="flex items-start gap-1">
         <AlertCircleIcon class="w-3 h-3 text-destructive shrink-0 mt-0.5" />
-        <p class="text-[11px] text-destructive/80">任务执行失败</p>
+        <p class="text-[11px] text-destructive/80">{{ (task as any).error || '任务执行失败' }}</p>
       </div>
     </div>
 

@@ -1,51 +1,70 @@
-# Rust
+# ── Rust ──────────────────────────────────────────────────
 **/target/
 **/*.rs.bk
 Cargo.lock
 
-# Node
+# ── Node ──────────────────────────────────────────────────
 node_modules/
 frontend/dist/
-.DS_Store
+pnpm-lock.yaml
 
-# IDE
+# ── Environment ────────────────────────────────────────────
+.env
+.env.local
+frontend/.env*
+e2e/.env*
+
+# ── IDE / Editor ──────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-.lingma/
-.agents/
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
 
-# Environment
-.env
-.env.local
-
-# Logs
-*.log
-npm-debug.log*
-
-# Test files
+# ── Build / Dependency artifacts ──────────────────────────
 *.wav
 *.mp3
-*.test.*
+*.bak
+*.orig
 
-# Test scripts and reports (temporary)
-*-test.ps1
-*TEST-REPORT.md
+# ── Startup scripts (platform-specific) ───────────────────
+*.vbs
+start_*.bat
+start-*.bat
 
-# Test screenshots
-test-screenshots/
-
-# Playwright E2E test artifacts
-test-results/
-playwright-report/
-playwright/.cache/
-e2e/.auth/
-
-test/
+# ── AI / Agent development tools ──────────────────────────
+.lingma/
+.agents/
 .opencode
 .codegraph
 .sisyphus
+docs/
+.playwright-mcp/
+
+# ── Logs ──────────────────────────────────────────────────
+*.log
+npm-debug.log*
+
+# ── Test artifacts ────────────────────────────────────────
+test/
+test-results/
+test-screenshots/
+playwright-report/
+playwright/.cache/
+e2e/.auth/
+e2e-report/
+*-test.ps1
+*TEST-REPORT.md
+*.test.*
+sse_test.txt
+test_cancel.rs
+test-browser.js
+test-browser.mjs
+frontend/public/snapshot-*
+
+# ── Runtime data ──────────────────────────────────────────
 data/
