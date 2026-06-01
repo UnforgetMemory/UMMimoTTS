@@ -586,18 +586,22 @@ function handleFileSelect(e: Event) {
   input.value = ''
 }
 
-/** Recursively collect files from a FileSystemEntry (handles folders) */
-async function collectFromEntry(entry: FileSystemEntry): Promise<File[]> {
+/** Recursively collect files from a FileSystemEntry (handles folders)
+ *  @param depth - current directory depth (0 = root)
+ */
+async function collectFromEntry(entry: FileSystemEntry, depth: number = 0): Promise<File[]> {
+  const MAX_DEPTH = 3
   if (entry.isFile) {
     return new Promise((resolve) => { (entry as FileSystemFileEntry).file((f) => resolve([f])) })
   }
   if (entry.isDirectory) {
+    if (depth >= MAX_DEPTH) return []
     const reader = (entry as FileSystemDirectoryEntry).createReader()
     const all: File[] = []
     const readBatch = async (): Promise<void> => {
       const entries = await new Promise<FileSystemEntry[]>((resolve) => { reader.readEntries(resolve) })
       if (entries.length === 0) return
-      const results = await Promise.all(Array.from(entries).map((e) => collectFromEntry(e)))
+      const results = await Promise.all(Array.from(entries).map((e) => collectFromEntry(e, depth + 1)))
       all.push(...results.flat())
       await readBatch()
     }
@@ -627,11 +631,38 @@ async function handleDrop(e: DragEvent) {
 }
 
 /** Read .txt files client-side and parse into segments */
+const MAX_FILES = 2000
+const MAX_TOTAL_SIZE = 200 * 1024 * 1024 // 200MB
+
 async function processFiles(files: File[]) {
-  const txtFiles = files.filter(f => f.name.toLowerCase().endsWith('.txt'))
-  if (txtFiles.length === 0) {
+  const allTxt = files.filter(f => f.name.toLowerCase().endsWith('.txt'))
+  if (allTxt.length === 0) {
     uploadState.value = 'error'
     uploadError.value = '所选文件夹中没有 .txt 文件'
+    return
+  }
+
+  // Enforce max file count
+  const txtFiles = allTxt.slice(0, MAX_FILES)
+  if (allTxt.length > MAX_FILES) {
+    console.warn(`[BatchImport] Truncated from ${allTxt.length} to ${MAX_FILES} files`)
+  }
+
+  // Enforce max total size
+  let totalSize = 0
+  const sizeFiltered: File[] = []
+  for (const f of txtFiles) {
+    if (totalSize + f.size > MAX_TOTAL_SIZE) {
+      console.warn(`[BatchImport] Size limit reached at ${sizeFiltered.length} files (${(totalSize / 1024 / 1024).toFixed(1)}MB)`)
+      break
+    }
+    sizeFiltered.push(f)
+    totalSize += f.size
+  }
+
+  if (sizeFiltered.length === 0) {
+    uploadState.value = 'error'
+    uploadError.value = '文件总大小超过 200MB 限制'
     return
   }
 
@@ -643,9 +674,9 @@ async function processFiles(files: File[]) {
   let allSegments: ParsedSegment[] = []
   const fileStatsArr: LocalFileStat[] = []
 
-  for (let i = 0; i < txtFiles.length; i++) {
-    const file = txtFiles[i]
-    uploadProgress.value = Math.round(((i) / txtFiles.length) * 100)
+  for (let i = 0; i < sizeFiltered.length; i++) {
+    const file = sizeFiltered[i]
+    uploadProgress.value = Math.round(((i) / sizeFiltered.length) * 100)
     try {
       const text = await file.text()
       const segments = parseTextIntoSegments(text, file.name)

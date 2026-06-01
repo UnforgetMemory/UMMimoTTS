@@ -188,9 +188,16 @@ async fn worker_loop(
             return;
         }
 
-        // If circuit breaker is tripped, skip processing and wait
+        // If circuit breaker is tripped, wait with timeout before auto-resetting
         if paused.load(Ordering::Acquire) {
-            notify.notified().await;
+            tokio::select! {
+                _ = notify.notified() => {}
+                _ = tokio::time::sleep(Duration::from_secs(30)) => {
+                    warn!("ChunkQueue worker {worker_id}: circuit breaker auto-reset after 30s timeout");
+                    paused.store(false, Ordering::Release);
+                    consecutive_failures.store(0, Ordering::Release);
+                }
+            }
             continue;
         }
 
