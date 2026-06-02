@@ -289,6 +289,9 @@ impl TaskRepo for SqliteTaskRepo {
 
     fn delete(&self, id: &str) -> Result<(), AppError> {
         let conn = self.pool.get()?;
+        // Delete dependent rows first (foreign keys reference tasks.id)
+        conn.execute("DELETE FROM chunks WHERE task_id = ?1", params![id])?;
+        conn.execute("DELETE FROM batch_tasks WHERE child_task_id = ?1", params![id])?;
         conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
         Ok(())
     }
