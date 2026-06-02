@@ -17,6 +17,36 @@ export interface Voice {
   preview_url?: string  // 试听音频 URL
 }
 
+export interface VoicePreset {
+  id: string
+  name: string
+  language: string
+  gender: string
+  style: string
+  preview_url: string
+}
+
+export interface ModelPreset {
+  id: string
+  name: string
+  description: string
+}
+
+export interface AppConfig {
+  voices: VoicePreset[]
+  models: ModelPreset[]
+  default_voice: string
+  default_model: string
+  default_speed: number
+  mimo_base_url: string
+}
+
+export async function fetchConfig(): Promise<AppConfig> {
+  const resp = await fetch('/api/v2/config')
+  if (!resp.ok) throw new Error(`Failed to fetch config: ${resp.status}`)
+  return resp.json()
+}
+
 export type TaskStatus = 'pending' | 'queued' | 'chunking' | 'processing' | 'merging' | 'mergingfailed' | 'paused' | 'done' | 'failed' | 'cancelled'
 
 export interface Task {
@@ -352,6 +382,21 @@ export const api = {
             event_type: 'status_changed',
             status: 'queued',
             progress: 0,
+          })
+        } else if (eventType === 'TaskStatusChanged') {
+          // Real-time status transitions (cancelled, paused, etc.)
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'status_changed',
+            status: data.status ?? 'processing',
+            progress: data.progress ?? undefined,
+          })
+        } else if (eventType === 'ChunkFailed') {
+          onEvent({
+            task_id: data.task_id,
+            event_type: 'status_changed',
+            status: 'processing',
+            progress: data.seq / (data.total_chunks || 10),
           })
         }
       } catch (error) {

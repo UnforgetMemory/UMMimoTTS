@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed, shallowRef, type ShallowRef } from 'vue'
-import { api, apiV2, type Task, type TaskSummary, type TaskStatus, type TaskEvent } from '@/api/client'
+import { api, apiV2, type Task, type TaskSummary, type TaskStatus } from '@/api/client'
 
 export const useTaskStore = defineStore('task', () => {
   // ── Task Map (shallowRef for large-scale performance) ──────────
@@ -242,6 +242,29 @@ export const useTaskStore = defineStore('task', () => {
     updateTaskInMap(taskId, { custom_title: newTitle })
   }
 
+  /**
+   * 一键清空所有任务（逐个调用 DELETE）
+   */
+  async function clearAll() {
+    error.value = null
+    try {
+      const ids = Array.from(taskMap.value.keys())
+      for (const id of ids) {
+        await api.deleteTask(id)
+      }
+      // 关闭所有 SSE 连接
+      eventSources.forEach(es => { es.close() })
+      eventSources.clear()
+      // 清空本地状态
+      taskMap.value = new Map()
+      taskDetailCache.clear()
+    } catch (err: any) {
+      error.value = err.message || '清空全部任务失败'
+      console.error('Failed to clear all tasks:', err)
+      throw err
+    }
+  }
+
   // ── SSE subscription ──────────────────────────────────────────
 
   const eventSources = new Map<string, EventSource>()
@@ -252,38 +275,57 @@ export const useTaskStore = defineStore('task', () => {
       eventSources.get(taskId)?.close()
     }
 
-    const eventSource = api.subscribeToTask(taskId, (event: TaskEvent) => {
-      console.log('SSE Event received:', event)
+    const eventSource = new EventSource(`/api/v2/events?channel=task:${taskId}`)
+    // SSE 自动重连（指数退避）
+    let reconnectAttempt = 0
+    const maxReconnectDelay = 30000
 
-      switch (event.event_type) {
-        case 'status_changed':
-          updateTaskInMap(taskId, {
-            status: event.status,
-            progress: event.progress ?? 0,
-          })
-          break
-        case 'completed':
-          updateTaskInMap(taskId, {
-            status: 'done',
-            progress: 1.0,
-          })
-          // 完成后关闭连接
-          eventSources.delete(taskId)
-          eventSource.close()
-          // Lightweight page reload instead of full loadTasks
-          loadPage(0)
-          break
-        case 'failed':
-          updateTaskInMap(taskId, {
-            status: 'failed',
-          })
-          // 失败后关闭连接
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data)
+        const eventType = data.type
+        reconnectAttempt = 0 // 成功收到消息，重置重试计数
+
+        if (eventType === 'TaskCompleted') {
+          updateTaskInMap(taskId, { status: 'done', progress: 1.0 })
           eventSources.delete(taskId)
           eventSource.close()
           loadPage(0)
-          break
+        } else if (eventType === 'TaskFailed') {
+          updateTaskInMap(taskId, { status: 'failed' })
+          eventSources.delete(taskId)
+          eventSource.close()
+          loadPage(0)
+        } else if (eventType === 'AllChunksDone') {
+          updateTaskInMap(taskId, { status: 'merging', progress: 1.0 })
+        } else if (eventType === 'ChunkCompleted') {
+          updateTaskInMap(taskId, {
+            status: 'processing',
+            progress: data.seq / (data.total_chunks || 10),
+          })
+        } else if (eventType === 'TaskEnqueued') {
+          updateTaskInMap(taskId, { status: 'queued', progress: 0 })
+        } else if (eventType === 'TaskStatusChanged') {
+          updateTaskInMap(taskId, {
+            status: data.status ?? 'processing',
+            progress: data.progress ?? undefined,
+          })
+        }
+      } catch (error) {
+        console.error('Failed to parse SSE message:', error)
       }
-    })
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+      const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), maxReconnectDelay)
+      reconnectAttempt++
+      console.warn(`SSE disconnected for task ${taskId}, reconnecting in ${delay}ms (attempt ${reconnectAttempt})`)
+      setTimeout(() => {
+        if (!eventSources.has(taskId)) return // 已被主动关闭
+        subscribeToTaskEvents(taskId)
+      }, delay)
+    }
 
     eventSources.set(taskId, eventSource)
   }
@@ -310,6 +352,8 @@ export const useTaskStore = defineStore('task', () => {
 
   /** Clears all state — useful on logout or full refresh */
   function resetStore() {
+    // Close all SSE connections before clearing state
+    cleanup()
     taskMap.value = new Map()
     taskDetailCache.clear()
     currentPage.value = 0
@@ -337,7 +381,10 @@ export const useTaskStore = defineStore('task', () => {
     const MIN_DURATION = 300
     const start = Date.now()
     loading.value = true
-    loadTasks().finally(() => {
+    loadTasks().then(() => {
+      // Restore SSE subscriptions for active tasks after page refresh
+      restoreSseSubscriptions()
+    }).finally(() => {
       const elapsed = Date.now() - start
       if (elapsed < MIN_DURATION) {
         setTimeout(() => { loading.value = false }, MIN_DURATION - elapsed)
@@ -346,6 +393,16 @@ export const useTaskStore = defineStore('task', () => {
       }
     })
     startPolling()
+  }
+
+  /** Re-subscribe to SSE for all active (non-terminal) tasks */
+  function restoreSseSubscriptions() {
+    const activeStatuses = new Set(['queued', 'chunking', 'processing', 'merging'])
+    for (const [taskId, task] of taskMap.value) {
+      if (activeStatuses.has(task.status) && !eventSources.has(taskId)) {
+        subscribeToTaskEvents(taskId)
+      }
+    }
   }
 
   return {
@@ -388,6 +445,7 @@ export const useTaskStore = defineStore('task', () => {
     enqueueTask,
     retryTask,
     updateTaskTitle,
+    clearAll,
 
     // SSE
     updateTaskInMap,

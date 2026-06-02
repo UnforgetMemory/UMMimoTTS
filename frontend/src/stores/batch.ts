@@ -143,6 +143,8 @@ export const useBatchStore = defineStore('batch', () => {
     error.value = null
     try {
       await loadPage(0)
+      // Restore SSE subscriptions for active groups after page refresh
+      restoreGroupSseSubscriptions()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : '加载分组失败'
       error.value = message
@@ -268,13 +270,32 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
-   * Update a task's status in the group task cache (for SSE real-time updates)
+   * Update a task's status in the group task cache (for SSE real-time updates).
+   * If the task is not yet in the cache, creates a minimal entry.
    */
   function updateTaskInGroupCache(groupId: string, taskId: string, updates: Partial<TaskSummary>) {
     const cache = groupTaskCache.get(groupId)
     if (!cache) return
     const idx = cache.tasks.findIndex(t => t.id === taskId)
-    if (idx === -1) return
+    if (idx === -1) {
+      // Task not yet cached — create a minimal entry so SSE updates are visible
+      const entry: TaskSummary = {
+        id: taskId,
+        title: updates.title ?? '处理中',
+        status: (updates.status as TaskStatus) ?? 'queued',
+        voice: null,
+        char_count: 0,
+        token_count: 0,
+        progress: 0,
+        has_audio: false,
+        group_id: groupId,
+        created_at: new Date().toISOString(),
+        completed_at: null,
+        elapsed_secs: null,
+      }
+      groupTaskCache.set(groupId, { ...cache, tasks: [...cache.tasks, entry] })
+      return
+    }
     const updated = { ...cache.tasks[idx], ...updates }
     const newTasks = [...cache.tasks]
     newTasks[idx] = updated
@@ -499,6 +520,31 @@ export const useBatchStore = defineStore('batch', () => {
   }
 
   /**
+   * 一键清空所有分组及其关联任务
+   */
+  async function clearAll() {
+    error.value = null
+    try {
+      const ids = Array.from(groupMap.value.keys())
+      for (const id of ids) {
+        await apiV2.deleteBatch(id)
+        const es = eventSources.get(id)
+        if (es) {
+          es.close()
+          eventSources.delete(id)
+        }
+        groupTaskCache.delete(id)
+      }
+      groupMap.value = new Map()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '清空全部任务失败'
+      error.value = message
+      console.error('Failed to clear all groups:', err)
+      throw err
+    }
+  }
+
+  /**
    * 取消所有正在处理的任务
    */
   async function cancelAllTasks() {
@@ -686,6 +732,18 @@ export const useBatchStore = defineStore('batch', () => {
               } as Partial<TaskSummary>)
             }
             break
+          case 'ChunkFailed':
+            // 分片失败 — 更新进度信息
+            if (data.task_id) {
+              updateGroupInMap(groupId, {
+                current_chunk: data.current_chunk,
+                total_chunks: data.total_chunks,
+              } as any)
+              updateTaskInGroupCache(groupId, data.task_id, {
+                status: 'processing',
+              } as Partial<TaskSummary>)
+            }
+            break
         }
       } catch (err) {
         console.error('Failed to parse batch SSE event:', err)
@@ -697,6 +755,16 @@ export const useBatchStore = defineStore('batch', () => {
     }
 
     eventSources.set(groupId, eventSource)
+  }
+
+  /** Re-subscribe to SSE for all active (non-terminal) groups */
+  function restoreGroupSseSubscriptions() {
+    const activeStatuses = new Set(['queued', 'processing', 'chunking', 'merging'])
+    for (const [groupId, group] of groupMap.value) {
+      if (activeStatuses.has(group.status) && !eventSources.has(groupId)) {
+        subscribeToGroupEvents(groupId)
+      }
+    }
   }
 
   /**
@@ -821,6 +889,7 @@ export const useBatchStore = defineStore('batch', () => {
     retryFailed,
     cancelGroup,
     cancelAllTasks,
+    clearAll,
     forceTask,
     removeGroup,
     downloadGroupAudio,
