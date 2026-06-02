@@ -355,36 +355,59 @@ impl TaskQueue {
     }
 
     async fn on_all_chunks_done(&self, task_id: &str) -> Result<(), AppError> {
+        // Set status to Merging synchronously
         self.task_repo
             .update_status(task_id, &TaskStatus::Merging)?;
 
-        match self.merge_task_audio(task_id) {
-            Ok((output_path, duration)) => {
-                self.task_repo
-                    .set_output(task_id, &output_path.to_string_lossy(), duration)?;
-                self.task_repo.update_status(task_id, &TaskStatus::Done)?;
+        // Spawn merge in a separate tokio task to avoid blocking the event loop.
+        // With large tasks (1000+ chunks), merge_wavs reads all WAV files into
+        // memory which can take minutes and blocks the listen() loop if done inline.
+        let task_id_owned = task_id.to_string();
+        let task_repo = Arc::clone(&self.task_repo);
+        let event_tx = self.event_tx.clone();
+        let chunk_repo = Arc::clone(&self.chunk_repo);
 
-                let task = self.task_repo.find_by_id(task_id)?.unwrap_or_else(|| {
-                    panic!("Task {task_id} disappeared during merge")
-                });
+        tokio::spawn(async move {
+            // Rebuild the chunk repo reference for the merge call
+            let merger_result = Self::merge_task_audio_static(
+                &chunk_repo,
+                &task_id_owned,
+            );
 
-                let _ = self.event_tx.send(DomainEvent::TaskCompleted {
-                    task_id: task.id,
-                    batch_id: task.batch_id,
-                    output_path: output_path.to_string_lossy().to_string(),
-                    duration,
-                });
+            match merger_result {
+                Ok((output_path, duration)) => {
+                    let _ = task_repo.set_output(
+                        &task_id_owned,
+                        &output_path.to_string_lossy(),
+                        duration,
+                    );
+                    let _ = task_repo.update_status(&task_id_owned, &TaskStatus::Done);
+
+                    if let Ok(Some(task)) = task_repo.find_by_id(&task_id_owned) {
+                        let _ = event_tx.send(DomainEvent::TaskCompleted {
+                            task_id: task.id,
+                            batch_id: task.batch_id,
+                            output_path: output_path.to_string_lossy().to_string(),
+                            duration,
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!("merge failed for task {task_id_owned}: {e}");
+                    let _ = task_repo.update_status(
+                        &task_id_owned,
+                        &TaskStatus::MergingFailed,
+                    );
+                    if let Ok(tid) = Id::from_str(&task_id_owned) {
+                        let _ = event_tx.send(DomainEvent::TaskFailed {
+                            task_id: tid,
+                            error: e.to_string(),
+                        });
+                    }
+                }
             }
-            Err(e) => {
-                error!("merge failed for task {task_id}: {e}");
-                self.task_repo
-                    .update_status(task_id, &TaskStatus::MergingFailed)?;
-                let _ = self.event_tx.send(DomainEvent::TaskFailed {
-                    task_id: Id::from_str(task_id)?,
-                    error: e.to_string(),
-                });
-            }
-        }
+        });
+
         Ok(())
     }
 
@@ -614,7 +637,16 @@ impl TaskQueue {
     /// output file, and delegates to `merge_wavs` for the actual
     /// concatenation.
     fn merge_task_audio(&self, task_id: &str) -> Result<(PathBuf, f64), AppError> {
-        let mut chunks = self.chunk_repo.find_by_task(task_id)?;
+        Self::merge_task_audio_static(&self.chunk_repo, task_id)
+    }
+
+    /// Static version of merge_task_audio that can be called from a spawned task
+    /// without holding a reference to `self`.
+    fn merge_task_audio_static(
+        chunk_repo: &Arc<dyn ChunkRepo>,
+        task_id: &str,
+    ) -> Result<(PathBuf, f64), AppError> {
+        let mut chunks = chunk_repo.find_by_task(task_id)?;
         chunks.sort_by_key(|c| c.seq);
 
         if chunks.is_empty() {
@@ -797,8 +829,8 @@ use crate::shared::id::Id;
             content: "Hello world. This is a test.".into(),
             content_ref: None,
             title: "Test task".into(),
-            voice: "female-1".into(),
-            model: "tts-1".into(),
+            voice: crate::constants::DEFAULT_VOICE.into(),
+            model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
             total_chars: 28,
@@ -839,7 +871,7 @@ use crate::shared::id::Id;
             content_ref: None,
             title: "continue".into(),
             voice: "default".into(),
-            model: "tts-1".into(),
+            model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
             total_chars: 10,
@@ -895,8 +927,8 @@ use crate::shared::id::Id;
             content: "test".into(),
             content_ref: None,
             title: "Merge test".into(),
-            voice: "female-1".into(),
-            model: "tts-1".into(),
+            voice: crate::constants::DEFAULT_VOICE.into(),
+            model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
             total_chars: 4,
@@ -969,8 +1001,8 @@ use crate::shared::id::Id;
             content: "test".into(),
             content_ref: None,
             title: "Merge fail test".into(),
-            voice: "female-1".into(),
-            model: "tts-1".into(),
+            voice: crate::constants::DEFAULT_VOICE.into(),
+            model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
             total_chars: 4,
