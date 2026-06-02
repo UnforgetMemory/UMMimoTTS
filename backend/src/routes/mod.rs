@@ -4,6 +4,7 @@ pub mod batches;
 pub mod tasks;
 pub mod groups;
 pub mod sse;
+pub mod config;
 
 use crate::service::batch_service::BatchService;
 use crate::service::group_service::GroupService;
@@ -35,5 +36,6 @@ pub fn configure(cfg: &mut actix_web::web::ServiceConfig) {
         .configure(batches::configure)
         .configure(tasks::configure)
         .configure(groups::configure)
-        .configure(sse::configure);
+        .configure(sse::configure)
+        .configure(config::configure);
 }

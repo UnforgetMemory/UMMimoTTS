@@ -59,7 +59,7 @@ async fn main() -> std::io::Result<()> {
     let port: u16 = env_or("SERVER_PORT", "30231").parse().expect("SERVER_PORT must be a u16");
     let db_path = env_or("DB_PATH", "data/mimo.db");
     let mimo_api_key = env_or("MIMO_API_KEY", "test-key");
-    let mimo_base_url = env_or("MIMO_BASE_URL", "http://localhost:30231");
+    let mimo_base_url = env_or("MIMO_BASE_URL", um_mimo_tts_server::constants::MIMO_BASE_URL_DEFAULT);
     let max_concurrent: usize = env_or("MAX_CONCURRENT", "10").parse().expect("MAX_CONCURRENT must be usize");
     let max_active_tasks: usize = env_or("MAX_ACTIVE_TASKS", "20").parse().expect("MAX_ACTIVE_TASKS must be usize");
     let cache_dir = std::path::PathBuf::from(env_or("CACHE_DIR", "data/cache"));
@@ -98,8 +98,13 @@ async fn main() -> std::io::Result<()> {
     let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), 100));
 
     // ── rate limiter ──────────────────────────────────────────────────
-    let rate_limiter = Arc::new(TokenBucket::new(10));
-    let token_budget = Arc::new(TokenBucket::new(1_000_000));
+    // rate_limiter: 90 RPM (requests per minute) — controls API call rate
+    // token_budget: 1M tokens/min — controls total token consumption
+    let rpm: u64 = env_or("MIMO_RPM", "90").parse().expect("MIMO_RPM must be u64");
+    let token_budget_rpm: u64 = env_or("MIMO_TOKEN_BUDGET_RPM", "1000000").parse().expect("MIMO_TOKEN_BUDGET_RPM must be u64");
+    let rate_limiter = Arc::new(TokenBucket::new(rpm));
+    let token_budget = Arc::new(TokenBucket::new(token_budget_rpm));
+    tracing::info!("Rate limiter: {rpm} RPM, token budget: {token_budget_rpm} tokens/min");
 
     // ── queues ────────────────────────────────────────────────────────
     let chunk_queue = Arc::new(ChunkQueue::new(

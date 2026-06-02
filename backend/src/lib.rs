@@ -5,6 +5,7 @@
 
 #![allow(dead_code)]
 
+pub mod constants;
 pub mod shared;
 pub mod domain;
 pub mod infra;
