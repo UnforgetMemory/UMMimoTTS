@@ -279,11 +279,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
+import { toast } from 'vue-sonner'
 
-import { apiV2, type Voice } from '@/api/client'
+import { apiV2 } from '@/api/client'
 import { useTaskStore } from '@/stores/task'
 import { useBatchStore } from '@/stores/batch'
+import { useConfigStore } from '@/stores/config'
 
 /** Client-side parsed segment — extends preview data with full text */
 interface ParsedSegment {
@@ -326,6 +328,7 @@ const emit = defineEmits<Emits>()
 
 const taskStore = useTaskStore()
 const batchStore = useBatchStore()
+const configStore = useConfigStore()
 
 const PER_PAGE = 50
 const steps = [{ title: '上传文件' }, { title: '分组设置' }, { title: '自定义任务' }, { title: '确认提交' }]
@@ -460,7 +463,7 @@ function goToPage(page: number) {
 }
 
 // Submit state
-const submitConfig = reactive({ group_name: '', default_voice: '', default_model: 'mimo-v2.5-tts', default_context: '' })
+const submitConfig = reactive({ group_name: '', default_voice: '', default_model: configStore.selectedModel || 'mimo-v2.5-tts', default_context: '' })
 const submitBusy = ref(false)
 const submitError = ref('')
 const submitResult = ref({ group_id: '', task_count: 0 })
@@ -470,6 +473,18 @@ function handleStartPreview() { loadPage(0); currentStep.value = 2 }
 
 async function handleSubmit() {
   if (parsedSegments.value.length === 0 || !submitConfig.default_voice) return
+  if (!configStore.isValidVoice(submitConfig.default_voice)) {
+    toast.error('无效的音色选择')
+    return
+  }
+  if (!configStore.isValidModel(submitConfig.default_model)) {
+    toast.error('无效的模型选择')
+    return
+  }
+  if (!configStore.isValidModel(submitConfig.default_model)) {
+    toast.error('无效的模型选择')
+    return
+  }
   submitBusy.value = true; submitError.value = ''
   try {
     // Step 1 – Create batch group
@@ -524,21 +539,15 @@ function resetToUpload() {
 
 function onDialogClose() { resetToUpload(); emit('update:open', false) }
 
-// Voices
-const FALLBACK_VOICES: Voice[] = [
-  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女' },
-  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声' },
-  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年' },
-  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声' },
-  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl' },
-  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy' },
-  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy' },
-  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle' },
-]
-const voices = ref<Voice[]>([])
-async function loadVoices() {
-  voices.value = FALLBACK_VOICES
-}
+// Voices — map VoicePreset (code) to Voice (id) for template compatibility
+const voices = computed(() => configStore.voices.map(v => ({
+  id: v.id,
+  name: v.name,
+  language: v.language,
+  gender: v.gender,
+  style: v.style,
+  preview_url: v.preview_url,
+})))
 
 // ── File reading helpers ───────────────────────────────────────────
 
@@ -700,12 +709,10 @@ async function processFiles(files: File[]) {
   uploadState.value = 'success'
 }
 
-onMounted(() => {
-  loadVoices()
-})
+// Voices are reactive from config store — no explicit loading needed
 
-watch(() => props.open, (isOpen) => {
-  if (isOpen) loadVoices()
+watch(() => props.open, () => {
+  // voices is a computed property — no manual loading needed
 })
 
 onUnmounted(() => { /* cleanup */ })

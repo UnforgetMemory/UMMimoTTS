@@ -171,7 +171,7 @@
 
         <!-- 音色选择 -->
         <div v-if="configTab === 'voice'" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3 pr-1 content-start">
-          <div v-if="voicesLoading" class="col-span-1 sm:col-span-2 flex items-center justify-center py-8">
+          <div v-if="!configStore.configLoaded" class="col-span-1 sm:col-span-2 flex items-center justify-center py-8">
             <Loader2Icon class="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
           <div
@@ -239,7 +239,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
@@ -266,12 +266,20 @@ const emit = defineEmits<{
   submitted: [taskId: string]
 }>()
 
-const models = [
-  { id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts', description: '小米 MIMO TTS 模型，支持预置音色' },
-]
+const models = computed(() => configStore.models.map(m => ({
+  id: m.id,
+  name: m.name,
+  description: m.description,
+})))
 
-const voices = ref<Voice[]>([])
-const voicesLoading = ref(false)
+const voices = computed<Voice[]>(() => configStore.voices.map(v => ({
+  id: v.id,
+  name: v.name,
+  language: v.language,
+  gender: v.gender,
+  style: v.style,
+  preview_url: v.preview_url,
+})))
 const isSubmitting = ref(false)
 const previewingVoice = ref<string | null>(null)
 const currentAudio = ref<HTMLAudioElement | null>(null)
@@ -322,25 +330,12 @@ const estimatedAudioTime = computed(() => {
   return `~${Math.floor(seconds / 3600)}小时${Math.floor((seconds % 3600) / 60)}分`
 })
 
-const FALLBACK_VOICES: Voice[] = [
-  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/bingtang.wav' },
-  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/moli.wav' },
-  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/suda.wav' },
-  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/baihua.wav' },
-  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/mia.wav' },
-  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/chloe.wav' },
-  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/milo.wav' },
-  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/dean.wav' },
-]
-
-async function loadVoices() {
-  voicesLoading.value = true
-  voices.value = FALLBACK_VOICES
-  voicesLoading.value = false
-  if (voices.value.length > 0 && !form.value.voice) {
-    form.value.voice = voices.value[0].id
+// Auto-select first voice when presets load and none is selected
+watch(voices, (newVoices) => {
+  if (newVoices.length > 0 && !form.value.voice) {
+    form.value.voice = newVoices[0].id
   }
-}
+})
 
 function clearText() {
   form.value.text = ''
@@ -409,6 +404,14 @@ async function handleSubmit() {
     toast.error('请选择音色')
     return
   }
+  if (!configStore.isValidVoice(form.value.voice)) {
+    toast.error('无效的音色选择')
+    return
+  }
+  if (!configStore.isValidModel(form.value.model)) {
+    toast.error('无效的模型选择')
+    return
+  }
   if (!configStore.hasValidKey) {
     toast.error('请先配置 API Key')
     return
@@ -459,7 +462,6 @@ function handleKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => {
-  loadVoices()
   document.addEventListener('keydown', handleKeydown)
 })
 
