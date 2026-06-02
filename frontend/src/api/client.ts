@@ -581,6 +581,7 @@ export interface ListTasksV2Params {
   sort?: string
   group_id?: string
   batch_id?: string
+  standalone?: boolean
 }
 
 export interface CreateBatchV2Params {

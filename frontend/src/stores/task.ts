@@ -60,6 +60,7 @@ export const useTaskStore = defineStore('task', () => {
     const params: Record<string, any> = {
       page,
       page_size: perPage.value,
+      standalone: true,
     }
     if (activeSearch.value) params.search = activeSearch.value
     if (activeStatus.value) params.status = activeStatus.value

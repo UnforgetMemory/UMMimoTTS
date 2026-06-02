@@ -467,10 +467,9 @@ async function handleBatchImported(groupId: string) {
 // Lifecycle
 onMounted(async () => {
   document.addEventListener('keydown', handleKeydown)
-  await Promise.all([
-    taskStore.loadTasks(),
-    batchStore.loadGroups(),
-  ])
+  // init() calls loadTasks() + restoreSseSubscriptions() + startPolling() (30s fallback)
+  taskStore.init()
+  await batchStore.loadGroups()
 })
 
 onUnmounted(() => {
