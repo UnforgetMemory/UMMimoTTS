@@ -213,6 +213,24 @@ async fn worker_loop(
             continue;
         }
 
+        // ── Step 1: Discover work FIRST (no resources consumed yet) ──
+        let chunk = match chunk_repo.find_pending_prioritized(1) {
+            Ok(mut chunks) => {
+                if chunks.is_empty() {
+                    // No work available — sleep briefly to avoid busy-polling DB
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    continue;
+                }
+                chunks.remove(0)
+            }
+            Err(e) => {
+                error!("worker {worker_id}: fetch pending failed: {e}");
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                continue;
+            }
+        };
+
+        // ── Step 2: Acquire resources ONLY after discovering work ──
         // Wait for rate limiter token (sleeps internally, no deadlock)
         rate_limiter.acquire().await;
 
@@ -220,24 +238,6 @@ async fn worker_loop(
         let _permit = match semaphore.acquire().await {
             Ok(p) => p,
             Err(_) => return,
-        };
-
-        // Pick a pending chunk
-        let chunk = match chunk_repo.find_pending_prioritized(1) {
-            Ok(mut chunks) => {
-                if chunks.is_empty() {
-                    drop(_permit);
-                    notify.notified().await;
-                    continue;
-                }
-                chunks.remove(0)
-            }
-            Err(e) => {
-                error!("worker {worker_id}: fetch pending failed: {e}");
-                drop(_permit);
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
-            }
         };
 
         let chunk_id = chunk.id.to_string();
