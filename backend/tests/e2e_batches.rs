@@ -132,7 +132,7 @@ macro_rules! create_batch {
             .uri("/api/v2/batches")
             .set_json(&json!({
                 "title": "E2E Batch",
-                "voice": "female-1"
+                "voice": "冰糖"
             }))
             .to_request();
         let resp = test::call_service(&$app, req).await;
@@ -162,7 +162,7 @@ async fn test_create_batch() {
         .uri("/api/v2/batches")
         .set_json(&json!({
             "title": "Test Batch",
-            "voice": "female-1"
+                "voice": "冰糖"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -172,8 +172,8 @@ async fn test_create_batch() {
     assert_eq!(body["title"], "Test Batch");
     assert!(body["id"].is_string());
     assert_eq!(body["status"], "preparing");
-    assert_eq!(body["voice"], "female-1");
-    assert_eq!(body["model"], "tts-1");
+    assert_eq!(body["voice"], um_mimo_tts_server::constants::DEFAULT_VOICE);
+    assert_eq!(body["model"], um_mimo_tts_server::constants::DEFAULT_MODEL);
     assert!((body["speed"].as_f64().unwrap() - 1.0).abs() < 1e-9);
 }
 

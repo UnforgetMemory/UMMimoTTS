@@ -60,10 +60,10 @@ struct PaginatedTasksResponse {
 }
 
 fn default_model() -> String {
-    "tts-1".to_string()
+    crate::constants::DEFAULT_MODEL.to_string()
 }
 fn default_speed() -> f64 {
-    1.0
+    crate::constants::DEFAULT_SPEED
 }
 
 /// Convert a Task to a lightweight list item (no content).
@@ -124,6 +124,13 @@ async fn create_task(
     state: web::Data<AppState>,
     body: web::Json<CreateTaskRequest>,
 ) -> impl Responder {
+    // Advisory validation — warn but still process
+    if !crate::constants::is_valid_voice(&body.voice) {
+        tracing::warn!("Unknown voice '{}' — will attempt synthesis anyway", body.voice);
+    }
+    if !crate::constants::is_valid_model(&body.model) {
+        tracing::warn!("Unknown model '{}' — will attempt synthesis anyway", body.model);
+    }
     match state.task_service.create_single(
         body.content.clone(),
         body.title.clone(),

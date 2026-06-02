@@ -77,10 +77,10 @@ impl MimoClient {
         let resp = self
             .http_client
             .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .header("api-key", &self.api_key)
             .json(&json!({
                 "text": text,
-                "model": "tts-1"
+                "model": crate::constants::DEFAULT_MODEL
             }))
             .timeout(std::time::Duration::from_secs(5))
             .send()
@@ -230,7 +230,7 @@ mod tests {
             .await;
 
         let client = MimoClient::new("test-key-123", &mock_server.uri());
-        let result = client.synthesize("你好世界", "test-voice", "tts-1", 1.0).await.unwrap();
+        let result = client.synthesize("你好世界", "test-voice", crate::constants::DEFAULT_MODEL, 1.0).await.unwrap();
 
         assert!(!result.is_empty(), "Should return WAV bytes");
         assert_eq!(result.len(), WAV_BYTES.len());

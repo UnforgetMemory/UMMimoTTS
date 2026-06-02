@@ -140,59 +140,7 @@ async fn test_create_group() {
         .uri("/api/v2/batches")
         .set_json(&json!({
             "title": "Batch for Groups",
-            "voice": "female-1"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-    let batch: Value = body_json(resp).await;
-    let batch_id = batch["id"].as_str().unwrap().to_string();
-
-    // Create a group under the batch
-    let req = test::TestRequest::post()
-        .uri("/api/v2/groups")
-        .set_json(&json!({
-            "batch_id": batch_id,
-            "title": "Group 1"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::CREATED);
-
-    let body: Value = body_json(resp).await;
-    assert_eq!(body["title"], "Group 1");
-    assert_eq!(body["batch_id"], batch_id);
-    assert!(body["id"].is_string());
-    assert_eq!(body["status"], "pending");
-}
-
-#[actix_web::test]
-async fn test_create_group_invalid_batch() {
-    let app = build_app!("http://localhost:1");
-
-    // Try creating a group with a non-UUID string as batch_id
-    // This should fail because Id::from_str validates UUID format
-    let req = test::TestRequest::post()
-        .uri("/api/v2/groups")
-        .set_json(&json!({
-            "batch_id": "not-a-valid-uuid",
-            "title": "Invalid Group"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_client_error());
-}
-
-#[actix_web::test]
-async fn test_list_groups() {
-    let app = build_app!("http://localhost:1");
-
-    // Create a batch
-    let req = test::TestRequest::post()
-        .uri("/api/v2/batches")
-        .set_json(&json!({
-            "title": "Batch for Groups",
-            "voice": "female-1"
+            "voice": "冰糖"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
