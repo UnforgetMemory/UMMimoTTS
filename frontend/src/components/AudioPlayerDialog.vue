@@ -3,6 +3,7 @@
     <DialogContent class="sm:max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
       <DialogHeader class="shrink-0">
         <DialogTitle>音频播放器</DialogTitle>
+        <DialogDescription class="sr-only">TTS 音频播放器</DialogDescription>
       </DialogHeader>
 
       <!-- Fixed Audio Player Section -->
@@ -109,7 +110,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onUnmounted } from 'vue'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import {
   Play as PlayIcon,
@@ -239,9 +240,12 @@ async function loadAudio(taskId: string) {
   })
 
   // Handle audio loading errors (404, network errors, etc.)
-  audio.value.addEventListener('error', () => {
-    const err = audio.value?.error
-    console.error('Audio load error:', err)
+  audio.value.addEventListener('error', (e: Event) => {
+    const mediaErr = (e.target as HTMLAudioElement)?.error
+    // Ignore errors during cleanup (empty src) or user abort
+    if (!mediaErr || mediaErr.code === MediaError.MEDIA_ERR_ABORTED) return
+    if (mediaErr.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED && !audio.value?.src) return
+    console.error('Audio load error:', mediaErr.message)
     toast.error('音频加载失败', {
       description: '音频文件可能已过期或不存在，请重新合成',
     })
@@ -277,7 +281,8 @@ function formatTime(seconds: number): string {
 function cleanup() {
   if (audio.value) {
     audio.value.pause()
-    audio.value.src = ''
+    audio.value.removeAttribute('src')
+    audio.value.load() // abort any pending network request
     audio.value = null
   }
   isPlaying.value = false

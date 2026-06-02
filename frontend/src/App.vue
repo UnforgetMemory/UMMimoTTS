@@ -53,13 +53,13 @@
               {{ batchStore.groups.length }} 个分组
             </span>
             <Button
-              v-if="hasActiveGroups"
+              v-if="batchStore.groups.length > 0"
               variant="ghost"
               size="sm"
               class="h-7 text-xs text-muted-foreground hover:text-destructive px-2 -mr-1"
-              @click="handleCancelAll"
+              @click="handleClearAll"
             >
-              <XCircleIcon class="w-3.5 h-3.5 mr-1" />
+              <Trash2Icon class="w-3.5 h-3.5 mr-1" />
               一键清空
             </Button>
           </div>
@@ -153,6 +153,23 @@
             @click="showTaskSidebar = false"
           >
             <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          </Button>
+        </div>
+        
+        <!-- Task count + clear all -->
+        <div class="flex items-center justify-between px-4 sm:px-5 py-2 border-b bg-muted/10">
+          <span class="text-xs font-medium text-muted-foreground">
+            {{ taskStore.standaloneTasks.length }} 个任务
+          </span>
+          <Button
+            v-if="taskStore.standaloneTasks.length > 0"
+            variant="ghost"
+            size="sm"
+            class="h-7 text-xs text-muted-foreground hover:text-destructive px-2 -mr-1"
+            @click="handleClearAllTasks"
+          >
+            <Trash2Icon class="w-3.5 h-3.5 mr-1" />
+            一键清空
           </Button>
         </div>
         
@@ -273,7 +290,7 @@ import { Button } from '@/components/ui/button'
 import { 
   X as XIcon, 
   Plus as PlusIcon,
-  XCircle as XCircleIcon,
+  Trash2 as Trash2Icon,
 } from 'lucide-vue-next'
 
 const taskStore = useTaskStore()
@@ -297,10 +314,6 @@ const selectedGroup = computed(() => {
   if (!selectedGroupId.value) return null
   return batchStore.groups.find(g => g.id === selectedGroupId.value) || null
 })
-
-const hasActiveGroups = computed(() =>
-  batchStore.groups.some(g => ['pending', 'queued', 'processing', 'paused'].includes(g.status)),
-)
 
 // Keyboard event - ESC to close sidebars
 function handleKeydown(event: KeyboardEvent) {
@@ -410,13 +423,26 @@ async function handleCancelGroup(groupId: string) {
   }
 }
 
-async function handleCancelAll() {
-  if (!confirm('确定要取消所有正在处理的任务吗？已完成的任务将保留。')) return
+async function handleClearAll() {
+  const count = batchStore.groups.length
+  if (!confirm(`确定要清空全部 ${count} 个分组吗？此操作不可恢复。`)) return
   try {
-    await batchStore.cancelAllTasks()
-    toast.success('所有任务已取消')
+    await batchStore.clearAll()
+    selectedGroupId.value = null
+    toast.success('已清空全部分组')
   } catch (error) {
-    toast.error('取消失败')
+    toast.error('清空失败')
+  }
+}
+
+async function handleClearAllTasks() {
+  const count = taskStore.standaloneTasks.length
+  if (!confirm(`确定要清空全部 ${count} 个任务吗？此操作不可恢复。`)) return
+  try {
+    await taskStore.clearAll()
+    toast.success('已清空全部任务')
+  } catch (error) {
+    toast.error('清空失败')
   }
 }
 

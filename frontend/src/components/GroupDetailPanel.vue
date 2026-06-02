@@ -212,7 +212,7 @@
                             <XCircleIcon class="w-3.5 h-3.5" />
                           </Button>
                           <Button
-                            v-if="['failed', 'merging_failed', 'cancelled'].includes(columnTask(column, virtualRow.index).status)"
+                            v-if="['failed', 'mergingfailed', 'cancelled'].includes(columnTask(column, virtualRow.index).status)"
                             variant="ghost"
                             size="sm"
                             class="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
@@ -245,7 +245,7 @@
                       </div>
 
                       <!-- Error message for failed tasks -->
-                      <div v-if="['failed', 'merging_failed'].includes(columnTask(column, virtualRow.index).status)" class="mt-1.5">
+                      <div v-if="['failed', 'mergingfailed'].includes(columnTask(column, virtualRow.index).status)" class="mt-1.5">
                         <div class="flex items-start gap-1.5">
                           <AlertCircleIcon class="w-3 h-3 text-destructive shrink-0 mt-0.5" />
                           <p class="text-[11px] text-destructive/80 leading-tight">{{ (columnTask(column, virtualRow.index) as any).error || '任务执行失败' }}</p>
@@ -366,11 +366,13 @@ async function refreshTasks() {
 // ─── Auto-polling for active groups ───────────────────
 function startPolling() {
   stopPolling()
+  // Execute immediately, not just on interval tick
+  refreshTasks()
   pollingTimer = setInterval(() => {
     if (isActiveStatus(props.group.status)) {
       refreshTasks()
     }
-  }, 5000)
+  }, 10000) // 10s — batch store SSE handles real-time updates
 }
 
 function stopPolling() {
@@ -441,8 +443,8 @@ const kanbanColumns = computed<KanbanColumn[]>(() => {
       title: '失败',
       dotClass: 'bg-red-500',
       emptyText: '无失败任务',
-      statuses: ['failed', 'merging_failed', 'cancelled'],
-      tasks: tasks.filter(t => ['failed', 'merging_failed', 'cancelled'].includes(t.status)),
+      statuses: ['failed', 'mergingfailed', 'cancelled'],
+      tasks: tasks.filter(t => ['failed', 'mergingfailed', 'cancelled'].includes(t.status)),
       icon: AlertCircleIcon,
     },
   ]
@@ -507,7 +509,7 @@ function taskStatusVariant(status: string): BadgeVariants['variant'] {
     case 'completed':
     case 'done': return 'success'
     case 'failed':
-    case 'merging_failed': return 'destructive'
+    case 'mergingfailed': return 'destructive'
     case 'processing':
     case 'chunking':
     case 'merging': return 'default'
@@ -526,7 +528,7 @@ function taskStatusLabel(status: string): string {
     case 'chunking': return '分片中'
     case 'processing': return '合成中'
     case 'merging': return '合并中'
-    case 'merging_failed': return '合并失败'
+    case 'mergingfailed': return '合并失败'
     case 'completed':
     case 'done': return '完成'
     case 'failed': return '失败'
@@ -571,7 +573,7 @@ function formatDate(dateStr: string): string {
 // ─── Cancel task ────────────────────────────────────
 
 function canCancelTask(status: string): boolean {
-  return ['pending', 'queued', 'chunking', 'processing', 'merging', 'merging_failed', 'paused'].includes(status)
+  return ['pending', 'queued', 'chunking', 'processing', 'merging', 'mergingfailed', 'paused'].includes(status)
 }
 
 async function handleCancelTask(taskId: string) {
