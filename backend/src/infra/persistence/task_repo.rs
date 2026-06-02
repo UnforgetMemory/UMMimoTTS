@@ -32,6 +32,7 @@ pub trait TaskRepo: Send + Sync {
     fn find_by_group(&self, group_id: &str) -> Result<Vec<Task>, AppError>;
     fn batch_progress(&self, batch_id: &str) -> Result<BatchProgressAggregate, AppError>;
     fn find_all(&self) -> Result<Vec<Task>, AppError>;
+    fn find_standalone(&self) -> Result<Vec<Task>, AppError>;
     /// Find tasks stuck in Processing status for more than `stale_minutes`.
     /// Returns tasks that have no active (pending/processing) chunks.
     fn find_stale_processing(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
@@ -224,6 +225,17 @@ impl TaskRepo for SqliteTaskRepo {
     fn find_all(&self) -> Result<Vec<Task>, AppError> {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare("SELECT * FROM tasks ORDER BY created_at DESC")?;
+        let tasks = stmt
+            .query_map([], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    fn find_standalone(&self) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let mut stmt = conn.prepare(
+            "SELECT * FROM tasks WHERE group_id IS NULL ORDER BY created_at DESC"
+        )?;
         let tasks = stmt
             .query_map([], Self::row_to_task)?
             .collect::<Result<Vec<_>, _>>()?;
