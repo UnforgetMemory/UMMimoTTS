@@ -629,7 +629,6 @@ export const useBatchStore = defineStore('batch', () => {
       try {
         const data = JSON.parse(event.data)
         reconnectAttempt = 0 // 成功收到消息，重置重试计数
-        console.log('Batch SSE v2 event:', data)
 
         switch (data.type) {
           case 'Progress':
