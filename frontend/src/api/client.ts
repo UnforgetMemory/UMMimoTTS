@@ -32,6 +32,17 @@ export interface ModelPreset {
   description: string
 }
 
+export interface ProviderInfo {
+  id: string
+  name: string
+  base_url: string
+  api_key?: string  // Present only when explicitly returned (e.g. after PUT)
+  is_configured: boolean
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
 export interface AppConfig {
   voices: VoicePreset[]
   models: ModelPreset[]
@@ -39,6 +50,7 @@ export interface AppConfig {
   default_model: string
   default_speed: number
   mimo_base_url: string
+  providers: ProviderInfo[]
 }
 
 export async function fetchConfig(): Promise<AppConfig> {
@@ -57,6 +69,7 @@ export interface Task {
   voice: string | null
   text: string
   context?: string | null
+  provider_id?: string
   created_at: string
   completed_at: string | null
   error: string | null
@@ -81,6 +94,7 @@ export interface TaskSummary {
   title?: string
   status: TaskStatus
   voice: string | null
+  provider_id?: string
   char_count: number
   token_count: number
   progress: number
@@ -332,6 +346,10 @@ export const api = {
     await apiClient.delete(`/api/v2/tasks/${taskId}`)
   },
 
+  async clearAllTasks(): Promise<void> {
+    await apiClient.delete('/api/v2/tasks/clear')
+  },
+
   getAudioUrl(taskId: string): string {
     return `/api/v2/tasks/${taskId}/audio`
   },
@@ -489,6 +507,7 @@ interface TaskV2Response {
   status: string
   batch_id?: string
   group_id?: string
+  provider_id?: string
   content: string
   content_ref?: string
   title?: string
@@ -571,6 +590,7 @@ export interface CreateTaskV2Params {
   title?: string
   batch_id?: string
   group_id?: string
+  provider_id?: string
 }
 
 export interface ListTasksV2Params {
@@ -615,7 +635,17 @@ function transformV2Task(v2: TaskV2Response): Task {
   const normalizedStatus = normalizeBackendStatus(v2.status)
   let error: string | null = null
   if (normalizedStatus === 'failed') {
-    error = `Task failed after ${v2.failed_chunks} chunk(s)`
+    const errParts: string[] = []
+    if (v2.total_chunks > 0) {
+      errParts.push(`分片进度 ${v2.done_chunks}/${v2.total_chunks}`)
+    }
+    if (v2.failed_chunks > 0) {
+      errParts.push(`失败 ${v2.failed_chunks} 个`)
+    }
+    if (v2.retry_count != null && v2.retry_count > 0) {
+      errParts.push(`已重试 ${v2.retry_count}/${v2.max_retries ?? '?'} 次`)
+    }
+    error = errParts.length > 0 ? `合成失败：${errParts.join('，')}` : '合成失败'
   }
 
   const startTime = new Date(v2.created_at).getTime()
@@ -629,6 +659,7 @@ function transformV2Task(v2: TaskV2Response): Task {
     status: normalizedStatus,
     model: v2.model || '',
     voice: v2.voice || null,
+    provider_id: v2.provider_id,
     text: v2.content,
     context: null,
     created_at: v2.created_at,
@@ -662,10 +693,14 @@ function transformV2BatchTask(v2: BatchV2TaskSummary): Task {
     context: null,
     created_at: v2.created_at,
     completed_at: v2.completed_at || null,
-    error: normalizedStatus === 'failed' ? 'Task failed' : null,
+    error: normalizedStatus === 'failed'
+      ? v2.total_chunks > 0
+        ? `合成失败：分片进度 ${v2.done_chunks}/${v2.total_chunks}`
+        : '合成失败'
+      : null,
     progress: v2.total_chunks > 0 ? v2.done_chunks / v2.total_chunks : 0,
-    token_count: 0,
-    char_count: 0,
+    token_count: 0,  // 后端 batch 任务摘要不返回 token 数
+    char_count: v2.content ? v2.content.length : 0,  // 直接从文本计算
     elapsed_secs: Math.round((endTime - startTime) / 1000),
     has_audio: !!v2.output_path,
     total_chunks: v2.total_chunks,
@@ -812,6 +847,21 @@ export const apiV2 = {
   async createGroup(params: { name: string; batch_ids: string[] }): Promise<GroupSummary> {
     const response = await apiClient.post('/api/v2/groups', params)
     return response.data
+  },
+
+  // ── Providers ──────────────────────────────────────────────
+
+  async listProviders(): Promise<ProviderInfo[]> {
+    const response = await apiClient.get('/api/v2/providers')
+    return response.data
+  },
+
+  async updateProviderKey(id: string, api_key: string): Promise<void> {
+    await apiClient.put(`/api/v2/providers/${id}`, { api_key })
+  },
+
+  async setDefaultProvider(id: string): Promise<void> {
+    await apiClient.put(`/api/v2/providers/${id}/default`)
   },
 
   async listGroups(params: { batch_id?: string; page?: number; page_size?: number } = {}): Promise<PaginatedResponse<GroupSummary>> {

@@ -136,6 +136,31 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
     let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_chars INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0", []);
 
+    // ── Provider table (v3.1) ──────────────────────────────────────────
+    conn.execute_batch("
+        CREATE TABLE IF NOT EXISTS providers (
+            id              TEXT PRIMARY KEY,
+            name            TEXT NOT NULL,
+            base_url        TEXT NOT NULL,
+            api_key         TEXT NOT NULL DEFAULT '',
+            is_configured   INTEGER NOT NULL DEFAULT 0,
+            is_default      INTEGER NOT NULL DEFAULT 0,
+            created_at      TEXT NOT NULL,
+            updated_at      TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO providers (id, name, base_url, api_key, is_configured, is_default, created_at, updated_at)
+        VALUES
+            ('xiaomi',                  '小米 MIMO',              'https://api.xiaomimimo.com/v1',                '', 0, 1, datetime('now'), datetime('now')),
+            ('xiaomi-token-plan-cn',    '小米 Token 计划(中国)',  'https://token-plan-cn.xiaomimimo.com/v1',      '', 0, 0, datetime('now'), datetime('now')),
+            ('xiaomi-token-plan-ams',   '小米 Token 计划(美西)',  'https://token-plan-ams.xiaomimimo.com/v1',     '', 0, 0, datetime('now'), datetime('now')),
+            ('xiaomi-token-plan-sgp',   '小米 Token 计划(新加坡)','https://token-plan-sgp.xiaomimimo.com/v1',     '', 0, 0, datetime('now'), datetime('now'));
+    ")?;
+
+    // Add provider_id column to existing tables (safe — no-op if already added)
+    let _ = conn.execute("ALTER TABLE tasks ADD COLUMN provider_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE groups ADD COLUMN provider_id TEXT", []);
+
     // Migrate status and type values from capitalized to lowercase (serde rename_all change)
     for table in &["tasks", "chunks", "groups", "batches"] {
         let sql = format!("UPDATE {} SET status = LOWER(status) WHERE status != LOWER(status)", table);

@@ -17,6 +17,7 @@ pub struct CreateTaskRequest {
     pub style: Option<String>,
     #[serde(default = "default_speed")]
     pub speed: f64,
+    pub provider_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +43,7 @@ struct TaskListItem {
     pub model: String,
     pub style: Option<String>,
     pub speed: f64,
+    pub provider_id: Option<String>,
     pub total_chars: i64,
     pub total_tokens: i64,
     pub total_chunks: i32,
@@ -81,6 +83,7 @@ fn to_list_item(task: &crate::domain::task::Task) -> TaskListItem {
         model: task.model.clone(),
         style: task.style.clone(),
         speed: task.speed,
+        provider_id: task.provider_id.clone(),
         total_chars: task.total_chars,
         total_tokens: task.total_tokens,
         total_chunks: task.total_chunks,
@@ -98,8 +101,9 @@ pub fn configure(cfg: &mut actix_web::web::ServiceConfig) {
         web::scope("/api/v2/tasks")
             .route("", web::post().to(create_task))
             .route("", web::get().to(list_tasks))
-            // cancel-all must come before /{id} routes to avoid path conflict
+            // cancel-all and clear must come before /{id} routes to avoid path conflict
             .route("/cancel-all", web::post().to(cancel_all_tasks))
+            .route("/clear", web::delete().to(clear_all_tasks))
             .route("/{id}", web::get().to(get_task))
             .route("/{id}", web::delete().to(delete_task))
             .route("/{id}/enqueue", web::post().to(enqueue_task))
@@ -140,6 +144,7 @@ async fn create_task(
         body.model.clone(),
         body.style.clone(),
         body.speed,
+        body.provider_id.clone(),
     ) {
         Ok(task) => HttpResponse::Created().json(task),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
@@ -396,6 +401,16 @@ async fn cancel_task(
     match state.task_service.cancel(&id) {
         Ok(()) => HttpResponse::Ok().json(serde_json::json!({"cancelled": true})),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    }
+}
+
+/// DELETE /api/v2/tasks/clear — Delete ALL tasks atomically.
+async fn clear_all_tasks(
+    state: web::Data<AppState>,
+) -> impl Responder {
+    match state.task_service.delete_all() {
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
+        Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
 }
 

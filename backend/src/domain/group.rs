@@ -39,6 +39,11 @@ pub struct Group {
     pub batch_id: Id,
     pub status: GroupStatus,
     pub title: String,
+    pub voice: Option<String>,
+    pub model: Option<String>,
+    pub style: Option<String>,
+    pub speed: Option<f64>,
+    pub provider_id: Option<String>,
     pub total_tasks: i32,
     pub done_tasks: i32,
     pub failed_tasks: i32,
@@ -48,13 +53,26 @@ pub struct Group {
 }
 
 impl Group {
-    pub fn new(batch_id: Id, title: String) -> Self {
+    pub fn new(
+        batch_id: Id,
+        title: String,
+        voice: Option<String>,
+        model: Option<String>,
+        style: Option<String>,
+        speed: Option<f64>,
+        provider_id: Option<String>,
+    ) -> Self {
         let now = Utc::now();
         Self {
             id: Id::new(),
             batch_id,
             status: GroupStatus::Pending,
             title,
+            voice,
+            model,
+            style,
+            speed,
+            provider_id,
             total_tasks: 0,
             done_tasks: 0,
             failed_tasks: 0,
@@ -108,7 +126,7 @@ mod tests {
 
     #[test]
     fn test_group_creation() {
-        let group = Group::new(Id::new(), "Test Group".into());
+        let group = Group::new(Id::new(), "Test Group".into(), None, None, None, None, None);
         assert_eq!(group.status, GroupStatus::Pending);
         assert_eq!(group.total_tasks, 0);
     }

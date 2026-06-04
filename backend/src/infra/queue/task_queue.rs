@@ -138,7 +138,7 @@ impl TaskQueue {
 
         let total = chunks.len() as i32;
         self.chunk_repo.insert_batch(&chunks)?;
-        self.task_repo.update_chunk_progress(task_id, total, 0, 0)?;
+        self.task_repo.update_chunk_progress(task_id, total, 0, 0, total_tokens)?;
 
         // NOTE: Do NOT set Processing here — chunks haven't started yet.
         // The ChunkQueue worker will transition the task to Processing
@@ -304,7 +304,7 @@ impl TaskQueue {
         let total = self.chunk_repo.count_by_task_all(task_id)?;
 
         self.task_repo
-            .update_chunk_progress(task_id, total as i32, done as i32, failed as i32)?;
+            .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;
 
         // All chunks resolved (done + failed == total) → trigger merge/complete
         if done + failed == total && total > 0 {
@@ -332,7 +332,7 @@ impl TaskQueue {
         let total = self.chunk_repo.count_by_task_all(task_id)?;
 
         self.task_repo
-            .update_chunk_progress(task_id, total as i32, done as i32, failed as i32)?;
+            .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;
 
         // All chunks resolved (done + failed == total) → trigger merge/complete
         if done + failed == total && total > 0 {
@@ -713,6 +713,7 @@ use crate::shared::id::Id;
     use crate::infra::persistence::db::create_test_pool;
     use crate::infra::persistence::migrate::run_migrations;
     use crate::infra::persistence::task_repo::SqliteTaskRepo;
+    use crate::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
     use crate::infra::cache::Cache;
     use crate::infra::queue::rate_limiter::TokenBucket;
     use crate::infra::queue::chunk_queue::ChunkQueue;
@@ -744,6 +745,11 @@ use crate::shared::id::Id;
         let token_budget = Arc::new(TokenBucket::new(1_000_000));
         let (event_tx, _event_rx) = broadcast::channel(512);
 
+        let provider_repo: Arc<dyn ProviderRepo> =
+            Arc::new(SqliteProviderRepo::new(pool.clone()));
+        // Configure default provider for tests
+        let _ = provider_repo.update_api_key("xiaomi", "test-key");
+
         let chunk_queue = Arc::new(ChunkQueue::new(
             pool.clone(),
             chunk_repo.clone(),
@@ -757,6 +763,7 @@ use crate::shared::id::Id;
             20,
             Duration::from_secs(300),
             cache_dir,
+            provider_repo,
         ));
 
         let chunker = MimoChunker::new(&mock_server.uri(), 2000, 5000);
@@ -833,6 +840,7 @@ use crate::shared::id::Id;
             model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 28,
             total_tokens: 5,
         };
@@ -874,6 +882,7 @@ use crate::shared::id::Id;
             model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 10,
             total_tokens: 5,
         };
@@ -931,6 +940,7 @@ use crate::shared::id::Id;
             model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 4,
             total_tokens: 2,
         };
@@ -1005,6 +1015,7 @@ use crate::shared::id::Id;
             model: crate::constants::DEFAULT_MODEL.into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 4,
             total_tokens: 2,
         };

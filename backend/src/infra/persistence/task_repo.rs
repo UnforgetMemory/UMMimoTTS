@@ -24,10 +24,12 @@ pub trait TaskRepo: Send + Sync {
     fn insert(&self, task: &Task) -> Result<(), AppError>;
     fn find_by_id(&self, id: &str) -> Result<Option<Task>, AppError>;
     fn update_status(&self, id: &str, status: &TaskStatus) -> Result<(), AppError>;
-    fn update_chunk_progress(&self, id: &str, total: i32, done: i32, failed: i32) -> Result<(), AppError>;
+    fn update_chunk_progress(&self, id: &str, total: i32, done: i32, failed: i32, total_tokens: i64) -> Result<(), AppError>;
     fn update_title(&self, id: &str, title: &str) -> Result<(), AppError>;
     fn set_output(&self, id: &str, path: &str, duration: f64) -> Result<(), AppError>;
     fn delete(&self, id: &str) -> Result<(), AppError>;
+    /// Delete ALL tasks and their associated chunks in a single transaction.
+    fn delete_all(&self) -> Result<(), AppError>;
     fn find_by_batch(&self, batch_id: &str) -> Result<Vec<Task>, AppError>;
     fn find_by_group(&self, group_id: &str) -> Result<Vec<Task>, AppError>;
     fn batch_progress(&self, batch_id: &str) -> Result<BatchProgressAggregate, AppError>;
@@ -38,6 +40,15 @@ pub trait TaskRepo: Send + Sync {
     fn find_stale_processing(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
     /// Find tasks stuck in Merging status for more than `stale_minutes`.
     fn find_stale_merging(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
+    /// Find tasks stuck in Pending status for more than `stale_minutes`.
+    /// These tasks were created but never enqueued — candidates for auto-enqueue.
+    fn find_stale_pending(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
+    /// Find tasks in Queued or Chunking status that have zero associated chunks.
+    /// These tasks failed during chunk insertion — candidates for re-enqueue.
+    fn find_stuck_queued(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError>;
+    /// Find tasks in Processing status where all chunks are terminal (Done/Failed)
+    /// but the task status was not updated. Candidates for re-emitting AllChunksDone.
+    fn find_processing_all_done(&self) -> Result<Vec<Task>, AppError>;
 }
 
 pub struct SqliteTaskRepo {
@@ -73,6 +84,7 @@ impl SqliteTaskRepo {
             model: row.get("model")?,
             style: row.get("style")?,
             speed: row.get("speed")?,
+            provider_id: row.get::<_, Option<String>>("provider_id")?,
             total_chars: row.get("total_chars")?,
             total_tokens: row.get("total_tokens")?,
             total_chunks: row.get("total_chunks")?,
@@ -93,10 +105,10 @@ impl TaskRepo for SqliteTaskRepo {
         let conn = self.pool.get()?;
         conn.execute(
             "INSERT INTO tasks (id, task_type, status, group_id, batch_id, content, content_ref,
-             title, voice, model, style, speed, priority, total_chars, total_tokens,
+             title, voice, model, style, speed, provider_id, priority, total_chars, total_tokens,
              total_chunks, done_chunks, failed_chunks, output_path, output_duration,
              created_at, updated_at, completed_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,0,?13,?14,?15,?16,?17,?18,0,?19,?20,?21)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0,?14,?15,?16,?17,?18,?19,0,?20,?21,?22)",
             params![
                 task.id.to_string(),
                 serde_json::to_string(&task.task_type).unwrap(),
@@ -110,6 +122,7 @@ impl TaskRepo for SqliteTaskRepo {
                 task.model,
                 task.style,
                 task.speed,
+                task.provider_id,
                 task.total_chars,
                 task.total_tokens,
                 task.total_chunks,
@@ -146,11 +159,14 @@ impl TaskRepo for SqliteTaskRepo {
         Ok(())
     }
 
-    fn update_chunk_progress(&self, id: &str, total: i32, done: i32, failed: i32) -> Result<(), AppError> {
+    fn update_chunk_progress(&self, id: &str, total: i32, done: i32, failed: i32, total_tokens: i64) -> Result<(), AppError> {
         let conn = self.pool.get()?;
+        // Only set total_tokens when > 0 to avoid resetting an existing value
         conn.execute(
-            "UPDATE tasks SET total_chunks = ?1, done_chunks = ?2, failed_chunks = ?3, updated_at = ?4 WHERE id = ?5",
-            params![total, done, failed, Utc::now().to_rfc3339(), id],
+            "UPDATE tasks SET total_chunks = ?1, done_chunks = ?2, failed_chunks = ?3,
+             total_tokens = CASE WHEN ?4 > 0 THEN ?4 ELSE total_tokens END,
+             updated_at = ?5 WHERE id = ?6",
+            params![total, done, failed, total_tokens, Utc::now().to_rfc3339(), id],
         )?;
         Ok(())
     }
@@ -290,6 +306,67 @@ impl TaskRepo for SqliteTaskRepo {
         Ok(tasks)
     }
 
+    fn find_stale_pending(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let cutoff = Utc::now() - chrono::Duration::minutes(stale_minutes);
+        let cutoff_str = cutoff.to_rfc3339();
+        let pending_status = serde_json::to_string(&TaskStatus::Pending).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT t.* FROM tasks t
+             WHERE t.status = ?1
+               AND t.updated_at < ?2
+             ORDER BY t.updated_at ASC"
+        )?;
+
+        let tasks = stmt
+            .query_map(params![pending_status, cutoff_str], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    fn find_stuck_queued(&self, stale_minutes: i64) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let cutoff = Utc::now() - chrono::Duration::minutes(stale_minutes);
+        let cutoff_str = cutoff.to_rfc3339();
+        let queued_status = serde_json::to_string(&TaskStatus::Queued).unwrap();
+        let chunking_status = serde_json::to_string(&TaskStatus::Chunking).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT t.* FROM tasks t
+             WHERE t.status IN (?1, ?2)
+               AND t.updated_at < ?3
+               AND NOT EXISTS (
+                   SELECT 1 FROM chunks c
+                   WHERE c.task_id = t.id
+               )
+             ORDER BY t.updated_at ASC"
+        )?;
+
+        let tasks = stmt
+            .query_map(params![queued_status, chunking_status, cutoff_str], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
+    fn find_processing_all_done(&self) -> Result<Vec<Task>, AppError> {
+        let conn = self.pool.get()?;
+        let processing_status = serde_json::to_string(&TaskStatus::Processing).unwrap();
+
+        let mut stmt = conn.prepare(
+            "SELECT t.* FROM tasks t
+             WHERE t.status = ?1
+               AND t.total_chunks > 0
+               AND (t.done_chunks + t.failed_chunks) >= t.total_chunks
+             ORDER BY t.updated_at ASC"
+        )?;
+
+        let tasks = stmt
+            .query_map(params![processing_status], Self::row_to_task)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tasks)
+    }
+
     fn update_title(&self, id: &str, title: &str) -> Result<(), AppError> {
         let conn = self.pool.get()?;
         conn.execute(
@@ -305,6 +382,23 @@ impl TaskRepo for SqliteTaskRepo {
         conn.execute("DELETE FROM chunks WHERE task_id = ?1", params![id])?;
         conn.execute("DELETE FROM batch_tasks WHERE child_task_id = ?1", params![id])?;
         conn.execute("DELETE FROM tasks WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn delete_all(&self) -> Result<(), AppError> {
+        let conn = self.pool.get()?;
+        // Use a single transaction to ensure atomicity
+        conn.execute("BEGIN", [])?;
+        if let Err(e) = (|| -> Result<(), AppError> {
+            conn.execute("DELETE FROM chunks", [])?;
+            conn.execute("DELETE FROM batch_tasks", [])?;
+            conn.execute("DELETE FROM tasks", [])?;
+            Ok(())
+        })() {
+            conn.execute("ROLLBACK", [])?;
+            return Err(e);
+        }
+        conn.execute("COMMIT", [])?;
         Ok(())
     }
 }
@@ -327,6 +421,7 @@ mod tests {
             model: "model_1".into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 100,
             total_tokens: 50,
         })
@@ -364,7 +459,7 @@ mod tests {
         let repo = SqliteTaskRepo::new(pool);
         let task = create_test_task();
         repo.insert(&task).unwrap();
-        repo.update_chunk_progress(task.id.as_str(), 5, 3, 1).unwrap();
+        repo.update_chunk_progress(task.id.as_str(), 5, 3, 1, 100).unwrap();
         let found = repo.find_by_id(task.id.as_str()).unwrap().unwrap();
         assert_eq!(found.total_chunks, 5);
         assert_eq!(found.done_chunks, 3);

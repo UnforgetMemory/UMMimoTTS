@@ -12,6 +12,16 @@ use serde::Deserialize;
 pub struct CreateGroupRequest {
     pub batch_id: String,
     pub title: String,
+    #[serde(default)]
+    pub voice: Option<String>,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub style: Option<String>,
+    #[serde(default)]
+    pub speed: Option<f64>,
+    #[serde(default)]
+    pub provider_id: Option<String>,
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -26,10 +36,15 @@ async fn create_group(
     state: web::Data<AppState>,
     body: web::Json<CreateGroupRequest>,
 ) -> impl Responder {
-    match state
-        .group_service
-        .create(&body.batch_id, &body.title)
-    {
+    match state.group_service.create(
+        &body.batch_id,
+        &body.title,
+        body.voice.clone(),
+        body.model.clone(),
+        body.style.clone(),
+        body.speed,
+        body.provider_id.clone(),
+    ) {
         Ok(group) => HttpResponse::Created().json(group),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
     }

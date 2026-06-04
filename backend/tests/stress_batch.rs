@@ -26,6 +26,7 @@ use um_mimo_tts_server::infra::persistence::db::create_test_pool;
 use um_mimo_tts_server::infra::persistence::group_repo::{GroupRepo, SqliteGroupRepo};
 use um_mimo_tts_server::infra::persistence::migrate::run_migrations;
 use um_mimo_tts_server::infra::persistence::task_repo::{SqliteTaskRepo, TaskRepo};
+use um_mimo_tts_server::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
 use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
@@ -128,6 +129,8 @@ async fn stress(n: usize, timeout: Duration) -> Metrics {
     let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
     let batch_repo: Arc<dyn BatchRepo> = Arc::new(SqliteBatchRepo::new(pool.clone()));
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
+    let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
+    let _ = provider_repo.update_api_key("xiaomi", "test-key");
 
     // ── Infrastructure ────────────────────────────────────────────
     let sse_bus = Arc::new(SseBus::new());
@@ -161,6 +164,7 @@ async fn stress(n: usize, timeout: Duration) -> Metrics {
         n.min(200),                // max_active_tasks
         Duration::from_secs(60),
         std::path::PathBuf::from("/tmp/test-cache"),
+        provider_repo.clone(),
     ));
 
     let tq = Arc::new(TaskQueue::new(
@@ -191,6 +195,7 @@ async fn stress(n: usize, timeout: Duration) -> Metrics {
         batch_service: bs,
         task_service: ts,
         group_service: gs,
+        provider_repo,
         sse_bus,
     };
 
@@ -410,6 +415,8 @@ async fn stress_large_text_100k() {
     let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
     let batch_repo: Arc<dyn BatchRepo> = Arc::new(SqliteBatchRepo::new(pool.clone()));
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
+    let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
+    let _ = provider_repo.update_api_key("xiaomi", "test-key");
     let sse_bus = Arc::new(SseBus::new());
     let chunker = MimoChunker::new(&ms.uri(), 2000, 5000);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
@@ -424,6 +431,7 @@ async fn stress_large_text_100k() {
         pool.clone(), chunk_repo.clone(), task_repo.clone(), client, cache,
         rl, tb, tx.clone(), 20, 20, Duration::from_secs(60),
         std::path::PathBuf::from("/tmp/test-cache-lg"),
+        provider_repo.clone(),
     ));
     let tq = Arc::new(TaskQueue::new(
         pool.clone(), task_repo.clone(), chunk_repo.clone(), cq.clone(),
@@ -433,7 +441,7 @@ async fn stress_large_text_100k() {
     let gs = Arc::new(GroupService::new(group_repo.clone()));
     let bs = Arc::new(BatchService::new(batch_repo.clone(), ts.clone(), sse_bus.clone()));
 
-    let state = AppState { batch_service: bs, task_service: ts, group_service: gs, sse_bus };
+    let state = AppState { batch_service: bs, task_service: ts, group_service: gs, provider_repo, sse_bus };
     cq.run_workers();
     let tq2 = tq.clone();
     tokio::spawn(async move { tq2.listen(rx).await; });
@@ -542,6 +550,8 @@ async fn stress_large_text_500k() {
     let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
     let batch_repo: Arc<dyn BatchRepo> = Arc::new(SqliteBatchRepo::new(pool.clone()));
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
+    let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
+    let _ = provider_repo.update_api_key("xiaomi", "test-key");
     let sse_bus = Arc::new(SseBus::new());
     let chunker = MimoChunker::new(&ms.uri(), 2000, 5000);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
@@ -556,6 +566,7 @@ async fn stress_large_text_500k() {
         pool.clone(), chunk_repo.clone(), task_repo.clone(), client, cache,
         rl, tb, tx.clone(), 20, 20, Duration::from_secs(60),
         std::path::PathBuf::from("/tmp/test-cache-xl"),
+        provider_repo.clone(),
     ));
     let tq = Arc::new(TaskQueue::new(
         pool.clone(), task_repo.clone(), chunk_repo.clone(), cq.clone(),
@@ -565,7 +576,7 @@ async fn stress_large_text_500k() {
     let gs = Arc::new(GroupService::new(group_repo.clone()));
     let bs = Arc::new(BatchService::new(batch_repo.clone(), ts.clone(), sse_bus.clone()));
 
-    let state = AppState { batch_service: bs, task_service: ts, group_service: gs, sse_bus };
+    let state = AppState { batch_service: bs, task_service: ts, group_service: gs, provider_repo, sse_bus };
     cq.run_workers();
     let tq2 = tq.clone();
     tokio::spawn(async move { tq2.listen(rx).await; });
@@ -700,6 +711,8 @@ async fn stress_real(n: usize, timeout: Duration) -> Metrics {
     let task_repo: Arc<dyn TaskRepo> = Arc::new(SqliteTaskRepo::new(pool.clone()));
     let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
+    let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
+    let _ = provider_repo.update_api_key("xiaomi", "test-key");
 
     let sse_bus = Arc::new(SseBus::new());
     let chunker = MimoChunker::new(&base_url, 2000, 5000);
@@ -736,6 +749,7 @@ async fn stress_real(n: usize, timeout: Duration) -> Metrics {
         n.min(200),
         Duration::from_secs(60),
         std::path::PathBuf::from("/tmp/ummimo-cache-real"),
+        provider_repo.clone(),
     ));
 
     let tq = Arc::new(TaskQueue::new(
@@ -766,6 +780,7 @@ async fn stress_real(n: usize, timeout: Duration) -> Metrics {
         batch_service: bs,
         task_service: ts,
         group_service: gs,
+        provider_repo,
         sse_bus,
     };
 

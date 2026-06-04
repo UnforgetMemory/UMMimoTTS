@@ -44,6 +44,11 @@ impl SqliteGroupRepo {
                 .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
             status: serde_json::from_str(&row.get::<_, String>("status")?).unwrap(),
             title: row.get::<_, String>("name")?,
+            voice: row.get::<_, Option<String>>("voice")?,
+            model: row.get::<_, Option<String>>("model")?,
+            style: row.get::<_, Option<String>>("style")?,
+            speed: row.get::<_, Option<f64>>("speed")?,
+            provider_id: row.get::<_, Option<String>>("provider_id")?,
             total_tasks: row.get("total_tasks")?,
             done_tasks: row.get("done_tasks")?,
             failed_tasks: row.get("failed_tasks")?,
@@ -61,13 +66,18 @@ impl GroupRepo for SqliteGroupRepo {
         let conn = self.pool.get()?;
         conn.execute(
             "INSERT INTO groups (id, batch_id, name, status, voice, model, style, speed,
-             priority, total_tasks, done_tasks, failed_tasks, created_at, updated_at, completed_at)
-             VALUES (?1,?2,?3,?4,NULL,NULL,NULL,NULL,0,?5,?6,?7,?8,?9,?10)",
+             provider_id, priority, total_tasks, done_tasks, failed_tasks, created_at, updated_at, completed_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0,?10,?11,?12,?13,?14,?15)",
             params![
                 group.id.to_string(),
                 group.batch_id.to_string(),
                 group.title,
                 serde_json::to_string(&group.status).unwrap(),
+                group.voice,
+                group.model,
+                group.style,
+                group.speed,
+                group.provider_id,
                 group.total_tasks,
                 group.done_tasks,
                 group.failed_tasks,
@@ -200,7 +210,7 @@ mod tests {
     use crate::infra::persistence::migrate::run_migrations;
 
     fn create_test_group() -> Group {
-        Group::new(Id::new(), "Test Group".into())
+            Group::new(Id::new(), "Test Group".into(), None, None, None, None, None)
     }
 
     #[test]
@@ -235,7 +245,7 @@ mod tests {
         let repo = SqliteGroupRepo::new(pool);
         let batch_id = Id::new();
         for i in 0..3 {
-            let group = Group::new(batch_id.clone(), format!("Group {}", i));
+            let group = Group::new(batch_id.clone(), format!("Group {}", i), None, None, None, None, None);
             repo.insert(&group).unwrap();
         }
         let groups = repo.find_by_batch(batch_id.as_str()).unwrap();

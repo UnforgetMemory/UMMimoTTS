@@ -92,6 +92,7 @@ impl TaskService {
         model: String,
         style: Option<String>,
         speed: f64,
+        provider_id: Option<String>,
     ) -> Result<Task, AppError> {
         let task = Task::new(CreateTaskRequest {
             task_type: TaskType::Single,
@@ -103,6 +104,7 @@ impl TaskService {
             model,
             style,
             speed,
+            provider_id,
             total_chars: 0,
             total_tokens: 0,
         });
@@ -168,7 +170,7 @@ impl TaskService {
         // Reset to Pending so enqueue() accepts it
         self.task_repo.update_status(task_id, &crate::domain::task::TaskStatus::Pending)?;
         // Reset chunk progress
-        self.task_repo.update_chunk_progress(task_id, 0, 0, 0)?;
+        self.task_repo.update_chunk_progress(task_id, 0, 0, 0, 0)?;
         // Delete old chunks so re-enqueue can create fresh ones
         let _ = self.chunk_repo.delete_by_task(task_id)?;
 
@@ -183,6 +185,11 @@ impl TaskService {
     /// Delete a task by ID.
     pub fn delete(&self, id: &str) -> Result<(), AppError> {
         self.task_repo.delete(id)
+    }
+
+    /// Delete ALL tasks atomically.
+    pub fn delete_all(&self) -> Result<(), AppError> {
+        self.task_repo.delete_all()
     }
 
     /// Update task title.

@@ -158,6 +158,12 @@ html {
   }
 }
 
+@media (min-width: 2560px) {
+  html {
+    font-size: 18px;
+  }
+}
+
 /* 主题切换过渡动画 - 仅应用于需要过渡的元素 */
 button, a, [role="button"], .card, .badge, input, textarea, select {
   transition-property: color, background-color, border-color, box-shadow;

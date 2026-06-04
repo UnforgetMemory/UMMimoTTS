@@ -144,7 +144,7 @@ export const useTaskStore = defineStore('task', () => {
 
   async function searchTasks(query: string) {
     activeSearch.value = query
-    activeStatus.value = undefined
+    // Don't clear activeStatus — allow search + status filter to coexist
     await loadPage(0)
   }
 
@@ -178,6 +178,7 @@ export const useTaskStore = defineStore('task', () => {
     context?: string
     task_name?: string
     api_key?: string
+    provider_id?: string
   }) {
     loading.value = true
     error.value = null
@@ -188,6 +189,7 @@ export const useTaskStore = defineStore('task', () => {
         model: request.model,
         title: request.task_name || `Synthesized ${new Date().toLocaleString('zh-CN')}`,
         style: request.context || undefined,
+        provider_id: request.provider_id || undefined,
       })
       await apiV2.enqueueTask(task.id)
       // Use lightweight page reload instead of full loadTasks
@@ -244,26 +246,23 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   /**
-   * 一键清空所有任务（逐个调用 DELETE）
+   * 一键清空所有任务（原子删除，单次 API 调用）
    */
   async function clearAll() {
     error.value = null
+    if (taskMap.value.size === 0) return
     try {
-      const ids = Array.from(taskMap.value.keys())
-      for (const id of ids) {
-        await api.deleteTask(id)
-      }
-      // 关闭所有 SSE 连接
-      eventSources.forEach(es => { es.close() })
-      eventSources.clear()
-      // 清空本地状态
-      taskMap.value = new Map()
-      taskDetailCache.clear()
-    } catch (err: any) {
-      error.value = err.message || '清空全部任务失败'
-      console.error('Failed to clear all tasks:', err)
-      throw err
+      await api.clearAllTasks()
+    } catch (e: any) {
+      console.error('Clear all tasks failed:', e)
+      // 即使后端删除失败，也清理本地状态。用户刷新后会重新同步
     }
+    // 关闭所有 SSE 连接
+    eventSources.forEach(es => { es.close() })
+    eventSources.clear()
+    // 清空本地状态
+    taskMap.value = new Map()
+    taskDetailCache.clear()
   }
 
   // ── SSE subscription ──────────────────────────────────────────
@@ -288,7 +287,7 @@ export const useTaskStore = defineStore('task', () => {
         reconnectAttempt = 0 // 成功收到消息，重置重试计数
 
         if (eventType === 'TaskCompleted') {
-          updateTaskInMap(taskId, { status: 'done', progress: 1.0 })
+          updateTaskInMap(taskId, { status: 'done', progress: 1.0, has_audio: true })
           eventSources.delete(taskId)
           eventSource.close()
           loadPage(0)
@@ -298,11 +297,17 @@ export const useTaskStore = defineStore('task', () => {
           eventSource.close()
           loadPage(0)
         } else if (eventType === 'AllChunksDone') {
-          updateTaskInMap(taskId, { status: 'merging', progress: 1.0 })
+          updateTaskInMap(taskId, {
+            status: 'merging',
+            progress: 1.0,
+            total_chunks: data.total_chunks,
+            current_chunk: data.total_chunks,
+          })
         } else if (eventType === 'ChunkCompleted') {
+          // Don't use data.seq for progress — chunks complete out of order in parallel.
+          // Correct done/total counts come from periodic doRefresh.
           updateTaskInMap(taskId, {
             status: 'processing',
-            progress: data.seq / (data.total_chunks || 10),
           })
         } else if (eventType === 'TaskEnqueued') {
           updateTaskInMap(taskId, { status: 'queued', progress: 0 })
@@ -450,6 +455,7 @@ export const useTaskStore = defineStore('task', () => {
 
     // SSE
     updateTaskInMap,
+    subscribeToTaskEvents,
     init,
     cleanup,
     resetStore,

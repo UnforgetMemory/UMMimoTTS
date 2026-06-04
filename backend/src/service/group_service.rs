@@ -22,9 +22,18 @@ impl GroupService {
     }
 
     /// Create a new group under the given batch.
-    pub fn create(&self, batch_id: &str, title: &str) -> Result<Group, AppError> {
+    pub fn create(
+        &self,
+        batch_id: &str,
+        title: &str,
+        voice: Option<String>,
+        model: Option<String>,
+        style: Option<String>,
+        speed: Option<f64>,
+        provider_id: Option<String>,
+    ) -> Result<Group, AppError> {
         let id = Id::from_str(batch_id)?;
-        let group = Group::new(id, title.to_string());
+        let group = Group::new(id, title.to_string(), voice, model, style, speed, provider_id);
         self.group_repo.insert(&group)?;
         Ok(group)
     }

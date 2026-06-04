@@ -19,6 +19,7 @@ use um_mimo_tts_server::infra::persistence::batch_repo::BatchRepo;
 use um_mimo_tts_server::infra::persistence::chunk_repo::ChunkRepo;
 use um_mimo_tts_server::infra::persistence::task_repo::TaskRepo;
 use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
+use um_mimo_tts_server::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
 use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
@@ -49,6 +50,9 @@ macro_rules! build_app {
             Arc::new(SqliteBatchRepo::new(pool.clone()));
         let group_repo: Arc<dyn GroupRepo> =
             Arc::new(SqliteGroupRepo::new(pool.clone()));
+        let provider_repo: Arc<dyn ProviderRepo> =
+            Arc::new(SqliteProviderRepo::new(pool.clone()));
+        let _ = provider_repo.update_api_key("xiaomi", "test-key");
 
         let sse_bus = Arc::new(SseBus::new());
 
@@ -81,6 +85,7 @@ macro_rules! build_app {
             20,
             Duration::from_secs(30),
             std::path::PathBuf::from("/tmp/test-cache"),
+            provider_repo.clone(),
         ));
 
         let task_queue = Arc::new(TaskQueue::new(
@@ -107,6 +112,7 @@ macro_rules! build_app {
             batch_service,
             task_service,
             group_service,
+            provider_repo,
             sse_bus,
         };
 

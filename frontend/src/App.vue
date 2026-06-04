@@ -70,7 +70,7 @@
               :groups="batchStore.groups"
               :selected-group-id="selectedGroupId"
               :loading="batchStore.loading"
-              @select="selectedGroupId = $event"
+              @select="router.push(`/groups/${$event}`)"
               @pause="handlePauseGroup"
               @resume="handleResumeGroup"
               @retry="handleRetryGroup"
@@ -92,27 +92,13 @@
         />
       </Transition>
 
-      <!-- Center content area -->
-      <main class="flex-1 flex flex-col items-center justify-start px-4 py-6 sm:py-10 overflow-y-auto scrollbar-auto">
-        <!-- Selected group detail or synthesize form -->
-        <template v-if="selectedGroup">
-          <div class="w-full h-full">
-            <GroupDetailPanel
-              :group="selectedGroup"
-              :downloading="batchStore.downloadingGroupId === selectedGroup.id"
-              @close="selectedGroupId = null"
-              @pause="handlePauseGroup"
-              @resume="handleResumeGroup"
-              @retry="handleRetryGroup"
-              @download="handleDownloadGroup"
-              @play="handleOpenPlayer"
-              @view-text="handleOpenTextViewer"
-            />
-          </div>
-        </template>
-        <div v-else class="w-full max-w-4xl mt-6 sm:mt-10">
-          <SynthesizeForm ref="synthesizeFormRef" @submitted="showTaskSidebar = true" />
-        </div>
+      <!-- Center content area with router -->
+      <main class="flex-1 flex flex-col items-center justify-start px-4 pt-20 sm:pt-24 pb-6 sm:pb-10 overflow-y-auto scrollbar-auto">
+        <router-view v-slot="{ Component: RouteComponent }">
+          <Transition name="page-slide" mode="out-in">
+            <component :is="RouteComponent" />
+          </Transition>
+        </router-view>
         
         <!-- Footer -->
         <FooterInfo />
@@ -120,78 +106,7 @@
     </div>
 
     <!-- Floating toolbar -->
-    <FloatingToolbar 
-      :show-batch-sidebar="!sidebarCollapsed"
-      :show-task-sidebar="showTaskSidebar"
-      @open-config="showConfigDialog = true"
-      @toggle-batch="sidebarCollapsed = !sidebarCollapsed"
-      @toggle-tasks="showTaskSidebar = !showTaskSidebar"
-      class="z-50"
-    />
-
-    <!-- Right task list panel -->
-    <Transition name="slide-in-right">
-      <aside 
-        ref="sidebarRef"
-        v-if="showTaskSidebar" 
-        class="fixed right-0 top-0 h-full bg-background text-foreground border-l shadow-lg z-50 flex flex-col
-               w-full xs:w-80 sm:w-96 md:w-[28rem] lg:w-[30rem]"
-        role="complementary"
-        aria-label="任务列表面板"
-        aria-modal="true"
-        tabindex="-1"
-      >
-        <div class="px-4 sm:px-5 py-3.5 border-b shrink-0 flex items-center justify-between">
-          <div class="min-w-0 flex-1">
-            <h2 class="text-base sm:text-lg font-semibold tracking-tight text-foreground">任务列表</h2>
-            <p class="text-xs text-muted-foreground/70 mt-0.5">查看和管理合成任务</p>
-          </div>
-          <Button 
-            variant="ghost" 
-            size="sm" 
-            class="h-7 w-7 sm:h-8 sm:w-8 p-0 shrink-0 ml-2 text-muted-foreground hover:text-foreground"
-            @click="showTaskSidebar = false"
-          >
-            <XIcon class="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          </Button>
-        </div>
-        
-        <!-- Task count + clear all -->
-        <div class="flex items-center justify-between px-4 sm:px-5 py-2 border-b bg-muted/10">
-          <span class="text-xs font-medium text-muted-foreground">
-            {{ taskStore.standaloneTasks.length }} 个任务
-          </span>
-          <Button
-            v-if="taskStore.standaloneTasks.length > 0"
-            variant="ghost"
-            size="sm"
-            class="h-7 text-xs text-muted-foreground hover:text-destructive px-2 -mr-1"
-            @click="handleClearAllTasks"
-          >
-            <Trash2Icon class="w-3.5 h-3.5 mr-1" />
-            一键清空
-          </Button>
-        </div>
-        
-        <div class="flex-1 overflow-hidden">
-          <TaskListSidebar
-            class="h-full"
-            @open-player="handleOpenPlayer"
-            @reuse-config="handleReuseConfig"
-            @open-text-viewer="handleOpenTextViewer"
-          />
-        </div>
-      </aside>
-    </Transition>
-
-    <Transition name="fade">
-      <div 
-        v-if="showTaskSidebar"
-        class="fixed inset-0 bg-black/15 z-40"
-        @click="showTaskSidebar = false"
-        aria-hidden="true"
-      ></div>
-    </Transition>
+    <FloatingToolbar class="z-50" />
 
     <!-- Mobile batch sidebar -->
     <Transition name="slide-in-left">
@@ -224,7 +139,7 @@
             :key="group.id"
             :group="group"
             :selected="selectedGroupId === group.id"
-            @select="selectedGroupId = $event; showMobileBatchSidebar = false"
+            @select="showMobileBatchSidebar = false; router.push(`/groups/${$event}`)"
             @pause="handlePauseGroup"
             @resume="handleResumeGroup"
             @retry="handleRetryGroup"
@@ -244,19 +159,6 @@
       ></div>
     </Transition>
 
-    <ApiConfigDialog v-model:open="showConfigDialog" />
-    
-    <AudioPlayerDialog
-      v-model:open="showAudioPlayer"
-      :task-id="currentAudioTaskId"
-      :original-text="getCurrentTaskText()"
-    />
-
-    <TextViewerDialog
-      v-model:open="showTextDialog"
-      :task="currentTextTask"
-    />
-
     <BatchImportWizard
       v-model:open="showBatchWizard"
       @imported="handleBatchImported"
@@ -267,24 +169,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { useTaskStore } from '@/stores/task'
 import { useBatchStore } from '@/stores/batch'
 import { useConfigStore } from '@/stores/config'
-import type { Task, TaskSummary } from '@/api/client'
 import { toast } from 'vue-sonner'
 import BrandHero from './components/BrandHero.vue'
 import FloatingToolbar from './components/FloatingToolbar.vue'
 import FooterInfo from './components/FooterInfo.vue'
-import TaskListSidebar from './components/TaskListSidebar.vue'
-import SynthesizeForm from './components/SynthesizeForm.vue'
-import ApiConfigDialog from './components/ApiConfigDialog.vue'
-import AudioPlayerDialog from './components/AudioPlayerDialog.vue'
-import TextViewerDialog from './components/TextViewerDialog.vue'
 import BatchImportWizard from './components/BatchImportWizard.vue'
 import GroupKanban from './components/GroupKanban.vue'
 import GroupCard from './components/GroupCard.vue'
-import GroupDetailPanel from './components/GroupDetailPanel.vue'
 import { Toaster } from '@/components/ui/sonner'
 import { Button } from '@/components/ui/button'
 import { 
@@ -293,84 +189,24 @@ import {
   Trash2 as Trash2Icon,
 } from 'lucide-vue-next'
 
+const router = useRouter()
+const route = useRoute()
 const taskStore = useTaskStore()
 const batchStore = useBatchStore()
 const configStore = useConfigStore()
-const showConfigDialog = ref(false)
-const showTaskSidebar = ref(false)
 const showBatchWizard = ref(false)
 const showMobileBatchSidebar = ref(false)
 const sidebarCollapsed = ref(true)  // 默认折叠
-const sidebarRef = ref<HTMLElement | null>(null)
-const showAudioPlayer = ref(false)
-const currentAudioTaskId = ref<string | null>(null)
-const currentAudioTaskText = ref('')
-const showTextDialog = ref(false)
-const currentTextTask = ref<Task | null>(null)
-const synthesizeFormRef = ref<InstanceType<typeof SynthesizeForm> | null>(null)
-const selectedGroupId = ref<string | null>(null)
+const selectedGroupId = computed(() => route.name === 'group-detail' ? (route.params.id as string) : null)
 
-const selectedGroup = computed(() => {
-  if (!selectedGroupId.value) return null
-  return batchStore.groups.find(g => g.id === selectedGroupId.value) || null
-})
+// Provide batch wizard opener for child components
+provide('openBatchWizard', () => { showBatchWizard.value = true })
 
 // Keyboard event - ESC to close sidebars
 function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') {
-    if (showTaskSidebar.value) {
-      showTaskSidebar.value = false
-    } else if (!sidebarCollapsed.value) {
-      sidebarCollapsed.value = true
-    }
+  if (event.key === 'Escape' && !sidebarCollapsed.value) {
+    sidebarCollapsed.value = true
   }
-}
-
-watch(showTaskSidebar, async (newValue) => {
-  if (newValue) {
-    await nextTick()
-    sidebarRef.value?.focus()
-  }
-})
-
-// Audio player handlers
-async function handleOpenPlayer(task: Task | TaskSummary) {
-  currentAudioTaskId.value = task.id
-  if ('text' in (task as Task) && typeof (task as Task).text === 'string') {
-    currentAudioTaskText.value = (task as Task).text || ''
-  } else {
-    try {
-      const full = await taskStore.getTaskDetail(task.id)
-      currentAudioTaskText.value = full.text || ''
-    } catch {
-      currentAudioTaskText.value = ''
-    }
-  }
-  showAudioPlayer.value = true
-}
-
-function handleReuseConfig(config: { text: string; voice: string | null; model: string; context?: string }) {
-  synthesizeFormRef.value?.setConfig(config)
-  showTaskSidebar.value = false
-}
-
-async function handleOpenTextViewer(task: Task | TaskSummary) {
-  if ('text' in (task as Task) && typeof (task as Task).text === 'string') {
-    currentTextTask.value = task as Task
-  } else {
-    try {
-      const full = await taskStore.getTaskDetail(task.id)
-      currentTextTask.value = full
-    } catch {
-      currentTextTask.value = null
-      return
-    }
-  }
-  showTextDialog.value = true
-}
-
-function getCurrentTaskText(): string {
-  return currentAudioTaskText.value
 }
 
 // Batch group handlers
@@ -406,7 +242,7 @@ async function handleDeleteGroup(groupId: string) {
   try {
     await batchStore.removeGroup(groupId)
     if (selectedGroupId.value === groupId) {
-      selectedGroupId.value = null
+      router.push('/tasks/single')
     }
     toast.success('分组已删除')
   } catch (error) {
@@ -428,19 +264,8 @@ async function handleClearAll() {
   if (!confirm(`确定要清空全部 ${count} 个分组吗？此操作不可恢复。`)) return
   try {
     await batchStore.clearAll()
-    selectedGroupId.value = null
+    router.push('/tasks/single')
     toast.success('已清空全部分组')
-  } catch (error) {
-    toast.error('清空失败')
-  }
-}
-
-async function handleClearAllTasks() {
-  const count = taskStore.standaloneTasks.length
-  if (!confirm(`确定要清空全部 ${count} 个任务吗？此操作不可恢复。`)) return
-  try {
-    await taskStore.clearAll()
-    toast.success('已清空全部任务')
   } catch (error) {
     toast.error('清空失败')
   }
@@ -456,12 +281,12 @@ async function handleDownloadGroup(groupId: string) {
 }
 
 async function handleBatchImported(groupId: string) {
-  selectedGroupId.value = groupId
   showBatchWizard.value = false
   await Promise.all([
     batchStore.loadGroups(),
     taskStore.loadTasks(),
   ])
+  router.push(`/groups/${groupId}`)
 }
 
 // Lifecycle
@@ -503,5 +328,18 @@ onUnmounted(() => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+.page-slide-enter-active,
+.page-slide-leave-active {
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.page-slide-enter-from {
+  opacity: 0;
+  transform: translateX(24px);
+}
+.page-slide-leave-to {
+  opacity: 0;
+  transform: translateX(-24px);
 }
 </style>

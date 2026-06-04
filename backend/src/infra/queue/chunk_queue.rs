@@ -17,6 +17,7 @@ use crate::infra::mimo::client::MimoClient;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
 use crate::infra::persistence::db::DbPool;
 use crate::infra::persistence::task_repo::TaskRepo;
+use crate::infra::persistence::provider_repo::ProviderRepo;
 use crate::infra::queue::rate_limiter::TokenBucket;
 use crate::shared::error::AppError;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -56,6 +57,8 @@ pub struct ChunkQueue {
     task_semaphore: Arc<Semaphore>,
     /// Maximum number of tasks that can be actively processing at once.
     max_active_tasks: usize,
+    /// Provider repo for resolving MIMO API credentials per chunk.
+    provider_repo: Arc<dyn ProviderRepo>,
 }
 
 /// Maximum consecutive failures before pausing all chunk processing.
@@ -76,6 +79,7 @@ impl ChunkQueue {
         max_active_tasks: usize,
         max_task_wait: Duration,
         cache_dir: std::path::PathBuf,
+        provider_repo: Arc<dyn ProviderRepo>,
     ) -> Self {
         Self {
             pool,
@@ -98,6 +102,7 @@ impl ChunkQueue {
             active_tasks: Arc::new(Mutex::new(HashSet::new())),
             task_semaphore: Arc::new(Semaphore::new(max_active_tasks)),
             max_active_tasks,
+            provider_repo,
         }
     }
 
@@ -130,6 +135,9 @@ impl ChunkQueue {
             let rate_limited = self.rate_limited.clone();
             let active_tasks = self.active_tasks.clone();
             let task_semaphore = self.task_semaphore.clone();
+            let provider_repo = self.provider_repo.clone();
+
+            let max_task_wait = self.max_task_wait;
 
             tokio::spawn(async move {
                 worker_loop(
@@ -150,6 +158,8 @@ impl ChunkQueue {
                     rate_limited,
                     active_tasks,
                     task_semaphore,
+                    provider_repo,
+                    max_task_wait,
                 )
                 .await;
             });
@@ -184,6 +194,8 @@ async fn worker_loop(
     rate_limited: Arc<AtomicBool>,
     active_tasks: Arc<Mutex<HashSet<String>>>,
     task_semaphore: Arc<Semaphore>,
+    provider_repo: Arc<dyn ProviderRepo>,
+    max_task_wait: Duration,
 ) {
     info!("ChunkQueue worker {worker_id} started");
 
@@ -230,9 +242,7 @@ async fn worker_loop(
             }
         };
 
-        // ── Step 2: Acquire resources ONLY after discovering work ──
-        // Wait for rate limiter token (sleeps internally, no deadlock)
-        rate_limiter.acquire().await;
+        // ── Step 2: Validate and reserve resources BEFORE acquiring rate limiter ──
 
         // Acquire chunk-level concurrency permit
         let _permit = match semaphore.acquire().await {
@@ -243,7 +253,7 @@ async fn worker_loop(
         let chunk_id = chunk.id.to_string();
         let task_id_str = chunk.task_id.to_string();
 
-        // ── Check parent task status before processing ──
+        // ── Check parent task status before consuming rate limiter token ──
         match task_repo.find_by_id(&task_id_str) {
             Ok(Some(task)) => {
                 if matches!(task.status, TaskStatus::Cancelled | TaskStatus::Paused | TaskStatus::Failed | TaskStatus::Done) {
@@ -294,28 +304,38 @@ async fn worker_loop(
             info!("worker {worker_id}: new task {task_id_str} acquired task slot (active tasks tracked)");
 
             // Spawn a background task that releases the permit when all chunks for this task are done.
+            // Includes a max_task_wait timeout to prevent stuck tasks from blocking the queue.
             let active_tasks_release = active_tasks.clone();
             let chunk_repo_release = chunk_repo.clone();
             let task_id_release = task_id_str.clone();
             let notify_release = notify.clone();
             tokio::spawn(async move {
+                let deadline = tokio::time::Instant::now() + max_task_wait;
                 // Wait until no pending/processing chunks remain for this task.
-                // Poll every 2 seconds.
+                // Poll every 2 seconds, with an upper bound of max_task_wait.
                 loop {
-                    tokio::time::sleep(Duration::from_secs(2)).await;
-                    let has_more = chunk_repo_release
-                        .count_by_task_status(&task_id_release, &ChunkStatus::Pending)
-                        .unwrap_or(0)
-                        > 0
-                        || chunk_repo_release
-                            .count_by_task_status(&task_id_release, &ChunkStatus::Processing)
-                            .unwrap_or(0)
-                            > 0;
-                    if !has_more {
-                        break;
+                    let poll = tokio::time::sleep(Duration::from_secs(2));
+                    tokio::select! {
+                        _ = tokio::time::sleep_until(deadline) => {
+                            warn!("task {task_id_release} max_task_wait ({max_task_wait:?}) expired — releasing permit early");
+                            break;
+                        }
+                        _ = poll => {
+                            let has_more = chunk_repo_release
+                                .count_by_task_status(&task_id_release, &ChunkStatus::Pending)
+                                .unwrap_or(0)
+                                > 0
+                                || chunk_repo_release
+                                    .count_by_task_status(&task_id_release, &ChunkStatus::Processing)
+                                    .unwrap_or(0)
+                                    > 0;
+                            if !has_more {
+                                break;
+                            }
+                        }
                     }
                 }
-                // All chunks done — remove from active set and release permit.
+                // All chunks done (or timeout) — remove from active set and release permit.
                 {
                     let mut active = active_tasks_release.lock().await;
                     active.remove(&task_id_release);
@@ -326,13 +346,18 @@ async fn worker_loop(
             });
         }
 
+        // ── Acquire rate limiter token AFTER validation passed ──
+        // This prevents wasting tokens on chunks that would be skipped.
+        rate_limiter.acquire().await;
+
         info!("worker {worker_id} picked chunk {chunk_id}");
 
         // Estimate token budget for this chunk (rough: 1 token ≈ 2 chars for Chinese text)
         let estimated_tokens = (chunk.text.len() as u64 / 2).max(1);
         if !token_budget.try_acquire_n(estimated_tokens) {
             warn!("worker {worker_id}: token budget exhausted, waiting for refill (need {estimated_tokens} tokens)");
-            // Release semaphore permit before waiting
+            // Release semaphore permit and rate limiter token before waiting
+            rate_limiter.release(1);
             drop(_permit);
             notify.notified().await;
             continue;
@@ -341,6 +366,7 @@ async fn worker_loop(
         // Mark chunk Processing
         if let Err(e) = chunk_repo.update_status(&chunk_id, &ChunkStatus::Processing) {
             error!("worker {worker_id}: mark_processing({chunk_id}) failed: {e}");
+            rate_limiter.release(1);
             drop(_permit);
             continue;
         }
@@ -368,6 +394,7 @@ async fn worker_loop(
         let cache_c = cache.clone();
         let tx_c = event_tx.clone();
         let dir_c = cache_dir.clone();
+        let provider_repo_c = provider_repo.clone();
         let chunk_id = chunk.id.to_string();
         let task_id = chunk.task_id.to_string();
         let seq = chunk.seq;
@@ -388,6 +415,7 @@ async fn worker_loop(
                     task_repo_c.as_ref(),
                     cache_c.as_ref(),
                     &tx_c,
+                    provider_repo_c.as_ref(),
                     &chunk_id,
                     &task_id,
                     seq,
@@ -464,6 +492,7 @@ async fn process_chunk(
     task_repo: &dyn TaskRepo,
     cache: &Cache,
     event_tx: &broadcast::Sender<DomainEvent>,
+    provider_repo: &dyn ProviderRepo,
     chunk_id: &str,
     task_id: &str,
     seq: i32,
@@ -485,13 +514,30 @@ async fn process_chunk(
         return Ok(());
     }
 
-    // 2. Look up task to get voice and model
+    // 2. Look up task to get voice, model, and provider
     let task = task_repo
         .find_by_id(task_id)?
         .ok_or_else(|| AppError::NotFound(format!("task {task_id} not found")))?;
 
-    // 3. Call MIMO API
-    let audio_bytes = client.synthesize(text, &task.voice, &task.model, task.speed).await?;
+    // 3. Resolve provider (task-level → group-level → default)
+    let provider = if let Some(ref pid) = task.provider_id {
+        provider_repo.find_by_id(pid)?
+    } else {
+        provider_repo.find_default()?
+    };
+    let provider = provider.ok_or_else(|| AppError::Internal("No configured MIMO provider found".into()))?;
+    if !provider.is_configured {
+        return Err(AppError::Internal(format!(
+            "Provider '{}' is not configured (no API key). Go to Settings to set it up.",
+            provider.name
+        )));
+    }
+
+    // 4. Call MIMO API
+    let audio_bytes = client.synthesize(
+        text, &task.voice, &task.model, task.speed,
+        &provider.api_key, &provider.base_url,
+    ).await?;
 
     // 3. Write to disk
     let file_name = format!("chunk_{task_id}_{seq}.wav");
@@ -531,6 +577,7 @@ mod tests {
     use crate::infra::persistence::db::create_test_pool;
     use crate::infra::persistence::migrate::run_migrations;
     use crate::infra::persistence::task_repo::SqliteTaskRepo;
+    use crate::infra::persistence::provider_repo::SqliteProviderRepo;
     use std::path::PathBuf;
     use std::time::Duration;
 
@@ -539,6 +586,8 @@ mod tests {
         run_migrations(&pool.get().unwrap()).unwrap();
         let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
         let task_repo: Arc<dyn TaskRepo> = Arc::new(SqliteTaskRepo::new(pool.clone()));
+        let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
+        let _ = provider_repo.update_api_key("xiaomi", "test-key");
         let client = Arc::new(MimoClient::new("test-key", "http://localhost:30231"));
         let cache = Arc::new(Cache::new(
             PathBuf::from("data/test_cache"),
@@ -563,6 +612,7 @@ mod tests {
             20,
             Duration::from_millis(100),
             cache_dir,
+            provider_repo,
         );
         (pool, chunk_repo, queue)
     }

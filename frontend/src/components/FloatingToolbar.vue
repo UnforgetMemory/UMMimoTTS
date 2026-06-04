@@ -4,38 +4,39 @@
     role="toolbar"
     aria-label="快捷操作工具栏"
   >
-    <!-- 批量任务列表按钮（最左边） -->
-    <Button 
-      variant="ghost" 
-      size="sm"
-      class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
-      :class="{ 'bg-black/15 dark:bg-white/30': showBatchSidebar }"
-      @click="$emit('toggle-batch')"
-      aria-label="批量任务列表"
-    >
-      <LayersIcon class="w-5 h-5" />
-      <span class="text-xs ml-1.5 hidden sm:inline">任务</span>
-    </Button>
-
-    <!-- 分隔线 -->
-    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
+    <!-- 导航标签页 -->
+    <template v-for="(tab, idx) in tabs" :key="tab.route">
+      <Button 
+        variant="ghost" 
+        size="sm"
+        class="w-auto h-10 px-3 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
+        :class="{ 'bg-black/15 dark:bg-white/30': isActive(tab.route) }"
+        @click="navigateTo(tab.route)"
+        :aria-label="tab.label"
+      >
+        <component :is="tab.icon" class="w-5 h-5" />
+        <span class="text-xs ml-1.5 hidden sm:inline">{{ tab.label }}</span>
+      </Button>
+      <div v-if="idx < tabs.length - 1" class="w-px h-6 bg-black/15 dark:bg-white/30" />
+    </template>
 
     <!-- API 配置按钮 -->
+    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
+
     <Button 
       variant="ghost" 
       size="sm"
       class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
-      @click="$emit('open-config')"
+      @click="router.push('/config')"
       aria-label="API 配置"
     >
       <KeyIcon class="w-5 h-5" />
       <span class="text-xs ml-1.5 hidden sm:inline">配置</span>
     </Button>
 
-    <!-- 分隔线 -->
+    <!-- 主题切换下拉 -->
     <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
 
-    <!-- 主题切换下拉 -->
     <DropdownMenu>
       <DropdownMenuTrigger as-child>
         <Button 
@@ -67,26 +68,11 @@
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-
-    <!-- 分隔线 -->
-    <div class="w-px h-6 bg-black/15 dark:bg-white/30" />
-
-    <!-- 单任务列表按钮（最右边） -->
-    <Button 
-      variant="ghost" 
-      size="sm"
-      class="w-auto h-10 px-2.5 rounded-full text-gray-800 dark:text-white hover:bg-black/10 dark:hover:bg-white/20 transition-all"
-      :class="{ 'bg-black/15 dark:bg-white/30': showTaskSidebar }"
-      @click="$emit('toggle-tasks')"
-      aria-label="单任务列表"
-    >
-      <ListIcon class="w-5 h-5" />
-      <span class="text-xs ml-1.5 hidden sm:inline">单任务</span>
-    </Button>
   </div>
 </template>
 
 <script setup lang="ts">
+import { useRouter, useRoute } from 'vue-router'
 import { useThemeStore } from '@/stores/theme'
 import { Button } from '@/components/ui/button'
 import {
@@ -98,25 +84,42 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { 
   Key as KeyIcon, 
-  Layers as LayersIcon,
-  List as ListIcon,
   Moon as MoonIcon,
   Sun as SunIcon,
   Monitor as MonitorIcon,
+  PenSquare as PenSquareIcon,
+  List as ListIcon,
+  Layers as LayersIcon,
 } from 'lucide-vue-next'
+import { type Component } from 'vue'
 
-defineProps<{
-  showBatchSidebar?: boolean
-  showTaskSidebar?: boolean
-}>()
+interface Tab {
+  label: string
+  route: string
+  icon: Component
+}
 
-defineEmits<{
-  'open-config': []
-  'toggle-batch': []
-  'toggle-tasks': []
-}>()
+const tabs: Tab[] = [
+  { label: '合成', route: '/synthesize', icon: PenSquareIcon },
+  { label: '单任务', route: '/tasks/single', icon: ListIcon },
+  { label: '批量', route: '/tasks/batch', icon: LayersIcon },
+]
 
+
+const router = useRouter()
+const route = useRoute()
 const themeStore = useThemeStore()
+
+function isActive(tabRoute: string): boolean {
+  if (tabRoute === '/synthesize') {
+    return route.path === '/synthesize'
+  }
+  return route.path.startsWith(tabRoute)
+}
+
+function navigateTo(path: string) {
+  router.push(path)
+}
 </script>
 
 <style scoped>

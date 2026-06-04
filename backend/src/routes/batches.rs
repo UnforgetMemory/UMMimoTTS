@@ -93,7 +93,15 @@ async fn create_batch(
     ) {
         Ok(batch) => {
             // Also create a group record so listGroups can find it
-            let _ = state.group_service.create(&batch.id.to_string(), &batch.title);
+            let _ = state.group_service.create(
+                &batch.id.to_string(),
+                &batch.title,
+                Some(batch.voice.clone()),
+                Some(batch.model.clone()),
+                batch.style.clone(),
+                Some(batch.speed),
+                None, // provider_id — Batch doesn't have a provider field yet
+            );
             HttpResponse::Ok().json(batch)
         },
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),

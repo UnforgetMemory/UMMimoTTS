@@ -125,6 +125,27 @@ impl TokenBucket {
         }
     }
 
+    /// Return `n` tokens to the bucket (refund on skip/error paths).
+    /// Capped at capacity to prevent overfilling.
+    pub fn release(&self, n: u64) {
+        if n == 0 {
+            return;
+        }
+        let mut current = self.tokens.load(Ordering::Relaxed);
+        loop {
+            let new_val = std::cmp::min(current + n, self.capacity);
+            match self.tokens.compare_exchange_weak(
+                current,
+                new_val,
+                Ordering::Release,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                Err(actual) => current = actual,
+            }
+        }
+    }
+
     /// On-demand refill: computes tokens earned since the last refill and adds
     /// them to the bucket, capped at `capacity`.  Skips if fewer than 100 ms
     /// have elapsed since the last refill to avoid CAS contention.

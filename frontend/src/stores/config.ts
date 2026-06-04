@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchConfig, type VoicePreset, type ModelPreset } from '@/api/client'
+import { fetchConfig, apiV2, type VoicePreset, type ModelPreset, type ProviderInfo } from '@/api/client'
 
 /** 检测是否是 Vercel Gateway 环境变量占位符（未被替换） */
 function isVercelPlaceholder(key: string): boolean {
@@ -27,6 +27,8 @@ export const useConfigStore = defineStore('config', () => {
   // Config-loaded state
   const voices = ref<VoicePreset[]>([])
   const models = ref<ModelPreset[]>([])
+  const providers = ref<ProviderInfo[]>([])
+  const selectedProviderId = ref<string>('')
   const configLoaded = ref(false)
 
   /** API Key 是否有效（非空且非占位符） */
@@ -46,6 +48,7 @@ export const useConfigStore = defineStore('config', () => {
     const storedApiKey = localStorage.getItem('mimo_api_key')
     const storedVoice = localStorage.getItem('mimo_selected_voice')
     const storedModel = localStorage.getItem('mimo_selected_model')
+    const storedProvider = localStorage.getItem('mimo_selected_provider')
     
     if (storedApiKey) {
       // 检测到 Vercel 占位符 → 自动清除
@@ -57,6 +60,7 @@ export const useConfigStore = defineStore('config', () => {
     }
     if (storedVoice) selectedVoice.value = storedVoice
     if (storedModel) selectedModel.value = storedModel
+    if (storedProvider) selectedProviderId.value = storedProvider
   }
   // 初始化时从 localStorage 加载
   loadFromStorage()
@@ -75,6 +79,20 @@ export const useConfigStore = defineStore('config', () => {
     configLoaded.value = true
   }
 
+  // Load providers from backend
+  async function loadProviders() {
+    try {
+      providers.value = await apiV2.listProviders()
+      // If no provider selected yet, default to the backend's default provider
+      if (!selectedProviderId.value) {
+        const def = providers.value.find(p => p.is_default)
+        if (def) selectedProviderId.value = def.id
+      }
+    } catch {
+      // Silently fail — providers are optional; tasks work without them
+    }
+  }
+
   /** Check if a voice code is valid (exists in loaded presets) */
   function isValidVoice(code: string): boolean {
     return voices.value.some(v => v.id === code)
@@ -87,6 +105,7 @@ export const useConfigStore = defineStore('config', () => {
 
   // Load config on store initialization (non-blocking)
   loadConfig()
+  loadProviders()
 
   // 保存到 localStorage
   function saveApiKey(key: string) {
@@ -109,10 +128,24 @@ export const useConfigStore = defineStore('config', () => {
     localStorage.setItem('mimo_selected_model', model)
   }
 
+  function setProvider(id: string) {
+    selectedProviderId.value = id
+    localStorage.setItem('mimo_selected_provider', id)
+  }
+
+  /** The default provider as marked by the backend, or the first configured one */
+  const defaultProvider = computed(() => {
+    return providers.value.find(p => p.is_default) || providers.value.find(p => p.is_configured) || null
+  })
+
+  /** Providers that have an API key configured */
+  const configuredProviders = computed(() => providers.value.filter(p => p.is_configured))
+
   return {
     apiKey,
     selectedVoice,
     selectedModel,
+    selectedProviderId,
     hasValidKey,
     autoClearPlaceholder,
     loadFromStorage,
@@ -120,11 +153,16 @@ export const useConfigStore = defineStore('config', () => {
     clearApiKey,
     setVoice,
     setModel,
+    setProvider,
     voices,
     models,
+    providers,
     configLoaded,
     loadConfig,
+    loadProviders,
     isValidVoice,
     isValidModel,
+    defaultProvider,
+    configuredProviders,
   }
 })

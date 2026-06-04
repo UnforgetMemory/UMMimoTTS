@@ -5,7 +5,9 @@ pub mod tasks;
 pub mod groups;
 pub mod sse;
 pub mod config;
+pub mod providers;
 
+use crate::infra::persistence::provider_repo::ProviderRepo;
 use crate::service::batch_service::BatchService;
 use crate::service::group_service::GroupService;
 use crate::service::task_service::TaskService;
@@ -19,6 +21,7 @@ pub struct AppState {
     pub batch_service: Arc<BatchService>,
     pub task_service: Arc<TaskService>,
     pub group_service: Arc<GroupService>,
+    pub provider_repo: Arc<dyn ProviderRepo>,
     pub sse_bus: Arc<SseBus>,
 }
 
@@ -37,5 +40,6 @@ pub fn configure(cfg: &mut actix_web::web::ServiceConfig) {
         .configure(tasks::configure)
         .configure(groups::configure)
         .configure(sse::configure)
-        .configure(config::configure);
+        .configure(config::configure)
+        .configure(providers::configure);
 }

@@ -79,6 +79,7 @@ pub struct Task {
     pub done_chunks: i32,
     pub failed_chunks: i32,
     pub output_path: Option<String>,
+    pub provider_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub completed_at: Option<DateTime<Utc>>,
@@ -95,6 +96,7 @@ pub struct CreateTaskRequest {
     pub model: String,
     pub style: Option<String>,
     pub speed: f64,
+    pub provider_id: Option<String>,
     pub total_chars: i64,
     pub total_tokens: i64,
 }
@@ -115,6 +117,7 @@ impl Task {
             model: req.model,
             style: req.style,
             speed: req.speed,
+            provider_id: req.provider_id,
             total_chars: req.total_chars,
             total_tokens: req.total_tokens,
             total_chunks: 0,
@@ -192,6 +195,7 @@ mod tests {
             model: "default_model".into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 100,
             total_tokens: 50,
         };
@@ -206,7 +210,7 @@ mod tests {
             task_type: TaskType::Single, batch_id: None,
             content: "hello".into(), content_ref: None,
             title: "t".into(), voice: "v".into(), model: "m".into(),
-            style: None, speed: 1.0, total_chars: 10, total_tokens: 5,
+            style: None, speed: 1.0, provider_id: None, total_chars: 10, total_tokens: 5,
         };
         let mut task = Task::new(req);
         task.transition_to(TaskStatus::Queued).unwrap();
@@ -221,7 +225,7 @@ mod tests {
             task_type: TaskType::Single, batch_id: None,
             content: "hello".into(), content_ref: None,
             title: "t".into(), voice: "v".into(), model: "m".into(),
-            style: None, speed: 1.0, total_chars: 10, total_tokens: 5,
+            style: None, speed: 1.0, provider_id: None, total_chars: 10, total_tokens: 5,
         };
         let mut task = Task::new(req);
         let result = task.transition_to(TaskStatus::Done); // Pending -> Done invalid
@@ -235,7 +239,7 @@ mod tests {
             task_type: TaskType::Single, batch_id: None,
             content: "hello".into(), content_ref: None,
             title: "t".into(), voice: "v".into(), model: "m".into(),
-            style: None, speed: 1.0, total_chars: 10, total_tokens: 5,
+            style: None, speed: 1.0, provider_id: None, total_chars: 10, total_tokens: 5,
         };
         let mut task = Task::new(req);
         task.transition_to(TaskStatus::Queued).unwrap();

@@ -1,16 +1,14 @@
 use base64::Engine;
 use crate::shared::error::AppError;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 /// HTTP client for the MIMO TTS API.
 ///
-/// Uses the `/v1/chat/completions` endpoint with `audio` modality,
-/// which is the correct API format for Xiaomi MiMo TTS.
+/// Uses the `/v1/chat/completions` endpoint with `audio` modality.
+/// Holds a reusable reqwest::Client for connection pooling.
+/// API key and base URL are passed per-call to support multi-provider.
 pub struct MimoClient {
     http_client: reqwest::Client,
-    api_key: String,
-    base_url: String,
 }
 
 // ── Request / Response types for MIMO chat completions TTS ──────────
@@ -56,60 +54,26 @@ struct ChatCompletionResponse {
 }
 
 impl MimoClient {
-    pub fn new(api_key: &str, base_url: &str) -> Self {
+    /// Create a new MimoClient with a connection-pooled HTTP client.
+    /// api_key and base_url are not stored — pass them to synthesize() per-call.
+    pub fn new(_api_key: &str, _base_url: &str) -> Self {
         Self {
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(300))
                 .connect_timeout(std::time::Duration::from_secs(30))
+                .pool_max_idle_per_host(32)
                 .build()
                 .unwrap_or_else(|e| {
                     tracing::error!("Failed to create HTTP client: {}, using default", e);
                     reqwest::Client::new()
                 }),
-            api_key: api_key.to_string(),
-            base_url: base_url.trim_end_matches('/').to_string(),
         }
-    }
-
-    /// Call the tokenize endpoint for general use.
-    pub async fn tokenize(&self, text: &str) -> Result<serde_json::Value, AppError> {
-        let url = format!("{}/v1/tokenize", self.base_url);
-        let resp = self
-            .http_client
-            .post(&url)
-            .header("api-key", &self.api_key)
-            .json(&json!({
-                "text": text,
-                "model": crate::constants::DEFAULT_MODEL
-            }))
-            .timeout(std::time::Duration::from_secs(5))
-            .send()
-            .await
-            .map_err(|e| AppError::Internal(format!("tokenize request failed: {e}")))?;
-
-        if resp.status().as_u16() == 429 {
-            return Err(AppError::RateLimited);
-        }
-
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let body = resp
-                .text()
-                .await
-                .unwrap_or_else(|_| "no body".to_string());
-            return Err(AppError::Internal(format!(
-                "tokenize returned {status}: {body}"
-            )));
-        }
-
-        resp.json()
-            .await
-            .map_err(|e| AppError::Internal(format!("tokenize parse failed: {e}")))
     }
 
     /// Synthesize text to speech audio via MIMO chat completions API.
     ///
     /// Uses `POST /v1/chat/completions` with `audio` modality.
+    /// api_key and base_url are passed per-call to support multi-provider.
     /// Returns raw WAV bytes on success.
     pub async fn synthesize(
         &self,
@@ -117,8 +81,11 @@ impl MimoClient {
         voice: &str,
         model: &str,
         _speed: f64,
+        api_key: &str,
+        base_url: &str,
     ) -> Result<Vec<u8>, AppError> {
-        let url = format!("{}/v1/chat/completions", self.base_url);
+        let base_url = base_url.trim_end_matches('/');
+        let url = format!("{}/v1/chat/completions", base_url);
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
@@ -142,7 +109,7 @@ impl MimoClient {
         let resp = self
             .http_client
             .post(&url)
-            .header("api-key", &self.api_key)
+            .header("api-key", api_key)
             .header("Content-Type", "application/json")
             .json(&request)
             .send()
@@ -230,7 +197,7 @@ mod tests {
             .await;
 
         let client = MimoClient::new("test-key-123", &mock_server.uri());
-        let result = client.synthesize("你好世界", "test-voice", crate::constants::DEFAULT_MODEL, 1.0).await.unwrap();
+        let result = client.synthesize("你好世界", "test-voice", crate::constants::DEFAULT_MODEL, 1.0, "test-key-123", &mock_server.uri()).await.unwrap();
 
         assert!(!result.is_empty(), "Should return WAV bytes");
         assert_eq!(result.len(), WAV_BYTES.len());
@@ -247,7 +214,7 @@ mod tests {
             .await;
 
         let client = MimoClient::new("test-key-123", &mock_server.uri());
-        let result = client.synthesize("hello", "v", "m", 1.0).await;
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
             Err(AppError::RateLimited) => {} // expected
@@ -266,7 +233,7 @@ mod tests {
             .await;
 
         let client = MimoClient::new("test-key-123", &mock_server.uri());
-        let result = client.synthesize("hello", "v", "m", 1.0).await;
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
             Err(AppError::Internal(msg)) => {
@@ -287,17 +254,15 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        // Create client with a very short timeout
-        let client = MimoClient {
-            http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_millis(50))
-                .build()
-                .unwrap(),
-            api_key: "test-key-123".to_string(),
-            base_url: mock_server.uri(),
-        };
+        // Create client with a very short timeout using the builder
+        let http_client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_millis(50))
+            .build()
+            .unwrap();
+        // Use the field directly to avoid new() overwriting our short timeout
+        let client = MimoClient { http_client };
 
-        let result = client.synthesize("hello", "v", "m", 1.0).await;
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
         match result {
             Err(AppError::Internal(msg)) => {
                 assert!(
@@ -310,20 +275,19 @@ mod tests {
     }
 
     #[actix_rt::test]
-    async fn test_tokenize_authorization() {
+    async fn test_synthesize_invalid_response() {
         let mock_server = MockServer::start().await;
 
         Mock::given(method("POST"))
-            .and(path("/v1/tokenize"))
-            .and(header("Authorization", "Bearer test-key-123"))
+            .and(path("/v1/chat/completions"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "sentences": [{"text": "hello", "token_count": 1, "char_count": 5}]
+                "choices": []
             })))
             .mount(&mock_server)
             .await;
 
         let client = MimoClient::new("test-key-123", &mock_server.uri());
-        let result = client.tokenize("hello").await.unwrap();
-        assert_eq!(result["sentences"][0]["text"], "hello");
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
+        assert!(result.is_err(), "Empty choices should produce an error");
     }
 }

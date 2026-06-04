@@ -1,7 +1,7 @@
 <template>
-  <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg flex flex-col h-full">
+  <Card class="bg-background/80 dark:bg-background/60 backdrop-blur-xl border-border/50 shadow-lg flex flex-col h-full max-w-4xl xl:max-w-5xl mx-auto w-full">
     <!-- 首行：标题 + 标签页切换 -->
-    <CardHeader class="pb-2 px-4 md:px-6 lg:px-8">
+    <CardHeader class="pb-2 px-6 md:px-10 lg:px-16">
       <div class="flex items-center justify-between">
         <CardTitle class="text-lg">合成任务</CardTitle>
         
@@ -26,10 +26,10 @@
     </CardHeader>
 
     <!-- 主内容区 -->
-    <CardContent class="flex-1 flex flex-col pt-0 px-4 md:px-6 lg:px-8 pb-4 overflow-hidden">
+    <CardContent class="flex-1 flex flex-col pt-0 px-6 md:px-10 lg:px-16 pb-4 overflow-hidden">
       <!-- 控制标签页 -->
       <div v-if="activeTab === 'control'" class="flex-1 flex flex-col">
-        <!-- 模型 & 音色徽章 -->
+        <!-- 模型 & 音色 & 供应商徽章 -->
         <div class="flex items-center gap-2 mb-3 flex-wrap">
           <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
             <SparklesIcon class="w-3 h-3" />
@@ -50,6 +50,11 @@
           <Badge v-else variant="destructive" class="text-xs">
             请选择音色
           </Badge>
+          <Badge v-if="selectedProvider" variant="outline" class="text-xs gap-1 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300">
+            <ServerIcon class="w-3 h-3" />
+            {{ selectedProvider.name }}
+            <Badge v-if="selectedProvider.is_default" class="text-[8px] h-3.5 px-1 ml-0.5" variant="default">默认</Badge>
+          </Badge>
         </div>
 
         <!-- 任务名称 -->
@@ -61,11 +66,25 @@
           />
         </div>
 
-        <!-- 文本合成区域 -->
-        <div class="flex-1 flex flex-col min-h-[200px] mb-3">
+        <!-- 文本合成区域 - 支持拖放导入TXT文件 -->
+        <div
+          class="flex-1 flex flex-col min-h-[200px] mb-3 relative"
+          @dragover.prevent="onDragOver"
+          @dragleave="onDragLeave"
+          @drop.prevent="onTextDrop"
+        >
+          <!-- 拖放导入浮层提示 -->
+          <div
+            v-if="isDragOver"
+            class="absolute inset-0 z-10 border-2 border-dashed border-primary rounded-lg bg-primary/5 flex items-center justify-center pointer-events-none"
+          >
+            <span class="text-sm font-medium text-primary">释放以导入 .txt 文件</span>
+          </div>
+
           <div class="flex items-center justify-between mb-1.5">
             <Label for="text" class="text-sm">
               合成文本 <span class="text-destructive">*</span>
+              <span v-if="isDragOver" class="text-primary font-normal ml-2">拖放 .txt 文件到此区域...</span>
             </Label>
             <div class="flex items-center gap-2">
               <span class="text-xs text-muted-foreground">{{ charCount }} 字</span>
@@ -83,9 +102,9 @@
           <Textarea
             id="text"
             v-model="form.text"
-            placeholder="输入要合成的文本..."
-            class="text-sm w-full"
-            :style="{ minHeight: '150px', height: 'calc(100% - 50px)' }"
+            placeholder="输入要合成的文本...（支持拖放 .txt 文件）"
+            class="text-sm w-full min-h-[200px] max-h-[60vh] overflow-y-auto resize-y"
+            :class="isDragOver ? 'ring-2 ring-primary/50 border-primary' : ''"
             @input="updateCounts"
           />
           <div class="flex items-center justify-between mt-1.5">
@@ -145,6 +164,13 @@
           >
             音色
           </button>
+          <button
+            class="flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors"
+            :class="configTab === 'provider' ? 'bg-background shadow-sm' : 'hover:bg-background/50'"
+            @click="configTab = 'provider'"
+          >
+            供应商
+          </button>
         </div>
 
         <!-- 模型选择 -->
@@ -169,6 +195,43 @@
           </div>
         </div>
 
+        <!-- 供应商选择 -->
+        <div v-if="configTab === 'provider'" class="flex-1 overflow-y-auto pr-1 space-y-2 content-start">
+          <div v-if="providers.length === 0" class="text-sm text-muted-foreground text-center py-8">
+            暂无可用供应商，请在 API 配置中设置
+          </div>
+          <div
+            v-for="provider in providers"
+            :key="provider.id"
+            class="relative flex items-center gap-3 p-3 rounded-lg border transition-all"
+            :class="[
+              form.providerId === provider.id
+                ? 'bg-primary/5 border-primary/50 shadow-sm'
+                : provider.is_configured
+                  ? 'cursor-pointer hover:bg-muted/50'
+                  : 'cursor-not-allowed opacity-60',
+              !provider.is_configured && form.providerId !== provider.id ? 'border-dashed border-muted-foreground/30 bg-muted/20' : '',
+            ]"
+            @click="onProviderSelect(provider)"
+          >
+            <ServerIcon class="w-5 h-5 text-muted-foreground shrink-0" />
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium flex items-center gap-2">
+                {{ provider.name }}
+                <Badge v-if="provider.is_default" class="text-[10px] h-4 px-1.5" variant="default">默认</Badge>
+              </div>
+              <p class="text-xs text-muted-foreground truncate mt-0.5 font-mono">{{ provider.base_url }}</p>
+            </div>
+            <Badge v-if="provider.is_configured" variant="secondary" class="text-[10px] shrink-0">已配置</Badge>
+            <Badge v-else variant="outline" class="text-[10px] shrink-0 border-amber-400 dark:border-amber-600 text-amber-600 dark:text-amber-400">未配置</Badge>
+            <div v-if="form.providerId === provider.id" class="shrink-0">
+              <div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+                <CheckIcon class="w-3 h-3 text-primary-foreground" />
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 音色选择 -->
         <div v-if="configTab === 'voice'" class="flex-1 overflow-y-auto grid grid-cols-1 sm:grid-cols-2 gap-3 pr-1 content-start">
           <div v-if="!configStore.configLoaded" class="col-span-1 sm:col-span-2 flex items-center justify-center py-8">
@@ -179,7 +242,7 @@
             :key="voice.id"
             class="relative group flex flex-col rounded-xl border cursor-pointer transition-all overflow-hidden"
             :class="form.voice === voice.id 
-              ? 'bg-primary/5 border-primary/50 shadow-sm ring-1 ring-primary/20' 
+              ? 'bg-primary/5 border-primary shadow-sm ring-2 ring-primary/30' 
               : 'hover:bg-muted/50 hover:border-muted-foreground/20'"
             @click="form.voice = voice.id"
           >
@@ -201,10 +264,12 @@
                 <div class="text-sm font-medium truncate">{{ voice.name }}</div>
                 <Badge variant="secondary" class="text-[10px] px-1 mt-0.5">{{ voice.language }}</Badge>
               </div>
-              <div v-if="form.voice === voice.id" class="shrink-0">
-                <div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                  <CheckIcon class="w-3 h-3 text-primary-foreground" />
-                </div>
+            </div>
+
+            <!-- 选中标记 -->
+            <div v-if="form.voice === voice.id" class="absolute top-2 right-2 z-10">
+              <div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center shadow-sm ring-2 ring-background">
+                <CheckIcon class="w-3 h-3 text-primary-foreground" />
               </div>
             </div>
 
@@ -240,10 +305,11 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useTaskStore } from '@/stores/task'
 import { useConfigStore } from '@/stores/config'
-import { type Voice } from '@/api/client'
+import { type Voice, type ProviderInfo } from '@/api/client'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
@@ -256,9 +322,12 @@ import {
   Check as CheckIcon,
   User as UserIcon,
   UserRound as UserRoundIcon,
-  Sparkles as SparklesIcon
+  Server as ServerIcon,
+  Sparkles as SparklesIcon,
 } from 'lucide-vue-next'
 
+const route = useRoute()
+const router = useRouter()
 const taskStore = useTaskStore()
 const configStore = useConfigStore()
 
@@ -286,7 +355,7 @@ const currentAudio = ref<HTMLAudioElement | null>(null)
 const loading = ref(false)
 
 const activeTab = ref<'control' | 'config'>('control')
-const configTab = ref<'model' | 'voice'>('model')
+const configTab = ref<'model' | 'voice' | 'provider'>('model')
 
 const form = ref({
   text: '',
@@ -294,6 +363,7 @@ const form = ref({
   model: 'mimo-v2.5-tts',
   context: '',
   taskName: '',
+  providerId: '',
 })
 
 const charCount = ref(0)
@@ -303,6 +373,34 @@ const contextCharCount = ref(0)
 const selectedVoice = computed(() => {
   return voices.value.find(v => v.id === form.value.voice)
 })
+
+const selectedProvider = computed(() => {
+  return providers.value.find(p => p.id === form.value.providerId) || null
+})
+
+const providers = computed(() => configStore.providers)
+
+function onProviderSelect(provider: ProviderInfo) {
+  if (!provider.is_configured) {
+    toast.warning('该供应商未配置 API Key', {
+      description: '请先在 API 配置页面设置密钥',
+      action: {
+        label: '去配置',
+        onClick: () => router.push('/config'),
+      },
+    })
+    return
+  }
+  form.value.providerId = provider.id
+}
+
+// Auto-select default provider when providers load
+watch(providers, (newProviders) => {
+  if (newProviders.length > 0 && !form.value.providerId) {
+    const def = newProviders.find(p => p.is_default) || newProviders.find(p => p.is_configured)
+    if (def) form.value.providerId = def.id
+  }
+}, { immediate: true })
 
 function updateCounts() {
   const text = form.value.text
@@ -341,6 +439,41 @@ function clearText() {
   form.value.text = ''
   charCount.value = 0
   estimatedTokens.value = 0
+}
+
+// --- 拖放导入 .txt 文件 ---
+const isDragOver = ref(false)
+
+function onDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes('Files')) {
+    isDragOver.value = true
+  }
+}
+
+function onDragLeave() {
+  isDragOver.value = false
+}
+
+async function onTextDrop(e: DragEvent) {
+  isDragOver.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  if (!file.name.toLowerCase().endsWith('.txt')) {
+    toast.error('仅支持 .txt 文件')
+    return
+  }
+  try {
+    const text = await file.text()
+    if (!text.trim()) {
+      toast.error('文件内容为空')
+      return
+    }
+    form.value.text = text
+    updateCounts()
+    toast.success(`已从 ${file.name} 导入 ${text.length} 字`)
+  } catch (err) {
+    toast.error('文件读取失败')
+  }
 }
 
 async function playVoicePreview(voiceId: string) {
@@ -412,8 +545,12 @@ async function handleSubmit() {
     toast.error('无效的模型选择')
     return
   }
-  if (!configStore.hasValidKey) {
-    toast.error('请先配置 API Key')
+  // Check API key: either global key is valid, or selected provider is configured
+  const selectedProviderHasKey = form.value.providerId
+    ? providers.value.find(p => p.id === form.value.providerId)?.is_configured
+    : false
+  if (!configStore.hasValidKey && !selectedProviderHasKey) {
+    toast.error('请先配置 API Key 或为当前供应商配置密钥')
     return
   }
 
@@ -425,6 +562,7 @@ async function handleSubmit() {
       model: form.value.model,
       task_name: form.value.taskName || undefined,
       context: form.value.context || undefined,
+      provider_id: form.value.providerId || undefined,
     })
     toast.success('任务已创建')
     form.value.text = ''
@@ -463,6 +601,16 @@ function handleKeydown(event: KeyboardEvent) {
 
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
+
+  // Read route query params for config reuse (e.g. from TaskDetailPage)
+  if (route.query.text) {
+    setConfig({
+      text: route.query.text as string,
+      voice: (route.query.voice as string) || null,
+      model: (route.query.model as string) || 'mimo-v2.5-tts',
+      context: (route.query.context as string) || undefined,
+    })
+  }
 })
 
 onUnmounted(() => {

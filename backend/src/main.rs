@@ -27,11 +27,13 @@ use um_mimo_tts_server::infra::persistence::batch_repo::BatchRepo;
 use um_mimo_tts_server::infra::persistence::chunk_repo::ChunkRepo;
 use um_mimo_tts_server::infra::persistence::task_repo::TaskRepo;
 use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
+use um_mimo_tts_server::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
 use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
 use um_mimo_tts_server::infra::queue::watchdog::{TaskWatchdog, WatchdogConfig};
 use um_mimo_tts_server::infra::queue::chunk_recovery::{ChunkRecovery, ChunkRecoveryConfig};
+use um_mimo_tts_server::infra::queue::queue_patrol::{QueuePatrol, QueuePatrolConfig};
 use um_mimo_tts_server::infra::mimo::chunker::MimoChunker;
 use um_mimo_tts_server::infra::mimo::client::MimoClient;
 use um_mimo_tts_server::infra::cache::Cache;
@@ -78,6 +80,7 @@ async fn main() -> std::io::Result<()> {
     let chunk_repo: Arc<dyn ChunkRepo> = Arc::new(SqliteChunkRepo::new(pool.clone()));
     let batch_repo: Arc<dyn BatchRepo> = Arc::new(SqliteBatchRepo::new(pool.clone()));
     let group_repo: Arc<dyn GroupRepo> = Arc::new(SqliteGroupRepo::new(pool.clone()));
+    let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
 
     // ── event bus ─────────────────────────────────────────────────────
     let (event_tx, event_rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
@@ -120,6 +123,7 @@ async fn main() -> std::io::Result<()> {
         max_active_tasks,
         Duration::from_secs(30),
         cache_dir.clone(),
+        provider_repo.clone(),
     ));
 
     let task_queue = Arc::new(TaskQueue::new(
@@ -146,6 +150,7 @@ async fn main() -> std::io::Result<()> {
         task_service,
         group_service,
         sse_bus,
+        provider_repo,
     };
 
     // ── start queue workers ──────────────────────────────────────────
@@ -169,6 +174,17 @@ async fn main() -> std::io::Result<()> {
     );
     chunk_recovery.start();
     tracing::info!("ChunkRecovery started — resets orphaned Processing chunks every 30s");
+
+    // ── start queue patrol ────────────────────────────────────────
+    let queue_patrol = QueuePatrol::new(
+        QueuePatrolConfig::default(),
+        task_repo.clone() as Arc<dyn TaskRepo>,
+        chunk_repo.clone() as Arc<dyn ChunkRepo>,
+        task_queue.clone(),
+        event_tx.clone(),
+    );
+    queue_patrol.start();
+    tracing::info!("QueuePatrol started — patrols for orphaned tasks every 30s");
 
     // ── start task queue event listener ─────────────────────────────
     let tq = task_queue.clone();

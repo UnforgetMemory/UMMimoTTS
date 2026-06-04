@@ -213,6 +213,7 @@ impl SqliteBatchRepo {
                 model: item.effective_model.clone(),
                 style: item.effective_style.clone(),
                 speed: item.effective_speed,
+                provider_id: None,
                 total_chars: item.total_chars,
                 total_tokens: item.token_estimate,
             });
@@ -222,10 +223,10 @@ impl SqliteBatchRepo {
             // Insert task
             tx.execute(
                 "INSERT INTO tasks (id, task_type, status, group_id, batch_id, content, content_ref,
-                 title, voice, model, style, speed, priority, total_chars, total_tokens,
+                 title, voice, model, style, speed, provider_id, priority, total_chars, total_tokens,
                  total_chunks, done_chunks, failed_chunks, output_path, output_duration,
                  created_at, updated_at, completed_at)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,0,?13,?14,0,0,0,NULL,0,?15,?16,NULL)",
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0,?14,?15,0,0,0,NULL,0,?16,?17,NULL)",
                 params![
                     task.id.to_string(),
                     serde_json::to_string(&task.task_type).unwrap(),
@@ -239,6 +240,7 @@ impl SqliteBatchRepo {
                     task.model,
                     task.style,
                     task.speed,
+                    task.provider_id,
                     task.total_chars,
                     task.total_tokens,
                     task.created_at.to_rfc3339(),
@@ -805,7 +807,7 @@ mod tests {
 
         // Create a group for this batch (required for submit_batch)
         let group_repo = SqliteGroupRepo::new(pool);
-        let group = Group::new(batch.id.clone(), "Test Group".into());
+            let group = Group::new(batch.id.clone(), "Test Group".into(), None, None, None, None, None);
         group_repo.insert(&group).unwrap();
 
         // Add pending items

@@ -242,6 +242,7 @@ mod tests {
             model: "model_1".into(),
             style: None,
             speed: 1.0,
+            provider_id: None,
             total_chars: 100,
             total_tokens: 50,
         });
