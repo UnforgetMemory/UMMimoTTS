@@ -33,6 +33,7 @@ Thumbs.db
 
 # ── Startup scripts (platform-specific) ───────────────────
 *.vbs
+*.ps1
 start_*.bat
 start-*.bat
 
@@ -48,6 +49,14 @@ docs/
 # ── Logs ──────────────────────────────────────────────────
 *.log
 npm-debug.log*
+*_stderr.txt
+*_stdout.txt
+*_err.txt
+*_out.txt
+backend_run*.txt
+server_*.txt
+backend_release_*.txt
+backend_v*.txt
 
 # ── Test artifacts ────────────────────────────────────────
 test/
@@ -68,3 +77,4 @@ frontend/public/snapshot-*
 
 # ── Runtime data ──────────────────────────────────────────
 data/
+.localref/

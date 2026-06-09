@@ -23,7 +23,8 @@ use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
 use um_mimo_tts_server::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
-use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
+use um_mimo_tts_server::infra::queue::rate_limiter::{TokenBucket, ProviderRateLimiterMap};
+use um_mimo_tts_server::infra::queue::provider_balancer::ProviderLoadBalancer;
 use um_mimo_tts_server::infra::mimo::chunker::MimoChunker;
 use um_mimo_tts_server::infra::mimo::client::MimoClient;
 use um_mimo_tts_server::infra::cache::Cache;
@@ -75,6 +76,8 @@ macro_rules! build_app {
         ));
         let rate_limiter = Arc::new(TokenBucket::new(100));
         let token_budget = Arc::new(TokenBucket::new(1_000_000));
+        let provider_rate_limiters = Arc::new(ProviderRateLimiterMap::new(1000, 10_000_000, 10));
+        let load_balancer = Arc::new(ProviderLoadBalancer::new());
 
         let chunk_queue = Arc::new(ChunkQueue::new(
             pool.clone(),
@@ -90,6 +93,8 @@ macro_rules! build_app {
             Duration::from_secs(30),
             std::path::PathBuf::from("/tmp/test-cache"),
             provider_repo.clone(),
+            provider_rate_limiters,
+            load_balancer,
         ));
 
         let task_queue = Arc::new(TaskQueue::new(

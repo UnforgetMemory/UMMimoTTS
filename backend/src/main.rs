@@ -30,7 +30,8 @@ use um_mimo_tts_server::infra::persistence::group_repo::GroupRepo;
 use um_mimo_tts_server::infra::persistence::provider_repo::{ProviderRepo, SqliteProviderRepo};
 use um_mimo_tts_server::infra::queue::task_queue::TaskQueue;
 use um_mimo_tts_server::infra::queue::chunk_queue::ChunkQueue;
-use um_mimo_tts_server::infra::queue::rate_limiter::TokenBucket;
+use um_mimo_tts_server::infra::queue::rate_limiter::{TokenBucket, ProviderRateLimiterMap};
+use um_mimo_tts_server::infra::queue::provider_balancer::ProviderLoadBalancer;
 use um_mimo_tts_server::infra::queue::watchdog::{TaskWatchdog, WatchdogConfig};
 use um_mimo_tts_server::infra::queue::chunk_recovery::{ChunkRecovery, ChunkRecoveryConfig};
 use um_mimo_tts_server::infra::queue::queue_patrol::{QueuePatrol, QueuePatrolConfig};
@@ -68,7 +69,7 @@ async fn main() -> std::io::Result<()> {
     let _max_task_wait = Duration::from_secs(300);
 
     // ── database ──────────────────────────────────────────────────────
-    let pool = create_pool(&db_path, 10).expect("Failed to create DB pool");
+    let pool = create_pool(&db_path, 24).expect("Failed to create DB pool");
     {
         let conn = pool.get().expect("Failed to get DB connection");
         run_migrations(&conn).expect("Failed to run migrations");
@@ -95,19 +96,38 @@ async fn main() -> std::io::Result<()> {
 
     // ── MIMO client + chunker ─────────────────────────────────────────
     let client = Arc::new(MimoClient::new(&mimo_api_key, &mimo_base_url));
-    let chunker = MimoChunker::new(&mimo_base_url, 2000, 5000);
+    let chunk_target_tokens: i64 = env_or("CHUNK_TARGET_TOKENS", "10000").parse().expect("CHUNK_TARGET_TOKENS must be i64");
+    let chunk_hard_cap: i64 = env_or("CHUNK_HARD_CAP", "20000").parse().expect("CHUNK_HARD_CAP must be i64");
+    let chunker = MimoChunker::new(&mimo_base_url, chunk_target_tokens, chunk_hard_cap);
+    tracing::info!("Chunker: target_tokens={chunk_target_tokens}, hard_cap={chunk_hard_cap}");
 
     // ── cache ─────────────────────────────────────────────────────────
-    let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), 100));
+    let max_memory_entries: usize = env_or("CACHE_MAX_MEMORY_ENTRIES", "500").parse().expect("CACHE_MAX_MEMORY_ENTRIES must be usize");
+    let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), max_memory_entries));
 
-    // ── rate limiter ──────────────────────────────────────────────────
-    // rate_limiter: 90 RPM (requests per minute) — controls API call rate
-    // token_budget: 1M tokens/min — controls total token consumption
-    let rpm: u64 = env_or("MIMO_RPM", "90").parse().expect("MIMO_RPM must be u64");
-    let token_budget_rpm: u64 = env_or("MIMO_TOKEN_BUDGET_RPM", "1000000").parse().expect("MIMO_TOKEN_BUDGET_RPM must be u64");
-    let rate_limiter = Arc::new(TokenBucket::new(rpm));
-    let token_budget = Arc::new(TokenBucket::new(token_budget_rpm));
-    tracing::info!("Rate limiter: {rpm} RPM, token budget: {token_budget_rpm} tokens/min");
+    // ── rate limiter (per-provider) ─────────────────────────────────────
+    let rpm: u64 = env_or("MIMO_RPM", &um_mimo_tts_server::constants::MIMO_RPM_PER_PROVIDER.to_string()).parse().expect("MIMO_RPM must be u64");
+    let tpm: u64 = env_or("MIMO_TOKEN_BUDGET_RPM", &um_mimo_tts_server::constants::MIMO_TPM_PER_PROVIDER.to_string()).parse().expect("MIMO_TOKEN_BUDGET_RPM must be u64");
+    let burst: u64 = env_or("MIMO_BURST", &um_mimo_tts_server::constants::MIMO_BURST_PER_PROVIDER.to_string()).parse().expect("MIMO_BURST must be u64");
+
+    let provider_rate_limiters = Arc::new(ProviderRateLimiterMap::new(rpm, tpm, burst));
+
+    // Pre-seed limiters for all configured providers
+    let load_balancer = Arc::new(ProviderLoadBalancer::new());
+    if let Ok(providers) = provider_repo.find_all() {
+        for p in &providers {
+            if p.is_configured {
+                provider_rate_limiters.add_provider(&p.id, rpm, tpm, burst);
+                load_balancer.add_provider(&p.id, rpm);
+            }
+        }
+    }
+    tracing::info!("Per-provider rate limiters: {rpm} RPM, {tpm} TPM, burst={burst}");
+    tracing::info!("Provider load balancer: LeastConnections + circuit breaker (threshold=5, recovery=60s)");
+
+    // Legacy global rate limiter (kept for backward compat in tests)
+    let rate_limiter = Arc::new(TokenBucket::new_with_burst(rpm, 5));
+    let token_budget = Arc::new(TokenBucket::new(tpm));
 
     // ── queues ────────────────────────────────────────────────────────
     let chunk_queue = Arc::new(ChunkQueue::new(
@@ -124,6 +144,8 @@ async fn main() -> std::io::Result<()> {
         Duration::from_secs(30),
         cache_dir.clone(),
         provider_repo.clone(),
+        provider_rate_limiters.clone(),
+        load_balancer.clone(),
     ));
 
     let task_queue = Arc::new(TaskQueue::new(

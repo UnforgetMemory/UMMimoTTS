@@ -17,7 +17,7 @@
 use crate::domain::chunk::{Chunk, ChunkStatus};
 use crate::domain::events::DomainEvent;
 use crate::shared::id::Id;
-use crate::domain::task::TaskStatus;
+use crate::domain::task::{Task, TaskStatus};
 use crate::infra::audio::merger::merge_wavs;
 use crate::infra::mimo::chunker::MimoChunker;
 use crate::infra::persistence::chunk_repo::ChunkRepo;
@@ -165,10 +165,10 @@ impl TaskQueue {
     /// on the `ChunkQueue`.  It will process events until the sender is
     /// dropped (i.e. the queue is shut down).
     ///
-    /// Includes a periodic DB poll fallback (every 60s) to catch tasks that
+    /// Includes a periodic DB poll fallback (every 10s) to catch tasks that
     /// may have been missed due to broadcast channel lag.
     pub async fn listen(&self, mut event_rx: broadcast::Receiver<DomainEvent>) {
-        let mut poll_interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        let mut poll_interval = tokio::time::interval(std::time::Duration::from_secs(10));
         poll_interval.tick().await; // first tick completes immediately
 
         loop {
@@ -202,29 +202,37 @@ impl TaskQueue {
         }
     }
 
-    /// DB poll fallback: find Processing tasks whose chunks are all resolved
-    /// and trigger completion. This catches tasks missed due to event loss.
+    /// DB poll fallback: find tasks stuck in non-terminal states whose chunks are
+    /// all resolved and trigger completion. Also reconciles batch statuses.
     async fn poll_and_reconcile(&self) -> Result<(), AppError> {
-        // Find all tasks in Processing or Queued status (Queued = waiting for worker pickup)
         let all_tasks = self.task_repo.find_all()?;
+
+        // Cover Processing, Queued, Merging, MergingFailed — all states that can get stuck
         let active_tasks: Vec<_> = all_tasks
             .iter()
-            .filter(|t| matches!(t.status, TaskStatus::Processing | TaskStatus::Queued))
+            .filter(|t| matches!(t.status,
+                TaskStatus::Processing | TaskStatus::Queued |
+                TaskStatus::Merging | TaskStatus::MergingFailed))
             .collect();
 
-        if active_tasks.is_empty() {
-            return Ok(());
-        }
-
         let mut reconciled = 0;
-        for task in active_tasks {
+        for task in &active_tasks {
             let task_id = task.id.to_string();
-            let done = self.chunk_repo.count_by_task_status(&task_id, &ChunkStatus::Done)?;
-            let failed = self.chunk_repo.count_by_task_status(&task_id, &ChunkStatus::Failed)?;
-            let total = self.chunk_repo.count_by_task_all(&task_id)?;
+
+            // MergingFailed: merge already failed, just ensure TaskFailed is emitted
+            if task.status == TaskStatus::MergingFailed {
+                warn!("poll_and_reconcile: task {task_id} stuck in MergingFailed — emitting TaskFailed");
+                reconciled += 1;
+                let _ = self.event_tx.send(DomainEvent::TaskFailed {
+                    task_id: task.id.clone(),
+                    error: "Merge failed (detected by poll)".to_string(),
+                });
+                continue;
+            }
+
+            let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(&task_id)?;
 
             if total > 0 && done + failed == total {
-                // All chunks resolved but task still in Processing/Chunking — event was lost
                 warn!(
                     "poll_and_reconcile: task {task_id} has all chunks resolved ({done} done, {failed} failed) but status is {:?} — triggering completion",
                     task.status
@@ -232,6 +240,7 @@ impl TaskQueue {
                 reconciled += 1;
 
                 if done > 0 {
+                    // Re-emit AllChunksDone — will trigger merge + TaskCompleted
                     let _ = self.event_tx.send(DomainEvent::AllChunksDone {
                         task_id: task.id.clone(),
                         total_chunks: total as i32,
@@ -245,10 +254,85 @@ impl TaskQueue {
                     });
                 }
             }
+
+            // Timeout protection: if task has been stuck for > 180s with no chunks
+            // or with chunks that have active work but haven't progressed,
+            // mark it as failed to prevent batch hanging forever.
+            if task.status == TaskStatus::Queued && total == 0 {
+                // Task in Queued state with 0 chunks — enqueue may have failed
+                // Check age via created_at
+                let age_secs = (chrono::Utc::now() - task.created_at).num_seconds();
+                if age_secs > 180 {
+                    warn!("poll_and_reconcile: task {task_id} stuck in Queued for {age_secs}s with 0 chunks — marking failed");
+                    reconciled += 1;
+                    self.task_repo.update_status(&task_id, &TaskStatus::Failed)?;
+                    let _ = self.event_tx.send(DomainEvent::TaskFailed {
+                        task_id: task.id.clone(),
+                        error: format!("Stuck in Queued for {age_secs}s, no chunks created"),
+                    });
+                }
+            }
         }
 
         if reconciled > 0 {
             info!("poll_and_reconcile: reconciled {reconciled} stuck tasks");
+        }
+
+        // Also reconcile batch statuses (queued → processing → completed)
+        self.reconcile_batch_statuses(&all_tasks)?;
+
+        Ok(())
+    }
+
+    /// Scan all batches and update their status based on child task states.
+    /// - "queued" batch with any active/done task → "processing"
+    /// - "processing" batch with all terminal tasks → "completed"/"failed"
+    fn reconcile_batch_statuses(&self, all_tasks: &[Task]) -> Result<(), AppError> {
+        // Group tasks by batch_id
+        let mut batch_map: std::collections::HashMap<String, Vec<&Task>> = std::collections::HashMap::new();
+        for task in all_tasks {
+            if let Some(ref bid) = task.batch_id {
+                batch_map.entry(bid.to_string()).or_default().push(task);
+            }
+        }
+
+        for (batch_id, tasks) in &batch_map {
+            let total = tasks.len() as i32;
+            if total == 0 { continue; }
+
+            let done = tasks.iter().filter(|t| t.status == TaskStatus::Done).count() as i32;
+            let failed = tasks.iter().filter(|t| matches!(t.status, TaskStatus::Failed | TaskStatus::MergingFailed)).count() as i32;
+            let active = tasks.iter().filter(|t| matches!(t.status,
+                TaskStatus::Processing | TaskStatus::Merging | TaskStatus::Queued | TaskStatus::Chunking)).count() as i32;
+            let terminal = done + failed;
+
+            // If all tasks are terminal → update batch to completed/failed
+            if terminal >= total {
+                let now = chrono::Utc::now().to_rfc3339();
+                if let Ok(conn) = self.pool.get() {
+                    if done > 0 {
+                        let _ = conn.execute(
+                            "UPDATE batches SET status = '\"completed\"', updated_at = ?1, completed_at = COALESCE(completed_at, ?1) WHERE id = ?2 AND status != '\"completed\"'",
+                            rusqlite::params![now, batch_id],
+                        );
+                        info!("reconcile: batch {batch_id} → completed ({done}/{total} done)");
+                    } else {
+                        let _ = conn.execute(
+                            "UPDATE batches SET status = '\"failed\"', updated_at = ?1, completed_at = COALESCE(completed_at, ?1) WHERE id = ?2 AND status != '\"failed\"'",
+                            rusqlite::params![now, batch_id],
+                        );
+                        info!("reconcile: batch {batch_id} → failed (all {failed} failed)");
+                    }
+                }
+            } else if active > 0 {
+                // Some tasks are active → ensure batch is "processing"
+                if let Ok(conn) = self.pool.get() {
+                    let _ = conn.execute(
+                        "UPDATE batches SET status = '\"processing\"', updated_at = ?1 WHERE id = ?2 AND status = '\"queued\"'",
+                        rusqlite::params![chrono::Utc::now().to_rfc3339(), batch_id],
+                    );
+                }
+            }
         }
 
         Ok(())
@@ -299,9 +383,7 @@ impl TaskQueue {
     }
 
     async fn on_chunk_completed(&self, task_id: &str) -> Result<(), AppError> {
-        let done = self.chunk_repo.count_by_task_status(task_id, &ChunkStatus::Done)?;
-        let failed = self.chunk_repo.count_by_task_status(task_id, &ChunkStatus::Failed)?;
-        let total = self.chunk_repo.count_by_task_all(task_id)?;
+        let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(task_id)?;
 
         self.task_repo
             .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;
@@ -327,9 +409,7 @@ impl TaskQueue {
     }
 
     async fn on_chunk_failed(&self, task_id: &str) -> Result<(), AppError> {
-        let done = self.chunk_repo.count_by_task_status(task_id, &ChunkStatus::Done)?;
-        let failed = self.chunk_repo.count_by_task_status(task_id, &ChunkStatus::Failed)?;
-        let total = self.chunk_repo.count_by_task_all(task_id)?;
+        let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(task_id)?;
 
         self.task_repo
             .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;
@@ -359,20 +439,27 @@ impl TaskQueue {
         self.task_repo
             .update_status(task_id, &TaskStatus::Merging)?;
 
-        // Spawn merge in a separate tokio task to avoid blocking the event loop.
-        // With large tasks (1000+ chunks), merge_wavs reads all WAV files into
-        // memory which can take minutes and blocks the listen() loop if done inline.
+        // Spawn merge in spawn_blocking to avoid blocking the tokio runtime.
+        // Streaming I/O (BufReader/BufWriter) keeps memory usage low even for large tasks.
         let task_id_owned = task_id.to_string();
         let task_repo = Arc::clone(&self.task_repo);
         let event_tx = self.event_tx.clone();
         let chunk_repo = Arc::clone(&self.chunk_repo);
 
         tokio::spawn(async move {
-            // Rebuild the chunk repo reference for the merge call
-            let merger_result = Self::merge_task_audio_static(
-                &chunk_repo,
-                &task_id_owned,
-            );
+            let task_id_for_merge = task_id_owned.clone();
+            let merge_result = tokio::task::spawn_blocking(move || {
+                Self::merge_task_audio_static(&chunk_repo, &task_id_for_merge)
+            }).await;
+
+            let merger_result = match merge_result {
+                Ok(inner) => inner,
+                Err(join_err) => {
+                    error!("merge spawn_blocking failed for task {task_id_owned}: {join_err}");
+                    let _ = task_repo.update_status(&task_id_owned, &TaskStatus::MergingFailed);
+                    return;
+                }
+            };
 
             match merger_result {
                 Ok((output_path, duration)) => {
@@ -744,6 +831,8 @@ use crate::shared::id::Id;
         let rate_limiter = Arc::new(TokenBucket::new(1000));
         let token_budget = Arc::new(TokenBucket::new(1_000_000));
         let (event_tx, _event_rx) = broadcast::channel(512);
+        let provider_rate_limiters = Arc::new(crate::infra::queue::rate_limiter::ProviderRateLimiterMap::new(1000, 10_000_000, 10));
+        let load_balancer = Arc::new(crate::infra::queue::provider_balancer::ProviderLoadBalancer::new());
 
         let provider_repo: Arc<dyn ProviderRepo> =
             Arc::new(SqliteProviderRepo::new(pool.clone()));
@@ -764,6 +853,8 @@ use crate::shared::id::Id;
             Duration::from_secs(300),
             cache_dir,
             provider_repo,
+            provider_rate_limiters,
+            load_balancer,
         ));
 
         let chunker = MimoChunker::new(&mock_server.uri(), 2000, 5000);

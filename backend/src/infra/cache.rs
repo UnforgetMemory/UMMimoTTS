@@ -1,9 +1,8 @@
 use crate::shared::error::AppError;
+use linked_hash_map::LinkedHashMap;
 use parking_lot::RwLock;
-use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 struct Entry {
@@ -15,9 +14,9 @@ struct Entry {
 }
 
 /// Two-level LRU+TTL cache with memory (fast) and disk (persistent) layers.
+/// Uses LinkedHashMap for O(1) touch/evict operations.
 pub struct Cache {
-    memory: RwLock<HashMap<String, Entry>>,
-    access_order: Mutex<VecDeque<String>>,
+    memory: RwLock<LinkedHashMap<String, Entry>>,
     disk_root: PathBuf,
     default_ttl: Duration,
     max_memory_entries: usize,
@@ -27,8 +26,7 @@ impl Cache {
     pub fn new(disk_root: PathBuf, default_ttl: Duration, max_memory_entries: usize) -> Self {
         let _ = fs::create_dir_all(&disk_root);
         Self {
-            memory: RwLock::new(HashMap::new()),
-            access_order: Mutex::new(VecDeque::new()),
+            memory: RwLock::new(LinkedHashMap::new()),
             disk_root,
             default_ttl,
             max_memory_entries,
@@ -36,19 +34,12 @@ impl Cache {
     }
 
     /// Retrieve a value by key. Checks memory first, then disk.
-    /// Touches LRU order on access.
+    /// Touches LRU order on access (O(1) via LinkedHashMap).
     pub fn get(&self, key: &str) -> Option<Vec<u8>> {
-        // Touch LRU — move to front (lock and release)
+        // Check memory first + touch LRU (O(1))
         {
-            if let Ok(mut order) = self.access_order.lock() {
-                touch_lru(&mut order, key);
-            }
-        }
-
-        // Check memory first
-        {
-            let mem = self.memory.read();
-            if let Some(entry) = mem.get(key) {
+            let mut mem = self.memory.write();
+            if let Some(entry) = mem.get_refresh(key) {
                 if Instant::now() < entry.expires_at {
                     return Some(entry.data.clone());
                 }
@@ -61,8 +52,6 @@ impl Cache {
             match fs::read(&disk_path) {
                 Ok(data) => {
                     let expires_at = Instant::now() + self.default_ttl;
-                    // If the entry is already expired with the new TTL, remove from disk
-                    // and return None instead of reloading.
                     if Instant::now() >= expires_at {
                         let _ = fs::remove_file(&disk_path);
                         return None;
@@ -71,8 +60,6 @@ impl Cache {
                     let created_at = Instant::now();
                     {
                         let mut mem = self.memory.write();
-                        let mut order = self.access_order.lock().unwrap();
-                        Self::enforce_limit(&mut order, &mut mem, self.max_memory_entries);
                         mem.insert(
                             key.to_string(),
                             Entry {
@@ -83,6 +70,7 @@ impl Cache {
                                 created_at,
                             },
                         );
+                        Self::enforce_limit(&mut mem, self.max_memory_entries);
                     }
                     return Some(data);
                 }
@@ -110,13 +98,9 @@ impl Cache {
         let size = data.len();
         let created_at = Instant::now();
 
-        // Lock both memory and access_order together to avoid deadlocks
         let mut mem = self.memory.write();
-        let mut order = self.access_order.lock().unwrap();
 
-        touch_lru(&mut order, key);
-        Self::enforce_limit(&mut order, &mut mem, self.max_memory_entries);
-
+        // LinkedHashMap::insert moves to back (most recent) automatically
         mem.insert(
             key.to_string(),
             Entry {
@@ -127,6 +111,7 @@ impl Cache {
                 created_at,
             },
         );
+        Self::enforce_limit(&mut mem, self.max_memory_entries);
 
         Ok(())
     }
@@ -136,11 +121,6 @@ impl Cache {
         {
             let mut mem = self.memory.write();
             mem.remove(key);
-        }
-        {
-            if let Ok(mut order) = self.access_order.lock() {
-                prune_lru(&mut order, key);
-            }
         }
         let disk_path = self.disk_root.join(sanitize_key(key));
         let _ = fs::remove_file(&disk_path);
@@ -152,16 +132,13 @@ impl Cache {
         disk_path.exists()
     }
 
-    /// Evict LRU entries until under limit. Caller MUST hold both locks.
+    /// Evict LRU entries until under limit. LinkedHashMap pops front = LRU.
     fn enforce_limit(
-        order: &mut VecDeque<String>,
-        mem: &mut HashMap<String, Entry>,
+        mem: &mut LinkedHashMap<String, Entry>,
         max_entries: usize,
     ) {
-        while order.len() > max_entries {
-            if let Some(lru_key) = order.pop_back() {
-                mem.remove(&lru_key);
-            } else {
+        while mem.len() > max_entries {
+            if mem.pop_front().is_none() {
                 break;
             }
         }
@@ -188,27 +165,6 @@ impl Cache {
 /// Normalize a cache key for filesystem use.
 fn sanitize_key(key: &str) -> String {
     key.replace('/', "_").replace('\\', "_").replace('\0', "")
-}
-
-/// Move a key to the front of the LRU deque (most recently used).
-fn touch_lru(deque: &mut VecDeque<String>, key: &str) {
-    prune_lru(deque, key);
-    deque.push_front(key.to_string());
-}
-
-/// Remove a key from the LRU deque if present.
-fn prune_lru(deque: &mut VecDeque<String>, key: &str) {
-    let mut found = false;
-    deque.retain(|k| {
-        if found {
-            true
-        } else if k == key {
-            found = true;
-            false
-        } else {
-            true
-        }
-    });
 }
 
 #[cfg(test)]

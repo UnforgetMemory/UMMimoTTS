@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
 pub enum ChunkStatus {
     Pending,    // created, awaiting ChunkQueue
     Queued,     // in ChunkQueue

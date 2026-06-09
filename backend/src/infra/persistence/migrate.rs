@@ -127,6 +127,8 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
         CREATE INDEX IF NOT EXISTS idx_chunks_task ON chunks(task_id);
         CREATE INDEX IF NOT EXISTS idx_chunks_status ON chunks(status);
         CREATE INDEX IF NOT EXISTS idx_chunks_priority ON chunks(priority);
+        CREATE INDEX IF NOT EXISTS idx_chunks_pending_priority ON chunks(status, priority, created_at);
+        CREATE INDEX IF NOT EXISTS idx_chunks_task_status ON chunks(task_id, status);
         CREATE INDEX IF NOT EXISTS idx_batch_tasks_batch ON batch_tasks(batch_id);
         CREATE INDEX IF NOT EXISTS idx_pending_items_batch ON pending_items(batch_id);
         CREATE INDEX IF NOT EXISTS idx_groups_batch ON groups(batch_id);

@@ -28,10 +28,19 @@ pub const MIMO_RPM_PER_VOICE: u32 = 20;
 pub const MIMO_RPM_PER_APP: u32 = 120;
 
 /// Default rate limit: API requests per minute (configurable via MIMO_RPM env var).
-pub const MIMO_RPM_DEFAULT: u64 = 90;
+pub const MIMO_RPM_DEFAULT: u64 = 100;
 
 /// Default token budget: max tokens processed per minute (configurable via MIMO_TOKEN_BUDGET_RPM env var).
-pub const MIMO_TOKEN_BUDGET_RPM_DEFAULT: u64 = 1_000_000;
+pub const MIMO_TOKEN_BUDGET_RPM_DEFAULT: u64 = 10_000_000;
+
+/// Per-provider RPM limit (each provider has independent quota).
+pub const MIMO_RPM_PER_PROVIDER: u64 = 100;
+
+/// Per-provider TPM limit (each provider has independent quota).
+pub const MIMO_TPM_PER_PROVIDER: u64 = 10_000_000;
+
+/// Default burst capacity per provider (safe burst without triggering per-second limits).
+pub const MIMO_BURST_PER_PROVIDER: u64 = 10;
 
 // ── Voice Presets ───────────────────────────────────────────────────
 

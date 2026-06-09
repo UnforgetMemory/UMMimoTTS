@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - 2026-06-04
+
+### Backend — Reliability & Provider Resilience
+
+#### Added
+- **Provider load balancer** (`provider_balancer.rs`): LeastConnections strategy with per-provider circuit breaker (5-failure threshold, 60s recovery timeout, half-open probe).
+- **TCP link error handling**: Connection refused / reset errors now mapped to `ServerOverload` variant, triggering graceful degradation instead of panics.
+- **Multi-layer degradation strategy**: 429/5xx → speed reduction; network errors → aggressive slowdown; global circuit breaker → pause all workers.
+- **Provider rate limiter map**: Per-provider independent quota with exponential backoff recovery.
+
+#### Fixed
+- **Circuit breaker half-open recovery**: `on_success()` now clears `circuit_open_since` when half-open probe succeeds, allowing full CLOSED transition.
+- **Atomic active_requests decrement**: `on_request_end()` uses `fetch_update` with `saturating_sub(1)` instead of non-atomic load-store pattern.
+- **LRU cache O(1) operations**: Replaced `HashMap` + linear scan with `LinkedHashMap` for O(1) eviction.
+
+### E2E Testing — Concurrency & Scale
+
+#### Added
+- **Concurrent user tests** (`concurrent_users.rs`): 5/10 virtual users via `tokio::join!` with full lifecycle (create → add → submit → poll).
+- **Large-scale text fixture** (`large-text-data.ts`): Generators for 120-segment, 200-segment, and 1000-file stress tests with mixed Chinese/English content.
+- **1000-file stress test** (`large-scale-text.spec.ts`): Batched upload (100/batch), memory monitoring, pagination stress.
+- **Full-chain E2E tests** (`full-chain.spec.ts`): Single-user journey + 5-user concurrent E2E.
+- **Frontend concurrent user tests** (`concurrent-users.spec.ts`): 3-user import, 5-user mixed (importer + viewer), rapid-click stress.
+- **Performance metrics collector** (`metrics-collector.ts`): Record/aggregate/summarize timing data.
+- **Batch task list page object** (`batch-task-list.page.ts`).
+
+#### Fixed
+- **`page.evaluate` scope bug**: External `userId` variable now passed as parameter to browser-context evaluation.
+- **Temp directory cleanup**: Increased timeout 3s→10s, added `trackedDirs` + `afterAll` sweep for orphaned `pw-upload-*` directories.
+
+### Infrastructure
+
+#### Changed
+- **`.gitignore`**: Added patterns for `*_stderr.txt`, `*_stdout.txt`, `*.ps1`, `backend_run*.txt`, `server_*.txt`.
+- **`playwright.config.ts`**: Added `large-scale` project with 60s timeout.
+
+---
+
 ## [Unreleased] - 2026-05-31
 
 ### Queue System Overhaul

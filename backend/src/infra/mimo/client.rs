@@ -59,9 +59,10 @@ impl MimoClient {
     pub fn new(_api_key: &str, _base_url: &str) -> Self {
         Self {
             http_client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(300))
-                .connect_timeout(std::time::Duration::from_secs(30))
-                .pool_max_idle_per_host(32)
+                .timeout(std::time::Duration::from_secs(30))
+                .connect_timeout(std::time::Duration::from_secs(15))
+                .pool_max_idle_per_host(64)
+                .tcp_keepalive(std::time::Duration::from_secs(60))
                 .build()
                 .unwrap_or_else(|e| {
                     tracing::error!("Failed to create HTTP client: {}, using default", e);
@@ -85,7 +86,12 @@ impl MimoClient {
         base_url: &str,
     ) -> Result<Vec<u8>, AppError> {
         let base_url = base_url.trim_end_matches('/');
-        let url = format!("{}/v1/chat/completions", base_url);
+        // Handle base_url that may or may not already include /v1
+        let url = if base_url.ends_with("/v1") {
+            format!("{}/chat/completions", base_url)
+        } else {
+            format!("{}/v1/chat/completions", base_url)
+        };
 
         let request = ChatCompletionRequest {
             model: model.to_string(),
@@ -114,10 +120,30 @@ impl MimoClient {
             .json(&request)
             .send()
             .await
-            .map_err(|e| AppError::Internal(format!("synthesize request failed: {e}")))?;
+            .map_err(|e| {
+                // TCP connection refused / DNS failure / timeout = server overload
+                // (not a client-side bug). Map to ServerOverload so the worker
+                // loop triggers degraded mode + circuit breaker.
+                if e.is_connect() || e.is_timeout() || e.is_request() {
+                    AppError::ServerOverload(format!("TCP/connect error: {e}"))
+                } else {
+                    AppError::Internal(format!("synthesize request failed: {e}"))
+                }
+            })?;
 
-        if resp.status().as_u16() == 429 {
+        let status_code = resp.status().as_u16();
+
+        // 429 — Rate limited (per-voice or per-app quota exceeded)
+        if status_code == 429 {
             return Err(AppError::RateLimited);
+        }
+
+        // 500/502/503/504 — Server overload (retryable with backoff)
+        if matches!(status_code, 500 | 502 | 503 | 504) {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(AppError::ServerOverload(format!(
+                "HTTP {status_code}: {body}"
+            )));
         }
 
         if !resp.status().is_success() {
@@ -236,10 +262,52 @@ mod tests {
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
-            Err(AppError::Internal(msg)) => {
-                assert!(msg.contains("500"), "Error should contain status code");
+            Err(AppError::ServerOverload(msg)) => {
+                assert!(msg.contains("500"), "Error should contain status code: {msg}");
             }
-            _ => panic!("Expected Internal error"),
+            other => panic!("Expected ServerOverload error, got: {other:?}"),
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_synthesize_503_overload() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(503).set_body_string("Service Unavailable"))
+            .mount(&mock_server)
+            .await;
+
+        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
+
+        match result {
+            Err(AppError::ServerOverload(msg)) => {
+                assert!(msg.contains("503"), "Error should contain 503: {msg}");
+            }
+            other => panic!("Expected ServerOverload for 503, got: {other:?}"),
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_synthesize_400_bad_request() {
+        let mock_server = MockServer::start().await;
+
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("Bad Request"))
+            .mount(&mock_server)
+            .await;
+
+        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
+
+        match result {
+            Err(AppError::Internal(msg)) => {
+                assert!(msg.contains("400"), "Error should contain 400: {msg}");
+            }
+            other => panic!("Expected Internal error for 400, got: {other:?}"),
         }
     }
 
@@ -264,13 +332,29 @@ mod tests {
 
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
         match result {
-            Err(AppError::Internal(msg)) => {
+            Err(AppError::ServerOverload(msg)) => {
                 assert!(
-                    msg.contains("timeout") || msg.contains("timed out") || msg.contains("failed"),
-                    "Error should mention timeout or failure: {msg}"
+                    msg.contains("timeout") || msg.contains("timed out") || msg.contains("TCP"),
+                    "Error should mention timeout or TCP: {msg}"
                 );
             }
-            other => panic!("Expected Internal error due to timeout, got: {other:?}"),
+            other => panic!("Expected ServerOverload for timeout, got: {other:?}"),
+        }
+    }
+
+    #[actix_rt::test]
+    async fn test_synthesize_connection_refused() {
+        // Use a non-existent server to trigger connection refused
+        let client = MimoClient::new("test-key-123", "http://127.0.0.1:1");
+        let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", "http://127.0.0.1:1").await;
+        match result {
+            Err(AppError::ServerOverload(msg)) => {
+                assert!(
+                    msg.contains("TCP") || msg.contains("connect"),
+                    "Error should mention TCP/connect: {msg}"
+                );
+            }
+            other => panic!("Expected ServerOverload for connection refused, got: {other:?}"),
         }
     }
 

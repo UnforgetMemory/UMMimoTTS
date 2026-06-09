@@ -2,12 +2,25 @@
 
 #![allow(dead_code)]
 
+use crate::domain::task::TaskStatus;
 use crate::shared::id::Id;
 use crate::shared::error::AppError;
 use crate::domain::chunk::{Chunk, ChunkStatus};
 use crate::infra::persistence::db::DbPool;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
+
+/// Lightweight task info joined with a chunk for worker processing.
+#[derive(Debug, Clone)]
+pub struct ChunkTaskInfo {
+    pub chunk: Chunk,
+    pub task_status: TaskStatus,
+    pub task_voice: String,
+    pub task_model: String,
+    pub task_speed: f64,
+    pub task_provider_id: Option<String>,
+    pub task_batch_id: Option<Id>,
+}
 
 pub trait ChunkRepo: Send + Sync {
     fn insert(&self, chunk: &Chunk) -> Result<(), AppError>;
@@ -18,17 +31,25 @@ pub trait ChunkRepo: Send + Sync {
     fn find_pending_prioritized(&self, limit: i64) -> Result<Vec<Chunk>, AppError>;
     fn find_oldest_pending(&self) -> Result<Option<Chunk>, AppError>;
     fn update_status(&self, id: &str, status: &ChunkStatus) -> Result<(), AppError>;
+    /// Mark a chunk as Processing only if it's still Pending (optimistic lock).
+    /// Returns `true` if the chunk was claimed, `false` if another worker already got it.
+    fn try_mark_processing(&self, id: &str) -> Result<bool, AppError>;
     fn update_priority(&self, id: &str, priority: i64) -> Result<(), AppError>;
     fn mark_done(&self, id: &str, audio_path: &str, duration: f64) -> Result<(), AppError>;
     fn mark_failed(&self, id: &str, error: &str) -> Result<(), AppError>;
     fn count_by_task_status(&self, task_id: &str, status: &ChunkStatus) -> Result<i64, AppError>;
     fn count_by_task_all(&self, task_id: &str) -> Result<i64, AppError>;
+    /// Aggregated chunk count for a task: returns (total, done, failed, pending, processing) in one query.
+    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64), AppError>;
     fn reset_processing_to_pending(&self) -> Result<usize, AppError>;
     /// Reset chunks stuck in Processing for longer than `stale_minutes` back to Pending.
     fn reset_stale_processing_to_pending(&self, stale_minutes: i64) -> Result<usize, AppError>;
     fn delete_by_task(&self, task_id: &str) -> Result<usize, AppError>;
     /// Cancel all pending/processing chunks for a task — marks them as Failed with "Cancelled by user".
     fn cancel_pending_by_task(&self, task_id: &str) -> Result<usize, AppError>;
+    /// JOIN query: find pending chunks with their parent task info.
+    /// Eliminates a separate task_repo.find_by_id() call per chunk.
+    fn find_pending_with_task(&self, limit: i64) -> Result<Vec<ChunkTaskInfo>, AppError>;
 }
 
 pub struct SqliteChunkRepo {
@@ -206,6 +227,20 @@ impl ChunkRepo for SqliteChunkRepo {
         Ok(())
     }
 
+    fn try_mark_processing(&self, id: &str) -> Result<bool, AppError> {
+        let conn = self.pool.get()?;
+        let rows = conn.execute(
+            "UPDATE chunks SET status = ?1, updated_at = ?2 WHERE id = ?3 AND status = ?4",
+            params![
+                serde_json::to_string(&ChunkStatus::Processing).unwrap(),
+                Utc::now().to_rfc3339(),
+                id,
+                serde_json::to_string(&ChunkStatus::Pending).unwrap(),
+            ],
+        )?;
+        Ok(rows > 0)
+    }
+
     fn update_priority(&self, id: &str, priority: i64) -> Result<(), AppError> {
         let conn = self.pool.get()?;
         conn.execute(
@@ -263,6 +298,28 @@ impl ChunkRepo for SqliteChunkRepo {
         Ok(count)
     }
 
+    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64), AppError> {
+        let conn = self.pool.get()?;
+        let done_str = serde_json::to_string(&ChunkStatus::Done).unwrap();
+        let failed_str = serde_json::to_string(&ChunkStatus::Failed).unwrap();
+        let pending_str = serde_json::to_string(&ChunkStatus::Pending).unwrap();
+        let processing_str = serde_json::to_string(&ChunkStatus::Processing).unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT
+                COUNT(*) AS total,
+                COALESCE(SUM(CASE WHEN status = ?2 THEN 1 ELSE 0 END), 0) AS done,
+                COALESCE(SUM(CASE WHEN status = ?3 THEN 1 ELSE 0 END), 0) AS failed,
+                COALESCE(SUM(CASE WHEN status = ?4 THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN status = ?5 THEN 1 ELSE 0 END), 0) AS processing
+             FROM chunks WHERE task_id = ?1",
+        )?;
+        let result = stmt.query_row(
+            params![task_id, done_str, failed_str, pending_str, processing_str],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )?;
+        Ok(result)
+    }
+
     fn reset_processing_to_pending(&self) -> Result<usize, AppError> {
         let conn = self.pool.get()?;
         let affected = conn.execute(
@@ -315,6 +372,59 @@ impl ChunkRepo for SqliteChunkRepo {
         let conn = self.pool.get()?;
         let affected = conn.execute("DELETE FROM chunks WHERE task_id = ?1", params![task_id])?;
         Ok(affected)
+    }
+
+    fn find_pending_with_task(&self, limit: i64) -> Result<Vec<ChunkTaskInfo>, AppError> {
+        let conn = self.pool.get()?;
+        let pending_str = serde_json::to_string(&ChunkStatus::Pending).unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT c.id AS c_id, c.task_id AS c_task_id, c.seq, c.text, c.status AS c_status,
+                    c.retry_count, c.max_retries, c.priority, c.audio_path, c.duration_ms,
+                    c.created_at AS c_created_at, c.updated_at AS c_updated_at,
+                    t.status AS t_status, t.voice, t.model, t.speed,
+                    t.provider_id, t.batch_id
+             FROM chunks c
+             JOIN tasks t ON c.task_id = t.id
+             WHERE c.status = ?1
+             ORDER BY c.priority DESC, c.created_at ASC
+             LIMIT ?2",
+        )?;
+        let results = stmt
+            .query_map(params![pending_str, limit], |row| {
+                let chunk = Chunk {
+                    id: Id::from_str(&row.get::<_, String>("c_id")?)
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                    task_id: Id::from_str(&row.get::<_, String>("c_task_id")?)
+                        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?,
+                    seq: row.get("seq")?,
+                    text: row.get("text")?,
+                    status: serde_json::from_str(&row.get::<_, String>("c_status")?).unwrap(),
+                    retry_count: row.get("retry_count")?,
+                    max_retries: row.get("max_retries")?,
+                    priority: row.get::<_, i64>("priority")?,
+                    audio_path: row.get("audio_path")?,
+                    duration: row.get::<_, Option<i64>>("duration_ms")?.map(|d| d as f64 / 1000.0),
+                    created_at: SqliteChunkRepo::parse_datetime(&row.get::<_, String>("c_created_at")?),
+                    updated_at: SqliteChunkRepo::parse_datetime(&row.get::<_, String>("c_updated_at")?),
+                    completed_at: None,
+                };
+                let task_status_str: String = row.get("t_status")?;
+                let task_status: TaskStatus = serde_json::from_str(&task_status_str)
+                    .unwrap_or(TaskStatus::Pending);
+                let batch_id_str: Option<String> = row.get("batch_id")?;
+                Ok(ChunkTaskInfo {
+                    chunk,
+                    task_status,
+                    task_voice: row.get("voice")?,
+                    task_model: row.get("model")?,
+                    task_speed: row.get("speed")?,
+                    task_provider_id: row.get("provider_id")?,
+                    task_batch_id: batch_id_str.map(|s| Id::from_str(&s).unwrap()),
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(results)
     }
 }
 

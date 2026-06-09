@@ -1,6 +1,7 @@
 use crate::shared::error::AppError;
 use std::path::Path;
 use std::fs;
+use std::io::{BufReader, BufWriter, Read, Write, Seek, SeekFrom};
 use std::path::PathBuf;
 
 /// Parsed WAV header information.
@@ -11,31 +12,27 @@ struct WavHeader {
     data_size: u32,
 }
 
-/// Read and parse the WAV header from a file.
+/// Read and parse the WAV header from a file (only reads 44 bytes).
 fn read_wav_header(path: &Path) -> Result<WavHeader, AppError> {
-    let bytes = fs::read(path)
-        .map_err(|e| AppError::Internal(format!("Failed to read WAV file {}: {e}", path.display())))?;
+    let mut file = fs::File::open(path)
+        .map_err(|e| AppError::Internal(format!("Failed to open WAV file {}: {e}", path.display())))?;
 
-    if bytes.len() < 44 {
-        return Err(AppError::InvalidInput(format!(
-            "WAV file too small ({} bytes): {}",
-            bytes.len(),
-            path.display()
-        )));
-    }
+    let mut header_buf = [0u8; 44];
+    file.read_exact(&mut header_buf)
+        .map_err(|e| AppError::Internal(format!("Failed to read WAV header {}: {e}", path.display())))?;
 
     // Validate RIFF header
-    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+    if &header_buf[0..4] != b"RIFF" || &header_buf[8..12] != b"WAVE" {
         return Err(AppError::InvalidInput(format!(
             "Not a valid WAV file: {}",
             path.display()
         )));
     }
 
-    let channels = u16::from_le_bytes([bytes[22], bytes[23]]);
-    let sample_rate = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
-    let bits_per_sample = u16::from_le_bytes([bytes[34], bytes[35]]);
-    let data_size = u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]);
+    let channels = u16::from_le_bytes([header_buf[22], header_buf[23]]);
+    let sample_rate = u32::from_le_bytes([header_buf[24], header_buf[25], header_buf[26], header_buf[27]]);
+    let bits_per_sample = u16::from_le_bytes([header_buf[34], header_buf[35]]);
+    let data_size = u32::from_le_bytes([header_buf[40], header_buf[41], header_buf[42], header_buf[43]]);
 
     Ok(WavHeader {
         sample_rate,
@@ -43,22 +40,6 @@ fn read_wav_header(path: &Path) -> Result<WavHeader, AppError> {
         bits_per_sample,
         data_size,
     })
-}
-
-/// Extract raw audio data from a WAV file (skip 44-byte header).
-fn get_wav_data(path: &Path) -> Result<Vec<u8>, AppError> {
-    let bytes = fs::read(path)
-        .map_err(|e| AppError::Internal(format!("Failed to read WAV file {}: {e}", path.display())))?;
-
-    if bytes.len() < 44 {
-        return Err(AppError::InvalidInput(format!(
-            "WAV file too small ({} bytes): {}",
-            bytes.len(),
-            path.display()
-        )));
-    }
-
-    Ok(bytes[44..].to_vec())
 }
 
 /// Calculate WAV duration in seconds.
@@ -75,6 +56,9 @@ fn get_wav_duration(path: &Path) -> Result<f64, AppError> {
 }
 
 /// Merge multiple WAV chunk files into a single output WAV file.
+///
+/// Uses streaming I/O (BufReader/BufWriter) to minimize memory usage.
+/// Only reads 44-byte headers + streams audio data in 64KB chunks.
 ///
 /// Returns (output_path, total_duration_seconds).
 pub fn merge_wavs(chunk_paths: &[PathBuf], output_path: &Path) -> Result<(PathBuf, f64), AppError> {
@@ -94,10 +78,10 @@ pub fn merge_wavs(chunk_paths: &[PathBuf], output_path: &Path) -> Result<(PathBu
         return Ok((output_path.to_path_buf(), duration));
     }
 
-    // Multi-chunk merge
+    // Multi-chunk streaming merge
     let first_header = read_wav_header(&chunk_paths[0])?;
 
-    // Verify all chunks have compatible headers
+    // Verify all chunks have compatible headers (only reads 44 bytes each)
     for path in chunk_paths.iter().skip(1) {
         let h = read_wav_header(path)?;
         if h.sample_rate != first_header.sample_rate
@@ -117,40 +101,68 @@ pub fn merge_wavs(chunk_paths: &[PathBuf], output_path: &Path) -> Result<(PathBu
         }
     }
 
-    // Read the first file's full content (header + data)
-    let first_bytes = fs::read(&chunk_paths[0])
-        .map_err(|e| AppError::Internal(format!("Failed to read {}: {e}", chunk_paths[0].display())))?;
+    // Calculate total data size from headers (no file reads needed)
+    let total_data_size: u32 = chunk_paths.iter()
+        .map(|p| read_wav_header(p).map(|h| h.data_size))
+        .sum::<Result<u32, _>>()?;
 
-    // Collect data sections from all chunks
-    let mut total_data_size: u32 = first_header.data_size;
-    let mut all_data = first_bytes[44..].to_vec(); // first chunk's data
-
-    for path in chunk_paths.iter().skip(1) {
-        let data = get_wav_data(path)?;
-        total_data_size += data.len() as u32;
-        all_data.extend_from_slice(&data);
-    }
-
-    // Build output: use first chunk's header and update sizes
-    let mut output = first_bytes[0..44].to_vec(); // copy first 44 bytes
-
-    // Update RIFF chunk size (bytes 4-7): file_size - 8
-    let riff_size = 36 + total_data_size; // 36 = 44 - 8 (header without RIFF marker + size field)
-    output[4..8].copy_from_slice(&riff_size.to_le_bytes());
-
-    // Update data sub-chunk size (bytes 40-43)
-    output[40..44].copy_from_slice(&total_data_size.to_le_bytes());
-
-    // Append all data
-    output.extend_from_slice(&all_data);
-
-    // Write output file
+    // Create output directory
     if let Some(parent) = output_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| AppError::Internal(format!("Failed to create output directory: {e}")))?;
     }
-    fs::write(output_path, &output)
-        .map_err(|e| AppError::Internal(format!("Failed to write merged WAV {}: {e}", output_path.display())))?;
+
+    // Read first file's header bytes (44 bytes only)
+    let first_header_bytes = {
+        let mut f = fs::File::open(&chunk_paths[0])
+            .map_err(|e| AppError::Internal(format!("Failed to open {}: {e}", chunk_paths[0].display())))?;
+        let mut buf = [0u8; 44];
+        f.read_exact(&mut buf)
+            .map_err(|e| AppError::Internal(format!("Failed to read header from {}: {e}", chunk_paths[0].display())))?;
+        buf
+    };
+
+    // Write output using streaming I/O
+    {
+        let out_file = fs::File::create(output_path)
+            .map_err(|e| AppError::Internal(format!("Failed to create output file {}: {e}", output_path.display())))?;
+        let mut writer = BufWriter::with_capacity(64 * 1024, out_file);
+
+        // Write header with updated sizes
+        let mut header = first_header_bytes;
+        let riff_size = 36 + total_data_size;
+        header[4..8].copy_from_slice(&riff_size.to_le_bytes());
+        header[40..44].copy_from_slice(&total_data_size.to_le_bytes());
+        writer.write_all(&header)
+            .map_err(|e| AppError::Internal(format!("Failed to write output header: {e}")))?;
+
+        // Stream audio data from each chunk (skip 44-byte header)
+        let mut copy_buf = vec![0u8; 64 * 1024]; // 64KB copy buffer
+        for path in chunk_paths {
+            let mut reader = BufReader::with_capacity(
+                64 * 1024,
+                fs::File::open(path)
+                    .map_err(|e| AppError::Internal(format!("Failed to open {}: {e}", path.display())))?,
+            );
+            // Skip the 44-byte WAV header
+            reader.seek(SeekFrom::Start(44))
+                .map_err(|e| AppError::Internal(format!("Failed to seek in {}: {e}", path.display())))?;
+
+            // Stream copy audio data
+            loop {
+                let n = reader.read(&mut copy_buf)
+                    .map_err(|e| AppError::Internal(format!("Failed to read from {}: {e}", path.display())))?;
+                if n == 0 {
+                    break;
+                }
+                writer.write_all(&copy_buf[..n])
+                    .map_err(|e| AppError::Internal(format!("Failed to write to output: {e}")))?;
+            }
+        }
+
+        writer.flush()
+            .map_err(|e| AppError::Internal(format!("Failed to flush output: {e}")))?;
+    }
 
     // Calculate total duration
     let bytes_per_sample =

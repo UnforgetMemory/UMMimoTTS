@@ -23,6 +23,18 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /full-chain\.spec\.ts|large-scale-text\.spec\.ts/,
+    },
+    {
+      name: 'full-chain',
+      testMatch: /full-chain\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'large-scale',
+      testMatch: /large-scale-text\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+      timeout: 60000,
     },
   ],
 

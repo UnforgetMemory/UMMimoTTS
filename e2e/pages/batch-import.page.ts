@@ -4,6 +4,9 @@ import { expect } from '@playwright/test';
 export class BatchImportPage {
   readonly page: Page;
 
+  /** Track all temp dirs created during tests for reliable cleanup */
+  static trackedDirs: string[] = [];
+
   // Sidebar trigger buttons
   readonly sidebarNewBatchBtn: Locator;
   readonly collapsedNewBatchBtn: Locator;
@@ -130,6 +133,7 @@ export class BatchImportPage {
     const os = await import('os');
 
     const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'pw-upload-'));
+    BatchImportPage.trackedDirs.push(tmpDir);
     const filePath = pathMod.join(tmpDir, filePayload.name);
     fs.writeFileSync(filePath, filePayload.buffer);
 
@@ -137,10 +141,10 @@ export class BatchImportPage {
     const fileInput = this.page.locator('input[type="file"]');
     await fileInput.setInputFiles(tmpDir);
 
-    // Cleanup after a short delay
+    // Cleanup after upload processing completes
     setTimeout(() => {
       try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    }, 3000);
+    }, 10000);
   }
 
   /** Upload multiple files via webkitdirectory input */
@@ -152,6 +156,7 @@ export class BatchImportPage {
     const os = await import('os');
 
     const tmpDir = fs.mkdtempSync(pathMod.join(os.tmpdir(), 'pw-upload-'));
+    BatchImportPage.trackedDirs.push(tmpDir);
     for (const f of filePayloads) {
       const fp = pathMod.join(tmpDir, f.name);
       fs.writeFileSync(fp, f.buffer);
@@ -162,7 +167,18 @@ export class BatchImportPage {
 
     setTimeout(() => {
       try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    }, 3000);
+    }, 10000);
+  }
+
+  /** Remove all tracked temp directories (call from afterAll) */
+  static cleanupTempDirs() {
+    const fs = require('fs');
+    let removed = 0;
+    for (const dir of BatchImportPage.trackedDirs) {
+      try { fs.rmSync(dir, { recursive: true, force: true }); removed++; } catch {}
+    }
+    BatchImportPage.trackedDirs = [];
+    return removed;
   }
 
   // ── Preview step ────────────────────────────────────────────────────

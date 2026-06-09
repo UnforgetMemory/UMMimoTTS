@@ -12,6 +12,9 @@ pub enum AppError {
     Internal(String),
     #[error("Rate limited")]
     RateLimited,
+    /// Server overload (HTTP 500/502/503/504) — retryable with backoff.
+    #[error("Server overload: {0}")]
+    ServerOverload(String),
 }
 
 impl From<anyhow::Error> for AppError {
@@ -44,6 +47,7 @@ impl ResponseError for AppError {
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+            Self::ServerOverload(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
     fn error_response(&self) -> HttpResponse {
