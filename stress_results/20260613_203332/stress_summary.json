@@ -1,0 +1,35 @@
+{
+  "batch_create": {
+    "tasks": 20,
+    "time": 1.2919776439666748,
+    "rate": 15.480144020600312
+  },
+  "batch_wait": {
+    "completed": 20,
+    "failed": 0,
+    "remaining": 0,
+    "time": 4.085454702377319
+  },
+  "audio_download": {
+    "files": 10,
+    "total_bytes": 1764440,
+    "time": 0.010219097137451172
+  },
+  "large_text": {
+    "chars": 50000,
+    "chunks_estimated": 34
+  },
+  "create_delete": {
+    "rounds": 10,
+    "avg_create_ms": 11.629939079284668,
+    "avg_delete_ms": 1.3044357299804688
+  },
+  "task_list": {
+    "count": 31,
+    "query_time_ms": 1.512289047241211
+  },
+  "memory": {
+    "current_mb": 147.87109375,
+    "samples": 0
+  }
+}
