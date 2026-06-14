@@ -603,6 +603,93 @@ fn create_test_chunk(task_id: &Id) -> Chunk {
     }
 
     #[test]
+    fn test_count_by_task_aggregated_includes_all_statuses() {
+        // Regression test for "14/267 chunks shows as completed" bug.
+        // Previous SQL only counted Done/Failed/Pending/Processing — Queued and Dead
+        // chunks were missing from the aggregation, causing done+failed < total even
+        // when all chunks were truly resolved, OR causing premature completion when
+        // chunks were in Queued/Dead state.
+        let pool = create_test_pool();
+        let conn = pool.get().unwrap();
+        run_migrations(&conn).unwrap();
+        let task_id = Id::new();
+        insert_test_task(&conn, &task_id);
+        let repo = SqliteChunkRepo::new(pool);
+
+        // Insert one chunk for each of the 6 ChunkStatus variants
+        let chunks = vec![
+            (ChunkStatus::Pending, "pending"),
+            (ChunkStatus::Queued, "queued"),
+            (ChunkStatus::Processing, "processing"),
+            (ChunkStatus::Done, "done"),
+            (ChunkStatus::Failed, "failed"),
+            (ChunkStatus::Dead, "dead"),
+        ];
+        let total_expected = chunks.len() as i64;
+        for (i, (status, text)) in chunks.iter().enumerate() {
+            let mut chunk = Chunk::new(task_id.clone(), i as i32, text.to_string());
+            chunk.status = status.clone();
+            repo.insert(&chunk).unwrap();
+        }
+
+        let (total, done, failed, pending, processing, queued, dead) =
+            repo.count_by_task_aggregated(task_id.as_str()).unwrap();
+
+        // total = count of all rows
+        assert_eq!(total, total_expected, "total should equal total chunks");
+        // Each bucket should be exactly 1
+        assert_eq!(done, 1, "done count");
+        assert_eq!(failed, 1, "failed count");
+        assert_eq!(pending, 1, "pending count");
+        assert_eq!(processing, 1, "processing count");
+        assert_eq!(queued, 1, "queued count (was previously MISSING from SQL)");
+        assert_eq!(dead, 1, "dead count (was previously MISSING from SQL)");
+
+        // Critical invariant: done + failed + pending + processing + queued + dead == total
+        // Without Queued/Dead, this sum would be 4 instead of 6, falsely indicating
+        // incomplete chunks when they were all accounted for.
+        let sum = done + failed + pending + processing + queued + dead;
+        assert_eq!(sum, total, "sum of all status buckets must equal total");
+    }
+
+    #[test]
+    fn test_count_by_task_aggregated_queues_visible_in_total() {
+        // Simulate the original bug scenario: 14 chunks Done, rest Queued.
+        // The aggregation should show 14 done + N queued, NOT (incorrectly) all-done.
+        let pool = create_test_pool();
+        let conn = pool.get().unwrap();
+        run_migrations(&conn).unwrap();
+        let task_id = Id::new();
+        insert_test_task(&conn, &task_id);
+        let repo = SqliteChunkRepo::new(pool);
+
+        // 14 done + 253 queued = 267 total
+        for i in 0..14 {
+            let mut chunk = Chunk::new(task_id.clone(), i, format!("done-{}", i));
+            chunk.status = ChunkStatus::Done;
+            repo.insert(&chunk).unwrap();
+        }
+        for i in 14..267 {
+            let mut chunk = Chunk::new(task_id.clone(), i, format!("queued-{}", i));
+            chunk.status = ChunkStatus::Queued;
+            repo.insert(&chunk).unwrap();
+        }
+
+        let (total, done, failed, pending, processing, queued, dead) =
+            repo.count_by_task_aggregated(task_id.as_str()).unwrap();
+
+        assert_eq!(total, 267);
+        assert_eq!(done, 14);
+        assert_eq!(queued, 253);
+        // Without the Queued bucket, done (14) would not equal total (267),
+        // but callers' logic should also check: NOT (done + failed == total),
+        // they should also subtract pending + processing + queued + dead.
+        // The critical assertion: caller can now distinguish "14 done of 267" from
+        // "all 267 done" by seeing that queued > 0.
+        assert!(queued > 0, "queued bucket must reflect remaining work");
+    }
+
+    #[test]
     fn test_chunk_update_priority() {
         let pool = create_test_pool();
         let conn = pool.get().unwrap();
