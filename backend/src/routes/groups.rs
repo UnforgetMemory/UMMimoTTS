@@ -10,18 +10,8 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct CreateGroupRequest {
-    pub batch_id: String,
-    pub title: String,
-    #[serde(default)]
-    pub voice: Option<String>,
-    #[serde(default)]
-    pub model: Option<String>,
-    #[serde(default)]
-    pub style: Option<String>,
-    #[serde(default)]
-    pub speed: Option<f64>,
-    #[serde(default)]
-    pub provider_id: Option<String>,
+    pub name: String,
+    pub batch_ids: Vec<String>,
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -36,18 +26,22 @@ async fn create_group(
     state: web::Data<AppState>,
     body: web::Json<CreateGroupRequest>,
 ) -> impl Responder {
-    match state.group_service.create(
-        &body.batch_id,
-        &body.title,
-        body.voice.clone(),
-        body.model.clone(),
-        body.style.clone(),
-        body.speed,
-        body.provider_id.clone(),
-    ) {
-        Ok(group) => HttpResponse::Created().json(group),
-        Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+    let mut groups = Vec::new();
+    for batch_id in &body.batch_ids {
+        match state.group_service.create(
+            batch_id,
+            &body.name,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ) {
+            Ok(group) => groups.push(group),
+            Err(e) => return HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
+        }
     }
+    HttpResponse::Created().json(groups)
 }
 
 async fn list_groups(
