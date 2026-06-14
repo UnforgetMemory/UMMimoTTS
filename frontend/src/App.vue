@@ -129,10 +129,11 @@
           <Button
             class="w-full h-9 text-xs"
             size="sm"
+            :disabled="!configStore.hasValidKey"
             @click="showMobileBatchSidebar = false; showBatchWizard = true"
           >
             <PlusIcon class="w-4 h-4 mr-1.5" />
-            新建批量任务
+            {{ configStore.hasValidKey ? '新建批量任务' : '请先配置 API Key' }}
           </Button>
           <GroupCard
             v-for="group in batchStore.groups"
