@@ -64,7 +64,7 @@ macro_rules! build_app {
         let (event_tx, _event_rx) =
             tokio::sync::broadcast::channel::<DomainEvent>(256);
 
-        let client = Arc::new(MimoClient::new("test-key", &base_url));
+        let client = Arc::new(MimoClient::new(&base_url));
         let cache = Arc::new(Cache::new(
             std::path::PathBuf::from("/tmp/test-cache"),
             Duration::from_secs(3600),

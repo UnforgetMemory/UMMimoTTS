@@ -180,7 +180,7 @@ macro_rules! build_app {
         let cap = (total * 16).max(4096).min(65536);
         let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(cap);
 
-        let client = Arc::new(MimoClient::new("test-key", &$ms.uri()));
+        let client = Arc::new(MimoClient::new(&$ms.uri()));
         let cache_dir = std::path::PathBuf::from(format!("/tmp/concurrent-cache-{}", $n));
         let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(3600), 10_000));
 

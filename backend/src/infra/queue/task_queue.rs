@@ -821,7 +821,6 @@ use crate::shared::id::Id;
 
         let mock_server = MockServer::start().await;
         let client = Arc::new(crate::infra::mimo::client::MimoClient::new(
-            "test-key",
             &mock_server.uri(),
         ));
 

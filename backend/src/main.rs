@@ -4,7 +4,6 @@
 //! then starts the actix-web HTTP server.
 //!
 //! Environment variables:
-//!   MIMO_API_KEY         — MIMO TTS API key (default: "test-key")
 //!   MIMO_BASE_URL        — MIMO API base URL  (default: "http://localhost:30231")
 //!   SERVER_PORT          — HTTP listen port    (default: 30231)
 //!   DB_PATH              — SQLite file path    (default: "data/mimo.db")
@@ -61,7 +60,6 @@ async fn main() -> std::io::Result<()> {
 
     let port: u16 = env_or("SERVER_PORT", "30231").parse().expect("SERVER_PORT must be a u16");
     let db_path = env_or("DB_PATH", "data/mimo.db");
-    let mimo_api_key = env_or("MIMO_API_KEY", "test-key");
     let mimo_base_url = env_or("MIMO_BASE_URL", um_mimo_tts_server::constants::MIMO_BASE_URL_DEFAULT);
     let max_concurrent: usize = env_or("MAX_CONCURRENT", "10").parse().expect("MAX_CONCURRENT must be usize");
     let max_active_tasks: usize = env_or("MAX_ACTIVE_TASKS", "20").parse().expect("MAX_ACTIVE_TASKS must be usize");
@@ -95,7 +93,7 @@ async fn main() -> std::io::Result<()> {
     um_mimo_tts_server::infra::sse_bus::spawn_sse_bridge(event_rx, sse_bus.clone());
 
     // ── MIMO client + chunker ─────────────────────────────────────────
-    let client = Arc::new(MimoClient::new(&mimo_api_key, &mimo_base_url));
+    let client = Arc::new(MimoClient::new(&mimo_base_url));
     let chunk_target_tokens: i64 = env_or("CHUNK_TARGET_TOKENS", "10000").parse().expect("CHUNK_TARGET_TOKENS must be i64");
     let chunk_hard_cap: i64 = env_or("CHUNK_HARD_CAP", "20000").parse().expect("CHUNK_HARD_CAP must be i64");
     let chunker = MimoChunker::new(&mimo_base_url, chunk_target_tokens, chunk_hard_cap);

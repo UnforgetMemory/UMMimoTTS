@@ -55,8 +55,8 @@ struct ChatCompletionResponse {
 
 impl MimoClient {
     /// Create a new MimoClient with a connection-pooled HTTP client.
-    /// api_key and base_url are not stored — pass them to synthesize() per-call.
-    pub fn new(_api_key: &str, _base_url: &str) -> Self {
+    /// base_url is not stored — pass it to synthesize() per-call.
+    pub fn new(_base_url: &str) -> Self {
         Self {
             http_client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(30))
@@ -222,7 +222,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("你好世界", "test-voice", crate::constants::DEFAULT_MODEL, 1.0, "test-key-123", &mock_server.uri()).await.unwrap();
 
         assert!(!result.is_empty(), "Should return WAV bytes");
@@ -239,7 +239,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
@@ -258,7 +258,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
@@ -279,7 +279,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
@@ -300,7 +300,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
 
         match result {
@@ -345,7 +345,7 @@ mod tests {
     #[actix_rt::test]
     async fn test_synthesize_connection_refused() {
         // Use a non-existent server to trigger connection refused
-        let client = MimoClient::new("test-key-123", "http://127.0.0.1:1");
+        let client = MimoClient::new("http://127.0.0.1:1");
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", "http://127.0.0.1:1").await;
         match result {
             Err(AppError::ServerOverload(msg)) => {
@@ -370,7 +370,7 @@ mod tests {
             .mount(&mock_server)
             .await;
 
-        let client = MimoClient::new("test-key-123", &mock_server.uri());
+        let client = MimoClient::new(&mock_server.uri());
         let result = client.synthesize("hello", "v", "m", 1.0, "test-key-123", &mock_server.uri()).await;
         assert!(result.is_err(), "Empty choices should produce an error");
     }

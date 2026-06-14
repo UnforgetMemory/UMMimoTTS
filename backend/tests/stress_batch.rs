@@ -393,7 +393,7 @@ async fn stress(n: usize, timeout: Duration) -> Metrics {
     let cap = (n * 16).max(4096).min(65536);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(cap);
 
-    let client = Arc::new(MimoClient::new("test-key", &ms.uri()));
+    let client = Arc::new(MimoClient::new(&ms.uri()));
     let cache = Arc::new(Cache::new(
         std::path::PathBuf::from("/tmp/test-cache"),
         Duration::from_secs(3600),
@@ -686,7 +686,7 @@ async fn stress_large_text_100k() {
     let sse_bus = Arc::new(SseBus::new());
     let chunker = MimoChunker::new(&ms.uri(), 2000, 5000);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
-    let client = Arc::new(MimoClient::new("test-key", &ms.uri()));
+    let client = Arc::new(MimoClient::new(&ms.uri()));
     let cache = Arc::new(Cache::new(
         std::path::PathBuf::from("/tmp/test-cache-lg"), Duration::from_secs(3600), 100,
     ));
@@ -833,7 +833,7 @@ async fn stress_large_text_500k() {
     let sse_bus = Arc::new(SseBus::new());
     let chunker = MimoChunker::new(&ms.uri(), 2000, 5000);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(4096);
-    let client = Arc::new(MimoClient::new("test-key", &ms.uri()));
+    let client = Arc::new(MimoClient::new(&ms.uri()));
     let cache = Arc::new(Cache::new(
         std::path::PathBuf::from("/tmp/test-cache-xl"), Duration::from_secs(3600), 100,
     ));
@@ -1023,7 +1023,7 @@ async fn stress_real_with_rpm(n: usize, timeout: Duration, rpm_override: Option<
     let cap = (n * 16).max(4096).min(65536);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(cap);
 
-    let client = Arc::new(MimoClient::new(&api_key, &base_url));
+    let client = Arc::new(MimoClient::new(&base_url));
     let cache = Arc::new(Cache::new(
         std::path::PathBuf::from("/tmp/ummimo-cache-real"),
         Duration::from_secs(3600),
@@ -1475,7 +1475,7 @@ async fn stress_real_monitored(
     let cap = (n * 32).max(8192).min(65536);
     let (tx, rx) = tokio::sync::broadcast::channel::<DomainEvent>(cap);
 
-    let client = Arc::new(MimoClient::new(&api_key, &base_url));
+    let client = Arc::new(MimoClient::new(&base_url));
     let cache_dir = std::path::PathBuf::from("/tmp/ummimo-stress-3000");
     let cache = Arc::new(Cache::new(cache_dir.clone(), Duration::from_secs(7200), 500));
 

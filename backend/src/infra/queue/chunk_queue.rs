@@ -698,7 +698,7 @@ mod tests {
         let task_repo: Arc<dyn TaskRepo> = Arc::new(SqliteTaskRepo::new(pool.clone()));
         let provider_repo: Arc<dyn ProviderRepo> = Arc::new(SqliteProviderRepo::new(pool.clone()));
         let _ = provider_repo.update_api_key("xiaomi", "test-key");
-        let client = Arc::new(MimoClient::new("test-key", "http://localhost:30231"));
+        let client = Arc::new(MimoClient::new("http://localhost:30231"));
         let cache = Arc::new(Cache::new(
             PathBuf::from("data/test_cache"),
             Duration::from_secs(300),
