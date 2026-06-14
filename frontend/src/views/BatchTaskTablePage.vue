@@ -282,8 +282,8 @@ onMounted(() => {
     <div class="flex items-center justify-between px-4 sm:px-5 py-3 border-b shrink-0">
       <h2 class="text-base sm:text-lg font-semibold tracking-tight text-foreground">批量任务</h2>
       <Button size="sm" class="h-8 text-xs gap-1.5" :disabled="!configStore.hasConfiguredProvider" @click="openBatchWizard()">
-        <PlusIcon class="w-4 h-4" />
-        <span class="hidden sm:inline">新建批量任务</span>
+        <PlusIcon v-if="configStore.hasConfiguredProvider" class="w-4 h-4" />
+        <span class="hidden sm:inline">{{ configStore.hasConfiguredProvider ? '新建批量任务' : '请先配置 API Key' }}</span>
       </Button>
     </div>
     <CardContent class="flex-1 p-0 overflow-auto">
