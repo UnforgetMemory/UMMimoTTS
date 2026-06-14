@@ -545,7 +545,7 @@ impl BatchService {
             .map_err(|e| AppError::Internal(e.to_string()))?;
         self.sse_bus.publish(
             &format!("batch:{batch_id}"),
-            &DomainEvent::BatchPaused {
+            &DomainEvent::BatchCancelled {
                 batch_id: batch_id_obj,
             },
         );

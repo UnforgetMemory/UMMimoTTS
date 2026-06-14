@@ -117,6 +117,7 @@ fn event_channels(event: &DomainEvent) -> Vec<String> {
         | DomainEvent::ParsingComplete { batch_id, .. }
         | DomainEvent::BatchPaused { batch_id }
         | DomainEvent::BatchResumed { batch_id }
+        | DomainEvent::BatchCancelled { batch_id }
         | DomainEvent::BatchCompleted { batch_id }
         | DomainEvent::BatchFailed { batch_id, .. }
         | DomainEvent::GroupCompleted { batch_id, .. }

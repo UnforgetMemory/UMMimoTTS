@@ -14,6 +14,7 @@ pub enum DomainEvent {
     TaskFailed { task_id: Id, error: String },
     BatchPaused { batch_id: Id },
     BatchResumed { batch_id: Id },
+    BatchCancelled { batch_id: Id },
     BatchCompleted { batch_id: Id },
     BatchFailed { batch_id: Id, error: String, failed_count: i32 },
     GroupCompleted { group_id: Id, batch_id: Id },
@@ -57,6 +58,7 @@ mod tests {
             },
             DomainEvent::BatchPaused { batch_id: Id::new() },
             DomainEvent::BatchResumed { batch_id: Id::new() },
+            DomainEvent::BatchCancelled { batch_id: Id::new() },
             DomainEvent::BatchCompleted { batch_id: Id::new() },
             DomainEvent::BatchFailed {
                 batch_id: Id::new(), error: "batch error".into(), failed_count: 2,

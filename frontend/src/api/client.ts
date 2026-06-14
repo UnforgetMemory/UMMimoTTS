@@ -727,7 +727,7 @@ function transformV2BatchTask(v2: BatchV2TaskSummary): Task {
 
 function transformV2Batch(v2: BatchV2Response): BatchGroup {
   const tasks = v2.tasks || []
-  const completedTasks = tasks.filter(t => t.status === 'completed').length
+  const completedTasks = tasks.filter(t => t.status === 'done').length
   const failedTasks = tasks.filter(t => t.status === 'failed').length
 
   return {

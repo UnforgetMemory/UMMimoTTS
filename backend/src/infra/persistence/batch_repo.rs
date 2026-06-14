@@ -407,8 +407,8 @@ impl BatchRepo for SqliteBatchRepo {
         }
 
         maybe_push!(title, "name");
-        maybe_push!(voice, "voice");
-        maybe_push!(model, "model");
+        maybe_push!(voice, "default_voice");
+        maybe_push!(model, "default_model");
         maybe_push!(style, "style");
 
         if let Some(v) = speed {
