@@ -33,6 +33,24 @@
       </div>
     </div>
 
+    <!-- Fetch error state -->
+    <div
+      v-else-if="fetchError"
+      class="flex flex-col items-center justify-center h-full text-muted-foreground gap-4"
+    >
+      <div class="w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center">
+        <AlertCircleIcon class="w-8 h-8 text-muted-foreground/40" />
+      </div>
+      <div class="text-center">
+        <p class="text-base font-medium text-foreground/80">加载失败</p>
+        <p class="text-sm text-muted-foreground/60 mt-1">{{ fetchError }}</p>
+      </div>
+      <Button variant="outline" size="sm" class="mt-2" @click="handleRefresh">
+        <RotateCcwIcon class="w-4 h-4 mr-1.5" />
+        重试
+      </Button>
+    </div>
+
     <!-- 404 state -->
     <div
       v-else-if="!group"
@@ -434,6 +452,7 @@ const initialLoading = ref(true)
 const loadingTasks = ref(false)
 const refreshing = ref(false)
 const downloading = ref(false)
+const fetchError = ref<string | null>(null)
 let pollingTimer: ReturnType<typeof setInterval> | null = null
 
 // ─── Group from store ────────────────────────────────
@@ -445,8 +464,8 @@ const group = computed<GroupSummary | undefined>(() =>
 onMounted(async () => {
   try {
     await batchStore.getGroupDetailWithTasks(props.id, 0, 100)
-  } catch (err) {
-    console.error('Failed to load group detail:', err)
+  } catch (err: any) {
+    fetchError.value = err?.message || '加载失败'
   } finally {
     initialLoading.value = false
   }

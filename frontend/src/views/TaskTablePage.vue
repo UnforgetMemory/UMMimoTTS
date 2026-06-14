@@ -584,7 +584,6 @@ const table = useVueTable({
 
 // ── Lifecycle ─────────────────────────────────────────────────
 onMounted(() => {
-  taskStore.loadTasks()
 })
 
 // ── Refresh ───────────────────────────────────────────────────

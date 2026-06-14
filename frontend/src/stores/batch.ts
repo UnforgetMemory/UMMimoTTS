@@ -255,7 +255,7 @@ export const useBatchStore = defineStore('batch', () => {
         tasks,
         loaded: page === 0 || (result.page >= result.total_pages - 1),
         hasMore: result.page < result.total_pages - 1,
-        page: result.page - 1, // store as 0-based internally
+        page: result.page, // store as 0-based internally
       })
     } catch (err) {
       console.error(`Failed to load tasks for group ${groupId}:`, err)

@@ -69,8 +69,8 @@ export const useConfigStore = defineStore('config', () => {
   async function loadConfig() {
     try {
       const config = await fetchConfig()
-      voices.value = config.voices
-      models.value = config.models
+      voices.value = config.voices.length > 0 ? config.voices : FALLBACK_VOICES
+      models.value = config.models.length > 0 ? config.models : [{ id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts', description: '小米 MIMO TTS 模型，支持预置音色' }]
     } catch {
       // Fallback to local presets when backend is unreachable
       voices.value = FALLBACK_VOICES
