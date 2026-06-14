@@ -30,7 +30,6 @@ pub struct ListTasksQuery {
     pub page_size: Option<i64>,
 }
 
-/// Lightweight task response — NO content field (avoids multi-MB payloads).
 #[derive(Serialize)]
 struct TaskListItem {
     pub id: String,
@@ -39,6 +38,7 @@ struct TaskListItem {
     pub batch_id: Option<String>,
     pub group_id: Option<String>,
     pub title: String,
+    pub content: String,
     pub voice: String,
     pub model: String,
     pub style: Option<String>,
@@ -70,7 +70,6 @@ fn default_speed() -> f64 {
     crate::constants::DEFAULT_SPEED
 }
 
-/// Convert a Task to a lightweight list item (no content).
 fn to_list_item(task: &crate::domain::task::Task) -> TaskListItem {
     TaskListItem {
         id: task.id.to_string(),
@@ -79,6 +78,7 @@ fn to_list_item(task: &crate::domain::task::Task) -> TaskListItem {
         batch_id: task.batch_id.as_ref().map(|id| id.to_string()),
         group_id: task.group_id.as_ref().map(|id| id.to_string()),
         title: task.title.clone(),
+        content: task.content.clone(),
         voice: task.voice.clone(),
         model: task.model.clone(),
         style: task.style.clone(),
