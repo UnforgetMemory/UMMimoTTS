@@ -10,7 +10,8 @@ use super::AppState;
 #[derive(Deserialize)]
 pub struct CreateBatchRequest {
     pub title: String,
-    pub voice: String,
+    #[serde(default = "default_voice")]
+    pub voice: Option<String>,
     #[serde(default = "default_model")]
     pub model: String,
     pub style: Option<String>,
@@ -18,6 +19,9 @@ pub struct CreateBatchRequest {
     pub speed: f64,
 }
 
+fn default_voice() -> Option<String> {
+    Some(crate::constants::DEFAULT_VOICE.to_string())
+}
 fn default_model() -> String {
     crate::constants::DEFAULT_MODEL.to_string()
 }
@@ -77,16 +81,17 @@ async fn create_batch(
     state: web::Data<AppState>,
     body: web::Json<CreateBatchRequest>,
 ) -> impl Responder {
+    let voice = body.voice.clone().unwrap_or_else(|| crate::constants::DEFAULT_VOICE.to_string());
     // Advisory validation — warn but still process
-    if !crate::constants::is_valid_voice(&body.voice) {
-        tracing::warn!("Unknown voice '{}' in batch creation — will attempt synthesis anyway", body.voice);
+    if !crate::constants::is_valid_voice(&voice) {
+        tracing::warn!("Unknown voice '{}' in batch creation — will attempt synthesis anyway", voice);
     }
     if !crate::constants::is_valid_model(&body.model) {
         tracing::warn!("Unknown model '{}' in batch creation — will attempt synthesis anyway", body.model);
     }
     match state.batch_service.create(
         body.title.clone(),
-        body.voice.clone(),
+        voice,
         body.model.clone(),
         body.style.clone(),
         body.speed,
@@ -351,7 +356,7 @@ async fn download_batch_audio(
 /// Note: This route must be registered BEFORE /{id} routes to avoid conflict.
 async fn get_batch_limit() -> impl Responder {
     HttpResponse::Ok().json(serde_json::json!({
-        "max_items": 500,
+        "limit": 500,
         "max_text_length": 2000,
     }))
 }
