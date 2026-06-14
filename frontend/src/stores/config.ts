@@ -82,14 +82,18 @@ export const useConfigStore = defineStore('config', () => {
   // Load providers from backend
   async function loadProviders() {
     try {
-      providers.value = await apiV2.listProviders()
+      const list = await apiV2.listProviders()
+      if (list.length > 0) {
+        providers.value = list
+      }
       // If no provider selected yet, default to the backend's default provider
       if (!selectedProviderId.value) {
         const def = providers.value.find(p => p.is_default)
         if (def) selectedProviderId.value = def.id
       }
-    } catch {
-      // Silently fail — providers are optional; tasks work without them
+    } catch (e: any) {
+      // Keep existing providers on refresh failure — don't wipe UI
+      console.error('Failed to load providers:', e.message)
     }
   }
 

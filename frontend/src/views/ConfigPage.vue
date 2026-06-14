@@ -20,18 +20,18 @@
             <div class="space-y-3">
               <div class="flex items-center justify-between">
                 <h3 class="text-sm font-semibold">供应商配置</h3>
-                <Button variant="ghost" size="sm" class="h-7 text-xs" @click="refreshProviders" :disabled="providersLoading">
+                <Button variant="ghost" size="sm" class="h-7 text-xs" @click="handleRefresh" :disabled="providersLoading">
                   <Loader2Icon v-if="providersLoading" class="w-3 h-3 mr-1 animate-spin" />
                   {{ providersLoading ? '加载中...' : '刷新' }}
                 </Button>
               </div>
 
-              <div v-if="providers.length === 0 && !providersLoading" class="text-xs text-muted-foreground text-center py-4">
+              <div v-if="storeProviders.length === 0 && !providersLoading" class="text-xs text-muted-foreground text-center py-4">
                 暂无供应商数据
               </div>
 
               <div class="flex flex-wrap gap-3">
-                <div v-for="provider in providers" :key="provider.id"
+                <div v-for="provider in storeProviders" :key="provider.id"
                      class="rounded-lg border border-border overflow-hidden transition-colors flex-1 min-w-[280px]"
                      :class="[provider.is_default ? 'ring-1 ring-primary/30' : '']">
                   <!-- Provider Header -->
@@ -86,7 +86,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { toast } from 'vue-sonner'
 import { useConfigStore } from '@/stores/config'
@@ -100,22 +100,22 @@ import { Loader2 as Loader2Icon, Server as ServerIcon, ArrowLeft as ArrowLeftIco
 const router = useRouter()
 const configStore = useConfigStore()
 
-// Provider state
-const providers = ref<ProviderInfo[]>([])
+// Read providers directly from store (single source of truth)
+const storeProviders = computed(() => configStore.providers)
 const providerKeys = reactive<Record<string, string>>({})
 const providersLoading = ref(false)
 
-// On mount, populate inputs
+// On mount, sync store providers and seed key inputs
 onMounted(async () => {
-  await refreshProviders()
+  await handleRefresh()
 })
 
-async function refreshProviders() {
+async function handleRefresh() {
   providersLoading.value = true
   try {
-    providers.value = await apiV2.listProviders()
-    // Seed providerKeys from current provider data (mask existing keys with empty)
-    for (const p of providers.value) {
+    await configStore.loadProviders()
+    // Seed providerKeys from store data (mask existing keys with empty)
+    for (const p of storeProviders.value) {
       if (!(p.id in providerKeys)) {
         providerKeys[p.id] = ''
       }
@@ -136,8 +136,8 @@ async function handleSaveProviderKey(provider: ProviderInfo) {
   try {
     await apiV2.updateProviderKey(provider.id, key)
     toast.success(`${provider.name} API Key 已保存`)
-    providerKeys[provider.id] = ''  // Clear input after save
-    await refreshProviders()
+    providerKeys[provider.id] = ''
+    // Refresh store — this updates ALL components reading configStore.providers
     await configStore.loadProviders()
   } catch (e: any) {
     toast.error(`保存 ${provider.name} 失败: ` + (e.message || '未知错误'))
@@ -148,7 +148,6 @@ async function handleSetDefault(id: string) {
   try {
     await apiV2.setDefaultProvider(id)
     toast.success('默认供应商已更新')
-    await refreshProviders()
     await configStore.loadProviders()
   } catch (e: any) {
     toast.error('设置默认供应商失败: ' + (e.message || '未知错误'))
