@@ -279,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 
 import { apiV2 } from '@/api/client'
