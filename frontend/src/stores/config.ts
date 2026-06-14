@@ -141,6 +141,15 @@ export const useConfigStore = defineStore('config', () => {
   /** Providers that have an API key configured */
   const configuredProviders = computed(() => providers.value.filter(p => p.is_configured))
 
+  /** Whether any provider has is_configured=true */
+  const hasConfiguredProvider = computed(() => providers.value.some(p => p.is_configured))
+
+  /** ID of the first configured provider */
+  const configuredProviderId = computed(() => {
+    const first = providers.value.find(p => p.is_configured)
+    return first ? first.id : null
+  })
+
   return {
     apiKey,
     selectedVoice,
@@ -164,5 +173,7 @@ export const useConfigStore = defineStore('config', () => {
     isValidModel,
     defaultProvider,
     configuredProviders,
+    hasConfiguredProvider,
+    configuredProviderId,
   }
 })
