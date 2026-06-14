@@ -34,9 +34,35 @@ impl From<std::io::Error> for AppError {
 }
 
 #[derive(Serialize)]
-struct ErrorResponse {
-    error: String,
-    code: String,
+pub struct ErrorResponse {
+    pub error: String,
+    pub code: String,
+}
+
+impl ErrorResponse {
+    pub fn new(error: impl Into<String>, code: impl Into<String>) -> Self {
+        Self {
+            error: error.into(),
+            code: code.into(),
+        }
+    }
+}
+
+impl AppError {
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::NotFound(_) => "NOT_FOUND",
+            Self::InvalidInput(_) => "INVALID_INPUT",
+            Self::Conflict(_) => "CONFLICT",
+            Self::Internal(_) => "INTERNAL_ERROR",
+            Self::RateLimited => "RATE_LIMITED",
+            Self::ServerOverload(_) => "SERVER_OVERLOAD",
+        }
+    }
+
+    pub fn error_response(&self) -> ErrorResponse {
+        ErrorResponse::new(self.to_string(), self.code())
+    }
 }
 
 impl ResponseError for AppError {
@@ -51,9 +77,18 @@ impl ResponseError for AppError {
         }
     }
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status_code()).json(ErrorResponse {
-            error: self.to_string(),
-            code: format!("{:?}", self),
-        })
+        let retry_after = match self {
+            Self::RateLimited => Some(30),
+            Self::ServerOverload(_) => Some(60),
+            _ => None,
+        };
+        let mut builder = HttpResponse::build(self.status_code());
+        if let Some(seconds) = retry_after {
+            builder.append_header((
+                actix_web::http::header::RETRY_AFTER,
+                seconds.to_string(),
+            ));
+        }
+        builder.json(AppError::error_response(self))
     }
 }
