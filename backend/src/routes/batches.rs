@@ -227,6 +227,22 @@ async fn submit_batch(
     path: web::Path<String>,
 ) -> impl Responder {
     let id = path.into_inner();
+
+    // Validate that a default provider with a configured API key exists
+    match state.provider_repo.find_default() {
+        Ok(Some(provider)) if provider.is_configured => {}
+        Ok(_) => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": "No TTS provider configured. Please configure a provider API key before submitting a batch."
+            }));
+        }
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "error": format!("Failed to check provider configuration: {}", e)
+            }));
+        }
+    }
+
     match state.batch_service.submit(&id).await {
         Ok(tasks) => HttpResponse::Ok().json(tasks),
         Err(e) => HttpResponse::BadRequest().json(serde_json::json!({"error": e.to_string()})),
