@@ -84,6 +84,7 @@ impl BatchService {
             custom_title: None,
             custom_style: None,
             custom_speed: None,
+            priority: 0,
             effective_voice: batch.voice.clone(),
             effective_model: batch.model.clone(),
             effective_title: filename.to_string(),
@@ -117,6 +118,7 @@ impl BatchService {
                 custom_title: None,
                 custom_style: None,
                 custom_speed: None,
+                priority: 0,
                 effective_voice: batch.voice.clone(),
                 effective_model: batch.model.clone(),
                 effective_title: req.filename.clone(),
@@ -159,18 +161,24 @@ impl BatchService {
         let custom_title = overrides.title.clone().or(current.custom_title);
         let custom_style = overrides.style.clone().or(current.custom_style);
         let custom_speed = overrides.speed.or(current.custom_speed);
+        let priority = overrides.priority.unwrap_or(current.priority);
+
+        let content = overrides.text.clone().unwrap_or(current.content.clone());
+        let total_chars = content.len() as i64;
+        let token_estimate = total_chars / 2;
 
         let updated = BatchPendingItem {
             seq: current.seq,
             filename: current.filename.clone(),
-            content: current.content.clone(),
-            total_chars: current.total_chars,
-            token_estimate: current.token_estimate,
+            content,
+            total_chars,
+            token_estimate,
             custom_voice: custom_voice.clone(),
             custom_model: custom_model.clone(),
             custom_title: custom_title.clone(),
             custom_style: custom_style.clone(),
             custom_speed,
+            priority,
             effective_voice: custom_voice
                 .clone()
                 .unwrap_or_else(|| batch.voice.clone()),

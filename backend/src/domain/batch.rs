@@ -101,6 +101,7 @@ pub struct BatchPendingItem {
     pub custom_title: Option<String>,
     pub custom_style: Option<String>,
     pub custom_speed: Option<f64>,
+    pub priority: i32,
 
     // Computed effective values (inherit from batch if override not set)
     pub effective_voice: String,
@@ -129,6 +130,7 @@ impl BatchPendingItem {
             custom_title: custom_title.clone(),
             custom_style: None,
             custom_speed: None,
+            priority: 0,
             effective_voice: custom_voice.clone().unwrap_or_else(|| batch.voice.clone()),
             effective_model: batch.model.clone(),
             effective_title: custom_title.clone().unwrap_or_else(|| filename.to_string()),
