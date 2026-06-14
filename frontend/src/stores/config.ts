@@ -1,183 +1,79 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { fetchConfig, apiV2, type VoicePreset, type ModelPreset, type ProviderInfo } from '@/api/client'
+import { configApi } from '@/api/config'
+import type { VoicePreset, ModelPreset, ProviderInfo } from '@/types/config'
 
-/** 检测是否是 Vercel Gateway 环境变量占位符（未被替换） */
-function isVercelPlaceholder(key: string): boolean {
-  return /^__VG_\w+__$/.test(key)
-}
-
-/** Local fallback voices used when backend is unreachable */
 const FALLBACK_VOICES: VoicePreset[] = [
-  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/bingtang.wav' },
-  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/moli.wav' },
-  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/suda.wav' },
-  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/baihua.wav' },
-  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/mia.wav' },
-  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/chloe.wav' },
-  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/milo.wav' },
-  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle', preview_url: 'https://aistudio-cdn.xiaomimimo.com/xiaomimimo-static/tts/audio/dean.wav' },
+  { id: '冰糖', name: '冰糖', language: '中文', gender: '女性', style: '活泼少女' },
+  { id: '茉莉', name: '茉莉', language: '中文', gender: '女性', style: '知性女声' },
+  { id: '苏打', name: '苏打', language: '中文', gender: '男性', style: '阳光少年' },
+  { id: '白桦', name: '白桦', language: '中文', gender: '男性', style: '成熟男声' },
+  { id: 'Mia', name: 'Mia', language: 'English', gender: 'Female', style: 'Lively girl' },
+  { id: 'Chloe', name: 'Chloe', language: 'English', gender: 'Female', style: 'Sweet Dreamy' },
+  { id: 'Milo', name: 'Milo', language: 'English', gender: 'Male', style: 'Sunny boy' },
+  { id: 'Dean', name: 'Dean', language: 'English', gender: 'Male', style: 'Steady Gentle' },
 ]
 
 export const useConfigStore = defineStore('config', () => {
-  const apiKey = ref<string>('')
-  const selectedVoice = ref<string>('')
-  const selectedModel = ref<string>('mimo-v2.5-tts')
-
-  // Config-loaded state
+  const apiKey = ref('')
+  const selectedVoice = ref('')
+  const selectedModel = ref('mimo-v2.5-tts')
   const voices = ref<VoicePreset[]>([])
   const models = ref<ModelPreset[]>([])
   const providers = ref<ProviderInfo[]>([])
-  const selectedProviderId = ref<string>('')
+  const selectedProviderId = ref('')
   const configLoaded = ref(false)
 
-  /** API Key 是否有效（非空且非占位符） */
-  const hasValidKey = computed(() => {
-    return apiKey.value.length > 0 && !isVercelPlaceholder(apiKey.value)
-  })
+  const hasValidKey = computed(() => apiKey.value.length > 0)
+  const hasConfiguredProvider = computed(() => providers.value.some((p: ProviderInfo) => p.is_configured))
+  const defaultProvider = computed(() => providers.value.find((p: ProviderInfo) => p.is_default) || providers.value.find((p: ProviderInfo) => p.is_configured) || null)
 
-  /** 自动清理已检测到的占位符 Key */
-  function autoClearPlaceholder() {
-    if (apiKey.value && isVercelPlaceholder(apiKey.value)) {
-      clearApiKey()
-    }
-  }
-
-  // 从 localStorage 加载
   function loadFromStorage() {
-    const storedApiKey = localStorage.getItem('mimo_api_key')
-    const storedVoice = localStorage.getItem('mimo_selected_voice')
-    const storedModel = localStorage.getItem('mimo_selected_model')
-    const storedProvider = localStorage.getItem('mimo_selected_provider')
-    
-    if (storedApiKey) {
-      // 检测到 Vercel 占位符 → 自动清除
-      if (isVercelPlaceholder(storedApiKey)) {
-        clearApiKey()
-      } else {
-        apiKey.value = storedApiKey
-      }
-    }
-    if (storedVoice) selectedVoice.value = storedVoice
-    if (storedModel) selectedModel.value = storedModel
-    if (storedProvider) selectedProviderId.value = storedProvider
+    const k = localStorage.getItem('mimo_api_key')
+    if (k) apiKey.value = k
+    const v = localStorage.getItem('mimo_selected_voice')
+    if (v) selectedVoice.value = v
+    const m = localStorage.getItem('mimo_selected_model')
+    if (m) selectedModel.value = m
+    const p = localStorage.getItem('mimo_selected_provider')
+    if (p) selectedProviderId.value = p
   }
-  // 初始化时从 localStorage 加载
-  loadFromStorage()
 
-  // Load voice/model presets from backend, with local fallback
   async function loadConfig() {
     try {
-      const config = await fetchConfig()
-      voices.value = config.voices.length > 0 ? config.voices : FALLBACK_VOICES
-      models.value = config.models.length > 0 ? config.models : [{ id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts', description: '小米 MIMO TTS 模型，支持预置音色' }]
+      const res = await configApi.getConfig()
+      voices.value = res.voices.length > 0 ? res.voices : FALLBACK_VOICES
+      models.value = res.models.length > 0 ? res.models : [{ id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts' }]
+      providers.value = res.providers || []
     } catch {
-      // Fallback to local presets when backend is unreachable
       voices.value = FALLBACK_VOICES
-      models.value = [{ id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts', description: '小米 MIMO TTS 模型，支持预置音色' }]
+      models.value = [{ id: 'mimo-v2.5-tts', name: 'mimo-v2.5-tts' }]
     }
     configLoaded.value = true
   }
 
-  // Load providers from backend
   async function loadProviders() {
     try {
-      const list = await apiV2.listProviders()
-      if (list.length > 0) {
-        providers.value = list
-      }
-      // If no provider selected yet, default to the backend's default provider
+      const list = await configApi.listProviders()
+      if (list.length > 0) providers.value = list
       if (!selectedProviderId.value) {
-        const def = providers.value.find(p => p.is_default)
+        const def = providers.value.find((p: ProviderInfo) => p.is_default)
         if (def) selectedProviderId.value = def.id
       }
     } catch (e: any) {
-      // Keep existing providers on refresh failure — don't wipe UI
       console.error('Failed to load providers:', e.message)
     }
   }
 
-  /** Check if a voice code is valid (exists in loaded presets) */
-  function isValidVoice(code: string): boolean {
-    return voices.value.some(v => v.id === code)
-  }
+  function saveApiKey(key: string) { apiKey.value = key; localStorage.setItem('mimo_api_key', key) }
+  function clearApiKey() { apiKey.value = ''; localStorage.removeItem('mimo_api_key') }
+  function setVoice(v: string) { selectedVoice.value = v; localStorage.setItem('mimo_selected_voice', v) }
+  function setModel(m: string) { selectedModel.value = m; localStorage.setItem('mimo_selected_model', m) }
+  function setProvider(id: string) { selectedProviderId.value = id; localStorage.setItem('mimo_selected_provider', id) }
 
-  /** Check if a model code is valid (exists in loaded presets) */
-  function isValidModel(code: string): boolean {
-    return models.value.some(m => m.id === code)
-  }
-
-  // Load config on store initialization (non-blocking)
+  loadFromStorage()
   loadConfig()
   loadProviders()
 
-  // 保存到 localStorage
-  function saveApiKey(key: string) {
-    apiKey.value = key
-    localStorage.setItem('mimo_api_key', key)
-  }
-
-  function clearApiKey() {
-    apiKey.value = ''
-    localStorage.removeItem('mimo_api_key')
-  }
-
-  function setVoice(voice: string) {
-    selectedVoice.value = voice
-    localStorage.setItem('mimo_selected_voice', voice)
-  }
-
-  function setModel(model: string) {
-    selectedModel.value = model
-    localStorage.setItem('mimo_selected_model', model)
-  }
-
-  function setProvider(id: string) {
-    selectedProviderId.value = id
-    localStorage.setItem('mimo_selected_provider', id)
-  }
-
-  /** The default provider as marked by the backend, or the first configured one */
-  const defaultProvider = computed(() => {
-    return providers.value.find(p => p.is_default) || providers.value.find(p => p.is_configured) || null
-  })
-
-  /** Providers that have an API key configured */
-  const configuredProviders = computed(() => providers.value.filter(p => p.is_configured))
-
-  /** Whether any provider has is_configured=true */
-  const hasConfiguredProvider = computed(() => providers.value.some(p => p.is_configured))
-
-  /** ID of the first configured provider */
-  const configuredProviderId = computed(() => {
-    const first = providers.value.find(p => p.is_configured)
-    return first ? first.id : null
-  })
-
-  return {
-    apiKey,
-    selectedVoice,
-    selectedModel,
-    selectedProviderId,
-    hasValidKey,
-    autoClearPlaceholder,
-    loadFromStorage,
-    saveApiKey,
-    clearApiKey,
-    setVoice,
-    setModel,
-    setProvider,
-    voices,
-    models,
-    providers,
-    configLoaded,
-    loadConfig,
-    loadProviders,
-    isValidVoice,
-    isValidModel,
-    defaultProvider,
-    configuredProviders,
-    hasConfiguredProvider,
-    configuredProviderId,
-  }
+  return { apiKey, selectedVoice, selectedModel, voices, models, providers, selectedProviderId, configLoaded, hasValidKey, hasConfiguredProvider, defaultProvider, loadFromStorage, loadConfig, loadProviders, saveApiKey, clearApiKey, setVoice, setModel, setProvider }
 })
