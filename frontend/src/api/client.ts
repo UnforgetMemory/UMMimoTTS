@@ -1,4 +1,6 @@
-import axios from 'axios'
+import axios, { type AxiosError } from 'axios'
+import { toast } from 'vue-sonner'
+import { handleNetworkError } from '../utils/errorHandler'
 
 const apiClient = axios.create({
   baseURL: '',
@@ -7,6 +9,20 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error: AxiosError<{ error?: string }>) => {
+    if (!error.response) {
+      handleNetworkError()
+      return Promise.reject({ message: '网络连接失败', code: 'NETWORK_ERROR' })
+    }
+
+    const message = error.response.data?.error || error.message || '请求失败'
+    toast.error(message)
+    return Promise.reject({ message, code: error.response.status })
+  },
+)
 
 export interface Voice {
   id: string
