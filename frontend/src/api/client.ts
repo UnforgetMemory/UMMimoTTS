@@ -225,7 +225,7 @@ export interface TaskEvent {
 
 // ── Batch / Group types ──────────────────────────────────────────────
 
-export type GroupStatus = 'pending' | 'queued' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled'
+export type GroupStatus = 'pending' | 'queued' | 'preparing' | 'processing' | 'paused' | 'completed' | 'failed' | 'cancelled'
 
 /** 批量分组 (full detail) */
 export interface BatchGroup {

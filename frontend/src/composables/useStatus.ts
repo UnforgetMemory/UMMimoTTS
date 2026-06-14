@@ -76,6 +76,7 @@ export function getGroupStatusLabel(status: GroupStatus): string {
   switch (status) {
     case 'pending': return '等待中'
     case 'queued': return '队列中'
+    case 'preparing': return '准备中'
     case 'processing': return '处理中'
     case 'paused': return '已暂停'
     case 'completed': return '已完成'
@@ -88,7 +89,8 @@ export function getGroupStatusLabel(status: GroupStatus): string {
 export function getGroupStatusVariant(status: GroupStatus): BadgeVariants['variant'] {
   switch (status) {
     case 'pending':
-    case 'queued': return 'secondary'
+    case 'queued':
+    case 'preparing': return 'secondary'
     case 'processing': return 'default'
     case 'paused': return 'outline'
     case 'completed': return 'success'
