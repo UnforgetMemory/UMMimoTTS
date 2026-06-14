@@ -136,6 +136,28 @@ async fn create_task(
     state: web::Data<AppState>,
     body: web::Json<CreateTaskRequest>,
 ) -> impl Responder {
+    // Validate provider exists and has an API key configured
+    if let Some(ref provider_id) = body.provider_id {
+        match state.provider_repo.find_by_id(provider_id) {
+            Ok(None) => {
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": format!("Provider '{}' not found", provider_id)
+                }));
+            }
+            Ok(Some(provider)) if !provider.is_configured => {
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": format!("Provider '{}' has no API key configured", provider_id)
+                }));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                return HttpResponse::InternalServerError().json(serde_json::json!({
+                    "error": e.to_string()
+                }));
+            }
+        }
+    }
+
     // Advisory validation — warn but still process
     if !crate::constants::is_valid_voice(&body.voice) {
         tracing::warn!("Unknown voice '{}' — will attempt synthesis anyway", body.voice);
