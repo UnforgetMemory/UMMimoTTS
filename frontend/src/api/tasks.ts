@@ -1,5 +1,6 @@
 import apiClient from './client'
-import type { Task, CreateTaskRequest, PaginatedResponse } from '@/types/task'
+import type { Task, CreateTaskRequest } from '@/types/task'
+import type { PaginatedResponse } from '@/types/api'
 
 export const taskApi = {
   async list(page = 0, pageSize = 50, status?: string, search?: string) {

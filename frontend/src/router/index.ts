@@ -1,54 +1,27 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
-
-const routes: RouteRecordRaw[] = [
-  {
-    path: '/',
-    redirect: '/tasks/single',
-  },
-  {
-    path: '/config',
-    name: 'config',
-    component: () => import('@/views/ConfigPage.vue'),
-  },
-  {
-    path: '/synthesize',
-    name: 'synthesize',
-    component: () => import('@/components/SynthesizeForm.vue'),
-  },
-  {
-    path: '/tasks/single',
-    name: 'tasks-single',
-    component: () => import('@/views/TaskTablePage.vue'),
-  },
-  {
-    path: '/tasks/batch',
-    name: 'tasks-batch',
-    component: () => import('@/views/BatchTaskTablePage.vue'),
-  },
-  {
-    path: '/tasks/:id',
-    name: 'task-detail',
-    component: () => import('@/views/TaskDetailPage.vue'),
-    props: true,
-  },
-  {
-    path: '/groups/:id',
-    name: 'group-detail',
-    component: () => import('@/views/GroupDetailPage.vue'),
-    props: true,
-  },
-]
+import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
   history: createWebHistory(),
-  routes,
-  scrollBehavior(to, _from, savedPosition) {
-    if (savedPosition) {
-      return savedPosition
-    }
-    if (to.hash) {
-      return { el: to.hash, behavior: 'smooth' }
-    }
+  routes: [
+    {
+      path: '/',
+      name: 'home',
+      component: () => import('@/views/Home.vue'),
+    },
+    {
+      path: '/task/:id',
+      name: 'task-detail',
+      component: () => import('@/views/TaskDetail.vue'),
+      props: true,
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('@/views/Settings.vue'),
+    },
+  ],
+  scrollBehavior(_to, _from, savedPosition) {
+    if (savedPosition) return savedPosition
     return { top: 0 }
   },
 })
