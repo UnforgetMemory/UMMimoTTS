@@ -749,10 +749,6 @@ export const useBatchStore = defineStore('batch', () => {
       }
     }
 
-    eventSource.onerror = () => {
-      console.warn('Batch SSE connection error, will auto-reconnect:', groupId)
-    }
-
     eventSources.set(groupId, eventSource)
   }
 

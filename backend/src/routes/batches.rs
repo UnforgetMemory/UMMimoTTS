@@ -141,7 +141,30 @@ async fn get_batch(
 ) -> impl Responder {
     let id = path.into_inner();
     match state.batch_service.batch_repo.find_batch(&id) {
-        Ok(Some(batch)) => HttpResponse::Ok().json(batch),
+        Ok(Some(batch)) => {
+            let tasks = state.task_service.get_by_batch(&id).unwrap_or_default();
+            let task_summaries: Vec<serde_json::Value> = tasks
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "id": t.id.to_string(),
+                        "title": t.title,
+                        "status": serde_json::to_string(&t.status).unwrap(),
+                        "total_chunks": t.total_chunks,
+                        "done_chunks": t.done_chunks,
+                        "output_path": t.output_path,
+                        "created_at": t.created_at.to_rfc3339(),
+                        "updated_at": t.updated_at.to_rfc3339(),
+                        "completed_at": t.completed_at.map(|dt| dt.to_rfc3339()),
+                    })
+                })
+                .collect();
+            let mut batch_json = serde_json::to_value(&batch).unwrap();
+            if let serde_json::Value::Object(ref mut map) = batch_json {
+                map.insert("tasks".to_string(), serde_json::Value::Array(task_summaries));
+            }
+            HttpResponse::Ok().json(batch_json)
+        }
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({"error": "not found"})),
         Err(e) => HttpResponse::InternalServerError().json(serde_json::json!({"error": e.to_string()})),
     }
