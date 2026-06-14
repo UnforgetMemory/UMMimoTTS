@@ -27,6 +27,7 @@ pub struct PendingItemRow {
     pub custom_model: Option<String>,
     pub custom_style: Option<String>,
     pub custom_speed: Option<f64>,
+    pub priority: i32,
     pub effective_title: String,
     pub effective_voice: String,
     pub effective_model: String,
@@ -54,6 +55,8 @@ pub struct ItemOverride {
     pub model: Option<String>,
     pub style: Option<String>,
     pub speed: Option<f64>,
+    pub text: Option<String>,
+    pub priority: Option<i32>,
 }
 
 /// Default values inherited from the batch.
@@ -68,6 +71,15 @@ pub trait BatchRepo: Send + Sync {
     fn find_batch(&self, id: &str) -> Result<Option<Batch>, AppError>;
     fn update_batch_status(&self, id: &str, status: &BatchStatus) -> Result<(), AppError>;
     fn update_batch_title(&self, id: &str, title: &str) -> Result<(), AppError>;
+    fn update_batch_fields(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        voice: Option<&str>,
+        model: Option<&str>,
+        style: Option<&str>,
+        speed: Option<f64>,
+    ) -> Result<(), AppError>;
     fn delete_batch(&self, id: &str) -> Result<(), AppError>;
     fn insert_pending_item(&self, batch_id: &str, item: &BatchPendingItem) -> Result<(), AppError>;
     fn batch_insert_pending_items(&self, batch_id: &str, items: &[BatchPendingItem]) -> Result<(), AppError>;
@@ -147,6 +159,7 @@ impl SqliteBatchRepo {
             custom_model: row.get("custom_model")?,
             custom_style: row.get("custom_style")?,
             custom_speed: row.get("custom_speed")?,
+            priority: row.get::<_, i32>("priority").unwrap_or(0),
             effective_title: row.get("effective_title")?,
             effective_voice: row.get("effective_voice")?,
             effective_model: row.get("effective_model")?,
@@ -362,6 +375,62 @@ impl BatchRepo for SqliteBatchRepo {
             "UPDATE batches SET name = ?1, updated_at = ?2 WHERE id = ?3",
             params![title, Utc::now().to_rfc3339(), id],
         )?;
+        Ok(())
+    }
+
+    fn update_batch_fields(
+        &self,
+        id: &str,
+        title: Option<&str>,
+        voice: Option<&str>,
+        model: Option<&str>,
+        style: Option<&str>,
+        speed: Option<f64>,
+    ) -> Result<(), AppError> {
+        let conn = self.pool.get()?;
+        let now = Utc::now().to_rfc3339();
+
+        // Build dynamic UPDATE
+        let mut sets = vec!["updated_at = ?1".to_string()];
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(now.clone())];
+        let mut idx = 2;
+
+        macro_rules! maybe_push {
+            ($field:expr, $col:expr) => {
+                if let Some(v) = $field {
+                    sets.push(format!("{} = ?{}", $col, idx));
+                    params.push(Box::new(v.to_string()));
+                    idx += 1;
+                }
+            };
+        }
+
+        maybe_push!(title, "name");
+        maybe_push!(voice, "voice");
+        maybe_push!(model, "model");
+        maybe_push!(style, "style");
+
+        if let Some(v) = speed {
+            sets.push(format!("speed = ?{idx}"));
+            params.push(Box::new(v));
+            idx += 1;
+        }
+
+        if sets.len() == 1 {
+            // only updated_at — nothing to do
+            return Ok(());
+        }
+
+        let sql = format!(
+            "UPDATE batches SET {} WHERE id = ?{}",
+            sets.join(", "),
+            idx
+        );
+        params.push(Box::new(id.to_string()));
+
+        let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+        conn.execute(&sql, param_refs.as_slice())?;
         Ok(())
     }
 

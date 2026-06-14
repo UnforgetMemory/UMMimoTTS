@@ -240,7 +240,7 @@ impl BatchService {
         Ok(summaries)
     }
 
-    // ── title ────────────────────────────────────────────────────────
+    // ── title / fields ──────────────────────────────────────────────
 
     /// Update the batch title.
     pub fn update_title(&self, batch_id: &str, title: &str) -> Result<(), AppError> {
@@ -248,6 +248,24 @@ impl BatchService {
             .find_batch(batch_id)?
             .ok_or_else(|| AppError::NotFound(format!("Batch {batch_id}")))?;
         self.batch_repo.update_batch_title(batch_id, title)?;
+        Ok(())
+    }
+
+    /// Patch multiple batch fields (name/voice/model/style/speed).
+    pub fn patch(
+        &self,
+        batch_id: &str,
+        title: Option<&str>,
+        voice: Option<&str>,
+        model: Option<&str>,
+        style: Option<&str>,
+        speed: Option<f64>,
+    ) -> Result<(), AppError> {
+        self.batch_repo
+            .find_batch(batch_id)?
+            .ok_or_else(|| AppError::NotFound(format!("Batch {batch_id}")))?;
+        self.batch_repo
+            .update_batch_fields(batch_id, title, voice, model, style, speed)?;
         Ok(())
     }
 

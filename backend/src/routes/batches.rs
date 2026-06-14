@@ -43,6 +43,8 @@ pub struct UpdateItemRequest {
     pub style: Option<String>,
     pub speed: Option<f64>,
     pub title: Option<String>,
+    pub text: Option<String>,
+    pub priority: Option<i32>,
 }
 
 #[derive(Deserialize)]
@@ -51,8 +53,13 @@ pub struct UpdateBatchStatusRequest {
 }
 
 #[derive(Deserialize)]
-pub struct UpdateBatchTitleRequest {
-    pub title: String,
+pub struct UpdateBatchRequest {
+    #[serde(alias = "name")]
+    pub title: Option<String>,
+    pub voice: Option<String>,
+    pub model: Option<String>,
+    pub style: Option<String>,
+    pub speed: Option<f64>,
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -189,6 +196,8 @@ async fn update_item(
         style: body.style.clone(),
         speed: body.speed,
         title: body.title.clone(),
+        text: body.text.clone(),
+        priority: body.priority,
     };
     match state.batch_service.update_item(&batch_id, seq, &override_data) {
         Ok(_item) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
@@ -237,14 +246,21 @@ async fn delete_batch(
 
 // ── new endpoints ──────────────────────────────────────────────────
 
-/// PATCH /api/v2/batches/{id} — update batch title
+/// PATCH /api/v2/batches/{id} — update batch fields
 async fn patch_batch_title(
     state: web::Data<AppState>,
     path: web::Path<String>,
-    body: web::Json<UpdateBatchTitleRequest>,
+    body: web::Json<UpdateBatchRequest>,
 ) -> impl Responder {
     let id = path.into_inner();
-    match state.batch_service.update_title(&id, &body.title) {
+    match state.batch_service.patch(
+        &id,
+        body.title.as_deref(),
+        body.voice.as_deref(),
+        body.model.as_deref(),
+        body.style.as_deref(),
+        body.speed,
+    ) {
         Ok(()) => HttpResponse::Ok().json(serde_json::json!({"ok": true})),
         Err(e) => {
             let status = match &e {
