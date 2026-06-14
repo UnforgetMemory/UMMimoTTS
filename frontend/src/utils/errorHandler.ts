@@ -9,11 +9,14 @@ import { toast } from 'vue-sonner'
 export function handleApiError(error: any, defaultMessage: string = '操作失败'): string {
   console.error('API Error:', error)
   
-  const message = error.response?.data?.message 
+  const data = error.response?.data
+  const code = data?.code
+  const message = data?.error 
     || error.message 
     || defaultMessage
   
-  toast.error(message)
+  const description = code ? `错误码: ${code}` : undefined
+  toast.error(message, description ? { description } : undefined)
   return message
 }
 
