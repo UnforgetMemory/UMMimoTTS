@@ -91,6 +91,9 @@ impl SqliteTaskRepo {
             done_chunks: row.get("done_chunks")?,
             failed_chunks: row.get("failed_chunks")?,
             output_path: row.get("output_path")?,
+            audio_duration: row.get("audio_duration")?,
+            max_retries: row.get("max_retries")?,
+            retry_count: row.get("retry_count")?,
             created_at: Self::parse_datetime(&row.get::<_, String>("created_at")?),
             updated_at: Self::parse_datetime(&row.get::<_, String>("updated_at")?),
             completed_at: row
@@ -107,8 +110,9 @@ impl TaskRepo for SqliteTaskRepo {
             "INSERT INTO tasks (id, task_type, status, group_id, batch_id, content, content_ref,
              title, voice, model, style, speed, provider_id, priority, total_chars, total_tokens,
              total_chunks, done_chunks, failed_chunks, output_path, output_duration,
+             audio_duration, max_retries, retry_count,
              created_at, updated_at, completed_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0,?14,?15,?16,?17,?18,?19,0,?20,?21,?22)",
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0,?14,?15,?16,?17,?18,?19,0,?20,?21,?22,?23,?24,?25)",
             params![
                 task.id.to_string(),
                 serde_json::to_string(&task.task_type).unwrap(),
@@ -129,6 +133,9 @@ impl TaskRepo for SqliteTaskRepo {
                 task.done_chunks,
                 task.failed_chunks,
                 task.output_path,
+                task.audio_duration,
+                task.max_retries,
+                task.retry_count,
                 task.created_at.to_rfc3339(),
                 task.updated_at.to_rfc3339(),
                 task.completed_at.map(|dt| dt.to_rfc3339()),

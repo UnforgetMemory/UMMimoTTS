@@ -138,6 +138,9 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
     let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_chars INTEGER NOT NULL DEFAULT 0", []);
     let _ = conn.execute("ALTER TABLE batches ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0", []);
 
+    // Add priority column to pending_items table
+    let _ = conn.execute("ALTER TABLE pending_items ADD COLUMN priority INTEGER NOT NULL DEFAULT 0", []);
+
     // ── Provider table (v3.1) ──────────────────────────────────────────
     conn.execute_batch("
         CREATE TABLE IF NOT EXISTS providers (
@@ -160,8 +163,11 @@ pub fn run_migrations(conn: &Connection) -> Result<(), AppError> {
     ")?;
 
     // Add provider_id column to existing tables (safe — no-op if already added)
-    let _ = conn.execute("ALTER TABLE tasks ADD COLUMN provider_id TEXT", []);
-    let _ = conn.execute("ALTER TABLE groups ADD COLUMN provider_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN provider_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE groups ADD COLUMN provider_id TEXT", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN audio_duration REAL", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN max_retries INTEGER NOT NULL DEFAULT 3", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN retry_count INTEGER NOT NULL DEFAULT 0", []);
 
     // Migrate status and type values from capitalized to lowercase (serde rename_all change)
     for table in &["tasks", "chunks", "groups", "batches"] {
