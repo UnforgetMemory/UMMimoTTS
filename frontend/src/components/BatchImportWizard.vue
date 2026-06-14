@@ -279,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, watch, onUnmounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue'
 import { toast } from 'vue-sonner'
 
 import { apiV2 } from '@/api/client'
@@ -481,8 +481,8 @@ async function handleSubmit() {
     toast.error('无效的模型选择')
     return
   }
-  if (!configStore.isValidModel(submitConfig.default_model)) {
-    toast.error('无效的模型选择')
+  if (!configStore.hasValidKey) {
+    toast.error('请先配置有效的 API Key')
     return
   }
   submitBusy.value = true; submitError.value = ''
