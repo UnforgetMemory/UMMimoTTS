@@ -545,12 +545,20 @@ async function handleSubmit() {
     toast.error('无效的模型选择')
     return
   }
-  // Check API key: either global key is valid, or selected provider is configured
-  const selectedProviderHasKey = form.value.providerId
-    ? providers.value.find(p => p.id === form.value.providerId)?.is_configured
-    : false
-  if (!configStore.hasValidKey && !selectedProviderHasKey) {
-    toast.error('请先配置 API Key 或为当前供应商配置密钥')
+  if (form.value.providerId) {
+    const provider = providers.value.find(p => p.id === form.value.providerId)
+    if (!provider?.is_configured) {
+      toast.error('所选供应商未配置', {
+        description: '请先在 API 配置页面设置密钥',
+        action: {
+          label: '去配置',
+          onClick: () => router.push('/config'),
+        },
+      })
+      return
+    }
+  } else if (!configStore.hasValidKey) {
+    toast.error('请先配置 API Key 或选择一个已配置的供应商')
     return
   }
 
