@@ -230,7 +230,8 @@ impl TaskQueue {
                 continue;
             }
 
-            let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(&task_id)?;
+            let (total, done, failed, _pending, _processing, _queued, _dead) =
+                self.chunk_repo.count_by_task_aggregated(&task_id)?;
 
             if total > 0 && done + failed == total {
                 warn!(
@@ -383,7 +384,8 @@ impl TaskQueue {
     }
 
     async fn on_chunk_completed(&self, task_id: &str) -> Result<(), AppError> {
-        let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(task_id)?;
+        let (total, done, failed, _pending, _processing, _queued, _dead) =
+            self.chunk_repo.count_by_task_aggregated(task_id)?;
 
         self.task_repo
             .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;
@@ -409,7 +411,8 @@ impl TaskQueue {
     }
 
     async fn on_chunk_failed(&self, task_id: &str) -> Result<(), AppError> {
-        let (total, done, failed, _pending, _processing) = self.chunk_repo.count_by_task_aggregated(task_id)?;
+        let (total, done, failed, _pending, _processing, _queued, _dead) =
+            self.chunk_repo.count_by_task_aggregated(task_id)?;
 
         self.task_repo
             .update_chunk_progress(task_id, total as i32, done as i32, failed as i32, 0)?;

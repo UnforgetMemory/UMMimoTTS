@@ -332,9 +332,9 @@ async fn worker_loop(
                             break;
                         }
                         _ = poll => {
-                            let (_total, _done, _failed, pending, processing) = chunk_repo_release
+                            let (_total, _done, _failed, pending, processing, _queued, _dead) = chunk_repo_release
                                 .count_by_task_aggregated(&task_id_release)
-                                .unwrap_or((0, 0, 0, 0, 0));
+                                .unwrap_or((0, 0, 0, 0, 0, 0, 0));
                             if pending == 0 && processing == 0 {
                                 break;
                             }

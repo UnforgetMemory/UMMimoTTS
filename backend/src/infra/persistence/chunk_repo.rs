@@ -39,8 +39,8 @@ pub trait ChunkRepo: Send + Sync {
     fn mark_failed(&self, id: &str, error: &str) -> Result<(), AppError>;
     fn count_by_task_status(&self, task_id: &str, status: &ChunkStatus) -> Result<i64, AppError>;
     fn count_by_task_all(&self, task_id: &str) -> Result<i64, AppError>;
-    /// Aggregated chunk count for a task: returns (total, done, failed, pending, processing) in one query.
-    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64), AppError>;
+    /// Aggregated chunk count for a task: returns (total, done, failed, pending, processing, queued, dead) in one query.
+    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64, i64, i64), AppError>;
     fn reset_processing_to_pending(&self) -> Result<usize, AppError>;
     /// Reset chunks stuck in Processing for longer than `stale_minutes` back to Pending.
     fn reset_stale_processing_to_pending(&self, stale_minutes: i64) -> Result<usize, AppError>;
@@ -298,24 +298,28 @@ impl ChunkRepo for SqliteChunkRepo {
         Ok(count)
     }
 
-    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64), AppError> {
+    fn count_by_task_aggregated(&self, task_id: &str) -> Result<(i64, i64, i64, i64, i64, i64, i64), AppError> {
         let conn = self.pool.get()?;
         let done_str = serde_json::to_string(&ChunkStatus::Done).unwrap();
         let failed_str = serde_json::to_string(&ChunkStatus::Failed).unwrap();
         let pending_str = serde_json::to_string(&ChunkStatus::Pending).unwrap();
         let processing_str = serde_json::to_string(&ChunkStatus::Processing).unwrap();
+        let queued_str = serde_json::to_string(&ChunkStatus::Queued).unwrap();
+        let dead_str = serde_json::to_string(&ChunkStatus::Dead).unwrap();
         let mut stmt = conn.prepare(
             "SELECT
                 COUNT(*) AS total,
                 COALESCE(SUM(CASE WHEN status = ?2 THEN 1 ELSE 0 END), 0) AS done,
                 COALESCE(SUM(CASE WHEN status = ?3 THEN 1 ELSE 0 END), 0) AS failed,
                 COALESCE(SUM(CASE WHEN status = ?4 THEN 1 ELSE 0 END), 0) AS pending,
-                COALESCE(SUM(CASE WHEN status = ?5 THEN 1 ELSE 0 END), 0) AS processing
+                COALESCE(SUM(CASE WHEN status = ?5 THEN 1 ELSE 0 END), 0) AS processing,
+                COALESCE(SUM(CASE WHEN status = ?6 THEN 1 ELSE 0 END), 0) AS queued,
+                COALESCE(SUM(CASE WHEN status = ?7 THEN 1 ELSE 0 END), 0) AS dead
              FROM chunks WHERE task_id = ?1",
         )?;
         let result = stmt.query_row(
-            params![task_id, done_str, failed_str, pending_str, processing_str],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            params![task_id, done_str, failed_str, pending_str, processing_str, queued_str, dead_str],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?, row.get(6)?)),
         )?;
         Ok(result)
     }
