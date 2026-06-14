@@ -4,6 +4,7 @@ import { h } from 'vue'
 import type { ExpandedState } from '@tanstack/vue-table'
 import { useRouter } from 'vue-router'
 import { useBatchStore } from '@/stores/batch'
+import { useConfigStore } from '@/stores/config'
 import type { GroupSummary, TaskSummary } from '@/api/client'
 import {
   getGroupStatusLabel,
@@ -46,6 +47,7 @@ import {
 
 const router = useRouter()
 const batchStore = useBatchStore()
+const configStore = useConfigStore()
 const openBatchWizard = inject<() => void>('openBatchWizard', () => {})
 
 // ── Expanded row state & task fetching ──────────────────
@@ -279,7 +281,7 @@ onMounted(() => {
     <!-- Toolbar -->
     <div class="flex items-center justify-between px-4 sm:px-5 py-3 border-b shrink-0">
       <h2 class="text-base sm:text-lg font-semibold tracking-tight text-foreground">批量任务</h2>
-      <Button size="sm" class="h-8 text-xs gap-1.5" @click="openBatchWizard()">
+      <Button size="sm" class="h-8 text-xs gap-1.5" :disabled="!configStore.hasConfiguredProvider" @click="openBatchWizard()">
         <PlusIcon class="w-4 h-4" />
         <span class="hidden sm:inline">新建批量任务</span>
       </Button>
