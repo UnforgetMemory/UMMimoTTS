@@ -25,9 +25,9 @@
               <div v-if="providers.length === 0 && !loading" class="text-xs text-muted-foreground text-center py-4">
                 暂无供应商数据
               </div>
-              <div class="flex flex-wrap gap-3">
+               <div class="flex flex-wrap gap-3">
                 <div v-for="provider in providers" :key="provider.id"
-                     class="rounded-lg border border-border overflow-hidden transition-colors flex-1 min-w-[280px]"
+                     class="glass-card rounded-xl overflow-hidden transition-all duration-200 flex-1 min-w-[280px]"
                      :class="[provider.is_default ? 'ring-1 ring-primary/30' : '']">
                   <div class="flex items-center justify-between px-3 py-2 bg-muted/50">
                     <div class="flex items-center gap-2 min-w-0">
