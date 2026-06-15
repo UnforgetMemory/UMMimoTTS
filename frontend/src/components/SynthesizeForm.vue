@@ -1,25 +1,38 @@
 <template>
   <div class="glass-card rounded-xl sm:rounded-2xl overflow-hidden">
     <div class="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 sm:space-y-5">
-      <!-- 徽章区：模型 + 音色 + Provider -->
-      <div class="flex items-center gap-2 flex-wrap">
-        <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
-          <Sparkles class="w-3 h-3" />
-          {{ configStore.selectedModel }}
-        </Badge>
-        <Badge v-if="selectedVoiceObj" variant="outline" class="text-xs gap-1"
-               :class="isMaleVoice ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300' : 'border-pink-200 dark:border-pink-800 bg-pink-50 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300'">
-          <UserRound v-if="isMaleVoice" class="w-3 h-3" />
-          <User v-else class="w-3 h-3" />
-          {{ selectedVoiceObj.name }}
-        </Badge>
-        <Badge v-else variant="destructive" class="text-xs">请选择音色</Badge>
-        <Badge v-if="selectedProviderObj" variant="outline" class="text-xs gap-1 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300">
-          <Server class="w-3 h-3" />
-          {{ selectedProviderObj.name }}
-          <Badge v-if="selectedProviderObj.is_default" class="text-[8px] h-3.5 px-1 ml-0.5" variant="default">默认</Badge>
-        </Badge>
+      <!-- 加载骨架屏 -->
+      <div v-if="!configStore.configLoaded" class="space-y-4 animate-pulse">
+        <div class="flex gap-2"><div class="h-5 w-16 bg-muted rounded"></div><div class="h-5 w-12 bg-muted rounded"></div></div>
+        <div class="h-20 bg-muted rounded-xl"></div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div v-for="n in 8" :key="n" class="h-14 bg-muted rounded-xl"></div>
+        </div>
+        <div class="h-9 bg-muted rounded-lg"></div>
+        <div class="h-10 bg-muted rounded-lg"></div>
       </div>
+
+      <!-- 正常内容 -->
+      <template v-else>
+        <!-- 徽章区：模型 + 音色 + Provider -->
+        <div class="flex items-center gap-2 flex-wrap">
+          <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
+            <Sparkles class="w-3 h-3" />
+            {{ configStore.selectedModel }}
+          </Badge>
+          <Badge v-if="selectedVoiceObj" variant="outline" class="text-xs gap-1"
+                 :class="isMaleVoice ? 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300' : 'border-pink-200 dark:border-pink-800 bg-pink-50 dark:bg-pink-950/30 text-pink-700 dark:text-pink-300'">
+            <UserRound v-if="isMaleVoice" class="w-3 h-3" />
+            <User v-else class="w-3 h-3" />
+            {{ selectedVoiceObj.name }}
+          </Badge>
+          <Badge v-else variant="destructive" class="text-xs">请选择音色</Badge>
+          <Badge v-if="selectedProviderObj" variant="outline" class="text-xs gap-1 border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300">
+            <Server class="w-3 h-3" />
+            {{ selectedProviderObj.name }}
+            <Badge v-if="selectedProviderObj.is_default" class="text-[8px] h-3.5 px-1 ml-0.5" variant="default">默认</Badge>
+          </Badge>
+        </div>
 
       <!-- 文本输入 -->
       <div class="space-y-2">
@@ -108,6 +121,7 @@
         {{ isSubmitting ? '合成中...' : '开始合成' }}
       </Button>
       <p v-if="!availableProviders.length" class="text-xs text-center text-muted-foreground">请先配置 Provider API Key</p>
+      </template>
     </div>
   </div>
 </template>

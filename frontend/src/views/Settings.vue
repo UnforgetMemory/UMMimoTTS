@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-3xl sm:max-w-4xl lg:max-w-5xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
+  <div class="w-responsive px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
     <div class="flex items-center gap-3 mb-4">
       <Button variant="ghost" size="sm" @click="router.push('/')">
         <ArrowLeft class="w-4 h-4" />
