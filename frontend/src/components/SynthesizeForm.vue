@@ -1,25 +1,6 @@
 <template>
   <div class="glass-card rounded-2xl overflow-hidden">
-    <!-- 顶部标签页切换 -->
-    <div class="flex items-center gap-1 bg-muted/50 p-1.5 border-b border-border/40">
-      <button
-        class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200"
-        :class="activeTab === 'control' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-        @click="activeTab = 'control'">
-        <Sparkles class="w-4 h-4 inline mr-1.5 -mt-0.5" />
-        控制
-      </button>
-      <button
-        class="flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-all duration-200"
-        :class="activeTab === 'config' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'"
-        @click="activeTab = 'config'">
-        <Settings class="w-4 h-4 inline mr-1.5 -mt-0.5" />
-        配置
-      </button>
-    </div>
-
-    <!-- 控制标签页 -->
-    <div v-if="activeTab === 'control'" class="p-5 sm:p-6 space-y-5">
+    <div class="p-5 sm:p-6 space-y-5">
       <!-- 徽章区：模型 + 音色 + Provider -->
       <div class="flex items-center gap-2 flex-wrap">
         <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
@@ -64,30 +45,56 @@
         </div>
       </div>
 
-      <!-- Provider 选择 (简化版) -->
-      <div v-if="availableProviders.length > 0" class="space-y-2">
+      <!-- Provider 选择 + 内嵌配置 -->
+      <div class="space-y-2">
         <div class="flex items-center justify-between">
           <Label class="text-sm font-medium">供应商</Label>
-          <RouterLink to="/settings" class="text-xs text-primary hover:underline">管理供应商</RouterLink>
+          <button @click="showProviderConfig = !showProviderConfig" class="text-xs text-muted-foreground hover:text-primary transition-colors">
+            {{ showProviderConfig ? '收起配置' : (availableProviders.length ? '配置' : '配置 API Key') }}
+          </button>
         </div>
-        <Select v-model="selectedProviderId">
-          <SelectTrigger class="h-9">
-            <SelectValue :placeholder="selectedProviderObj?.name || '选择供应商'" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem v-for="p in availableProviders" :key="p.id" :value="p.id">
-              <span class="flex items-center gap-2">
-                <span class="w-2 h-2 rounded-full" :class="p.is_configured ? 'bg-green-500' : 'bg-gray-300'" />
-                {{ p.name }}
-                <span v-if="p.is_default" class="text-[10px] text-muted-foreground ml-1">(默认)</span>
-              </span>
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-      <div v-else class="rounded-lg border border-dashed border-border p-3 text-center">
-        <p class="text-xs text-muted-foreground">未配置 Provider</p>
-        <RouterLink to="/settings" class="text-xs text-primary hover:underline mt-1 inline-block">前往配置 →</RouterLink>
+        <div v-if="availableProviders.length > 0">
+          <Select v-model="selectedProviderId">
+            <SelectTrigger class="h-9">
+              <SelectValue :placeholder="selectedProviderObj?.name || '选择供应商'" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem v-for="p in availableProviders" :key="p.id" :value="p.id">
+                <span class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-green-500" />
+                  {{ p.name }}
+                  <span v-if="p.is_default" class="text-[10px] text-muted-foreground ml-1">(默认)</span>
+                </span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div v-else class="rounded-lg border border-dashed border-border p-3 text-center">
+          <p class="text-xs text-muted-foreground">未配置 Provider</p>
+        </div>
+        <!-- 内嵌 Provider 配置 -->
+        <Transition name="slide">
+          <div v-if="showProviderConfig" class="mt-3 space-y-3 rounded-xl border border-border/60 bg-muted/30 p-4">
+            <div v-for="provider in allProviders" :key="provider.id" class="flex items-center gap-3">
+              <div class="min-w-[120px] shrink-0">
+                <p class="text-xs font-medium">{{ provider.name }}</p>
+                <p class="text-[10px] text-muted-foreground/60 truncate">{{ provider.base_url }}</p>
+              </div>
+              <div class="flex items-center gap-1.5 flex-1">
+                <Badge v-if="provider.is_configured" class="text-[10px] shrink-0" variant="secondary">已配置</Badge>
+                <Badge v-else class="text-[10px] shrink-0" variant="outline">未配置</Badge>
+                <input
+                  :value="providerKeys[provider.id] || ''"
+                  @input="(e) => providerKeys[provider.id] = (e.target as HTMLInputElement).value"
+                  type="password" autocomplete="new-password"
+                  :placeholder="provider.is_configured ? '••••••••' : '输入 API Key'"
+                  class="flex-1 h-7 text-xs px-2 rounded-md border border-border/60 bg-background focus:outline-none focus:ring-1 focus:ring-primary/50"
+                />
+                <Button size="sm" variant="ghost" class="h-7 px-2 text-[10px]" @click="saveProviderKey(provider)" :disabled="!providerKeys[provider.id]?.trim()">保存</Button>
+              </div>
+            </div>
+          </div>
+        </Transition>
       </div>
 
       <!-- 风格控制 -->
@@ -102,40 +109,16 @@
       </Button>
       <p v-if="!availableProviders.length" class="text-xs text-center text-muted-foreground">请先配置 Provider API Key</p>
     </div>
-
-    <!-- 配置标签页 — 简化版音色/模型设置 -->
-    <div v-else class="p-5 sm:p-6 space-y-5">
-      <p class="text-sm text-muted-foreground">配置页面正在开发中...</p>
-      <div class="space-y-3">
-        <div class="flex items-center justify-between p-3 rounded-lg border border-border/60">
-          <div>
-            <p class="text-sm font-medium">可用音色</p>
-            <p class="text-xs text-muted-foreground">{{ voices.length }} 个音色</p>
-          </div>
-          <Badge variant="secondary">{{ voices.length }}</Badge>
-        </div>
-        <div class="flex items-center justify-between p-3 rounded-lg border border-border/60">
-          <div>
-            <p class="text-sm font-medium">已配置 Provider</p>
-            <p class="text-xs text-muted-foreground">{{ availableProviders.length }} 个</p>
-          </div>
-          <Badge :variant="availableProviders.length > 0 ? 'default' : 'destructive'">{{ availableProviders.length }}</Badge>
-        </div>
-      </div>
-      <RouterLink to="/settings" class="block">
-        <Button variant="outline" class="w-full">前往完整设置 →</Button>
-      </RouterLink>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { RouterLink } from 'vue-router'
 import { toast } from 'vue-sonner'
-import { Sparkles, Settings, Server, User, UserRound, Loader2 } from 'lucide-vue-next'
+import { Sparkles, Server, User, UserRound, Loader2 } from 'lucide-vue-next'
 import { useConfigStore } from '@/stores/config'
 import { useTaskStore } from '@/stores/task'
+import { configApi } from '@/api/config'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Label } from '@/components/ui/label'
@@ -146,15 +129,17 @@ import type { VoicePreset, ProviderInfo } from '@/types/config'
 const configStore = useConfigStore()
 const taskStore = useTaskStore()
 
-const activeTab = ref<'control' | 'config'>('control')
 const text = ref('')
 const context = ref('')
 const selectedVoice = ref('')
 const selectedProviderId = ref('')
 const isSubmitting = ref(false)
+const showProviderConfig = ref(false)
+const providerKeys = ref<Record<string, string>>({})
 
 const voices = computed(() => configStore.voices)
 const availableProviders = computed(() => configStore.providers.filter((p: ProviderInfo) => p.is_configured))
+const allProviders = computed(() => configStore.providers)
 const selectedVoiceObj = computed(() => voices.value.find((v: VoicePreset) => v.id === selectedVoice.value))
 const selectedProviderObj = computed(() => configStore.providers.find((p: ProviderInfo) => p.id === selectedProviderId.value))
 const isMaleVoice = computed(() => selectedVoiceObj.value?.gender === '男性' || selectedVoiceObj.value?.gender === 'Male')
@@ -176,4 +161,27 @@ async function handleSubmit() {
     isSubmitting.value = false
   }
 }
+
+async function saveProviderKey(provider: ProviderInfo) {
+  const key = providerKeys.value[provider.id]?.trim()
+  if (!key) { toast.error(`请输入 ${provider.name} 的 API Key`); return }
+  try {
+    await configApi.updateProviderKey(provider.id, key)
+    toast.success(`${provider.name} API Key 已保存`)
+    providerKeys.value[provider.id] = ''
+    await configStore.loadProviders()
+  } catch (e: any) {
+    toast.error(`保存 ${provider.name} 失败: ` + (e.message || '未知错误'))
+  }
+}
 </script>
+
+<style scoped>
+.slide-enter-active, .slide-leave-active {
+  transition: all 0.2s ease;
+}
+.slide-enter-from, .slide-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>

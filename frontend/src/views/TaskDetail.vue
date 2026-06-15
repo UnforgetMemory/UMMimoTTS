@@ -67,7 +67,6 @@
         </div>
       </div>
     </div>
-    <Footer />
   </div>
 </template>
 
@@ -84,7 +83,6 @@ import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import TaskProgress from '@/components/TaskProgress.vue'
 import AudioPlayer from '@/components/AudioPlayer.vue'
-import Footer from '@/components/Footer.vue'
 import type { Task } from '@/types/task'
 
 const props = defineProps<{ id: string }>()
