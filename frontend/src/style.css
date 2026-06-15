@@ -245,19 +245,54 @@ html {
 @media (min-width: 2560px) { .w-responsive { max-width: 72rem; } }
 @media (min-width: 3200px) { .w-responsive { max-width: 80rem; } }
 
-/* ===== Glassmorphism Card ===== */
+/* ===== Glassmorphism Card — 多层阴影营造 z 轴深度 ===== */
 .glass-card {
-  background: oklch(1 0 0 / 60%);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid oklch(1 0 0 / 18%);
-  box-shadow: 0 8px 32px oklch(0 0 0 / 6%);
+  background: oklch(1 0 0 / 55%);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border: 1px solid oklch(1 0 0 / 25%);
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.03),
+    0 4px 8px oklch(0 0 0 / 0.04),
+    0 12px 24px oklch(0 0 0 / 0.06),
+    0 24px 48px oklch(0 0 0 / 0.04),
+    inset 0 1px 0 oklch(1 0 0 / 0.5),
+    inset 0 -1px 0 oklch(0 0 0 / 0.03);
+  transform: translateZ(0);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.glass-card:hover {
+  box-shadow:
+    0 2px 4px oklch(0 0 0 / 0.04),
+    0 8px 16px oklch(0 0 0 / 0.06),
+    0 20px 40px oklch(0 0 0 / 0.08),
+    0 32px 64px oklch(0 0 0 / 0.05),
+    inset 0 1px 0 oklch(1 0 0 / 0.6),
+    inset 0 -1px 0 oklch(0 0 0 / 0.04);
+  transform: translateZ(2px) translateY(-1px);
 }
 
 .dark .glass-card {
-  background: oklch(0.205 0 0 / 60%);
-  border: 1px solid oklch(1 0 0 / 8%);
-  box-shadow: 0 8px 32px oklch(0 0 0 / 20%);
+  background: oklch(0.18 0 0 / 55%);
+  border: 1px solid oklch(1 0 0 / 10%);
+  box-shadow:
+    0 1px 2px oklch(0 0 0 / 0.15),
+    0 4px 8px oklch(0 0 0 / 0.12),
+    0 12px 24px oklch(0 0 0 / 0.18),
+    0 24px 48px oklch(0 0 0 / 0.12),
+    inset 0 1px 0 oklch(1 0 0 / 0.06),
+    inset 0 -1px 0 oklch(0 0 0 / 0.1);
+}
+
+.dark .glass-card:hover {
+  box-shadow:
+    0 2px 4px oklch(0 0 0 / 0.2),
+    0 8px 16px oklch(0 0 0 / 0.18),
+    0 20px 40px oklch(0 0 0 / 0.25),
+    0 32px 64px oklch(0 0 0 / 0.15),
+    inset 0 1px 0 oklch(1 0 0 / 0.08),
+    inset 0 -1px 0 oklch(0 0 0 / 0.12);
 }
 
 /* ===== Background Decoration ===== */
