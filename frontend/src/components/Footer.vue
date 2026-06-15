@@ -4,7 +4,7 @@
     role="contentinfo"
     aria-label="页脚信息"
   >
-    <div class="flex flex-col sm:flex-row items-center justify-center gap-2 sm:gap-3 flex-wrap px-4">
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-3 flex-wrap px-3 sm:px-4 lg:px-6">
       <!-- License -->
       <span class="flex items-center gap-1">
         <ScaleIcon class="w-3 h-3" />

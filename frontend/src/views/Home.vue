@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-4xl mx-auto px-4 py-8">
+  <div class="max-w-3xl sm:max-w-4xl lg:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
     <Tabs v-model="activeTab" class="space-y-4">
       <TabsList class="grid w-full grid-cols-2">
         <TabsTrigger value="synthesize">
@@ -15,12 +15,10 @@
         </TabsTrigger>
       </TabsList>
 
-      <!-- 合成面板 -->
       <TabsContent value="synthesize" class="mt-0" force-mount>
         <SynthesizeForm />
       </TabsContent>
 
-      <!-- 任务列表 -->
       <TabsContent value="tasks" class="mt-0" force-mount>
         <TaskList />
       </TabsContent>
@@ -40,20 +38,7 @@ import { useTaskStore } from '@/stores/task'
 const taskStore = useTaskStore()
 const activeTab = ref('synthesize')
 
-// 切换到任务标签时自动刷新
 watch(activeTab, (tab) => {
-  if (tab === 'tasks') {
-    taskStore.fetchTasks(0)
-  }
+  if (tab === 'tasks') taskStore.fetchTasks(0)
 })
 </script>
-
-<style scoped>
-/* 强制 TabsContent 始终渲染，用 opacity 控制可见性避免切换卡顿 */
-:deep([data-state="active"]) {
-  display: block !important;
-}
-:deep([data-state="inactive"]) {
-  display: none !important;
-}
-</style>

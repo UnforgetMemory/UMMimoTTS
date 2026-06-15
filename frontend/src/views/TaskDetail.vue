@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen flex flex-col bg-background">
     <div class="flex-1">
-      <div class="max-w-4xl mx-auto px-4 py-8">
+      <div class="max-w-3xl sm:max-w-4xl lg:max-w-5xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
         <div class="flex items-center gap-3 mb-6">
           <Button variant="ghost" size="sm" @click="router.back()">
             <ArrowLeft class="w-4 h-4" />

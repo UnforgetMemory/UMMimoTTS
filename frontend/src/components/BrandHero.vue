@@ -4,7 +4,7 @@
     aria-hidden="true"
   >
     <h1
-      class="text-[20vw] sm:text-[18vw] md:text-[16vw] lg:text-[14vw] font-bold text-foreground/[0.045] dark:text-foreground/[0.07] tracking-tighter whitespace-nowrap"
+      class="text-[22vw] sm:text-[20vw] md:text-[18vw] lg:text-[16vw] xl:text-[14vw] 2xl:text-[12vw] 3xl:text-[11vw] 4xl:text-[10vw] font-bold text-foreground/[0.045] dark:text-foreground/[0.07] tracking-tighter whitespace-nowrap"
       style="line-height: 1;"
     >
       UM-MimoTTS

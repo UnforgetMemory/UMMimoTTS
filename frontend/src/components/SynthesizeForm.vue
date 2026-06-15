@@ -1,6 +1,6 @@
 <template>
-  <div class="glass-card rounded-2xl overflow-hidden">
-    <div class="p-5 sm:p-6 space-y-5">
+  <div class="glass-card rounded-xl sm:rounded-2xl overflow-hidden">
+    <div class="p-3 sm:p-4 md:p-5 lg:p-6 space-y-4 sm:space-y-5">
       <!-- 徽章区：模型 + 音色 + Provider -->
       <div class="flex items-center gap-2 flex-wrap">
         <Badge variant="secondary" class="text-xs gap-1 border border-violet-200 dark:border-violet-800 bg-violet-50 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300">
@@ -27,15 +27,15 @@
           <Label for="text" class="text-sm font-medium">合成文本 <span class="text-destructive">*</span></Label>
           <span class="text-xs text-muted-foreground">{{ charCount.toLocaleString() }} 字符</span>
         </div>
-        <Textarea id="text" v-model="text" placeholder="输入要合成的文本内容..." rows="5" class="resize-none" />
+        <Textarea id="text" v-model="text" placeholder="输入要合成的文本内容..." rows="4" sm:rows="5" class="resize-none" />
       </div>
 
       <!-- 音色选择 -->
       <div class="space-y-2">
         <Label class="text-sm font-medium">音色 <span class="text-destructive">*</span></Label>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 sm:gap-2">
           <button v-for="voice in voices" :key="voice.id" @click="selectedVoice = voice.id"
-                  :class="['p-3 rounded-xl border text-left transition-all duration-200',
+                  :class="['p-2 sm:p-3 rounded-lg sm:rounded-xl border text-left transition-all duration-200',
                            selectedVoice === voice.id
                              ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                              : 'border-border/60 hover:border-primary/40 hover:bg-muted/30']">

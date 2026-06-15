@@ -1,5 +1,5 @@
 <template>
-  <div class="max-w-3xl mx-auto p-6">
+  <div class="max-w-3xl sm:max-w-4xl lg:max-w-5xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
     <div class="flex items-center gap-3 mb-4">
       <Button variant="ghost" size="sm" @click="router.push('/')">
         <ArrowLeft class="w-4 h-4" />
@@ -23,9 +23,9 @@
           <div v-if="providers.length === 0 && !loading" class="text-xs text-muted-foreground text-center py-4">
             暂无供应商数据
           </div>
-          <div class="flex flex-wrap gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div v-for="provider in providers" :key="provider.id"
-                 class="rounded-lg border border-border/50 overflow-hidden transition-colors flex-1 min-w-[280px] bg-card/50"
+                 class="rounded-lg border border-border/50 overflow-hidden transition-colors bg-card/50"
                  :class="[provider.is_default ? 'ring-1 ring-primary/30' : '']">
               <div class="flex items-center justify-between px-3 py-2 bg-muted/30">
                 <div class="flex items-center gap-2 min-w-0">

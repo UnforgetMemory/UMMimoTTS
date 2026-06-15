@@ -1,5 +1,5 @@
 <template>
-  <div class="space-y-3">
+  <div class="space-y-2 sm:space-y-3">
     <div class="flex items-center justify-between">
       <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">任务列表</h2>
       <Button variant="ghost" size="sm" @click="taskStore.fetchTasks(0)" :disabled="taskStore.refreshing">
@@ -18,7 +18,7 @@
 
     <TransitionGroup v-else name="list" tag="div" class="space-y-2">
       <div v-for="task in taskStore.tasks" :key="task.id"
-           class="glass-card rounded-xl p-3 cursor-pointer hover:border-primary/30 transition-all duration-200"
+           class="glass-card rounded-lg sm:rounded-xl p-2 sm:p-3 cursor-pointer hover:border-primary/30 transition-all duration-200"
            @click="goToTask(task.id)">
         <div class="flex items-center justify-between">
           <div class="min-w-0 flex-1">
