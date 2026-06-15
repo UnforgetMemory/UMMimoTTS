@@ -1,17 +1,17 @@
 <template>
-  <div class="min-h-screen bg-background">
-    <div class="max-w-3xl mx-auto p-6">
-      <div class="flex items-center gap-3 mb-4">
-        <Button variant="ghost" size="sm" @click="router.push('/')">
-          <ArrowLeft class="w-4 h-4" />
-        </Button>
-      </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>API 配置</CardTitle>
-          <CardDescription>配置 API Key 和供应商以使用语音合成服务</CardDescription>
-        </CardHeader>
-        <CardContent>
+  <div class="min-h-screen flex flex-col bg-background">
+    <div class="flex-1">
+      <div class="max-w-3xl mx-auto p-6">
+        <div class="flex items-center gap-3 mb-4">
+          <Button variant="ghost" size="sm" @click="router.push('/')">
+            <ArrowLeft class="w-4 h-4" />
+          </Button>
+        </div>
+        <div class="glass-card rounded-xl p-6">
+          <div class="mb-6">
+            <h1 class="text-xl font-semibold">API 配置</h1>
+            <p class="text-sm text-muted-foreground mt-1">配置 API Key 和供应商以使用语音合成服务</p>
+          </div>
           <div class="space-y-5">
             <input type="text" autocomplete="username" class="hidden" aria-hidden="true" tabindex="-1" />
             <div class="space-y-3">
@@ -25,11 +25,11 @@
               <div v-if="providers.length === 0 && !loading" class="text-xs text-muted-foreground text-center py-4">
                 暂无供应商数据
               </div>
-               <div class="flex flex-wrap gap-3">
+              <div class="flex flex-wrap gap-3">
                 <div v-for="provider in providers" :key="provider.id"
-                     class="glass-card rounded-xl overflow-hidden transition-all duration-200 flex-1 min-w-[280px]"
+                     class="rounded-lg border border-border/50 overflow-hidden transition-colors flex-1 min-w-[280px] bg-card/50"
                      :class="[provider.is_default ? 'ring-1 ring-primary/30' : '']">
-                  <div class="flex items-center justify-between px-3 py-2 bg-muted/50">
+                  <div class="flex items-center justify-between px-3 py-2 bg-muted/30">
                     <div class="flex items-center gap-2 min-w-0">
                       <ServerIcon class="w-4 h-4 text-muted-foreground shrink-0" />
                       <span class="text-sm font-medium truncate">{{ provider.name }}</span>
@@ -52,9 +52,10 @@
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
+    <Footer />
   </div>
 </template>
 
@@ -67,10 +68,10 @@ import { Loader2 as Loader2Icon, Server as ServerIcon } from 'lucide-vue-next'
 import { useConfigStore } from '@/stores/config'
 import { configApi } from '@/api/config'
 import type { ProviderInfo } from '@/types/config'
-import { Card, CardHeader, CardContent, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import Footer from '@/components/Footer.vue'
 
 const router = useRouter()
 const configStore = useConfigStore()

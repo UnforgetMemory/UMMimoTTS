@@ -243,6 +243,87 @@ html {
   background-color: oklch(1 0 0 / 25%);
 }
 
+/* ===== Glassmorphism Card ===== */
+.glass-card {
+  background: oklch(1 0 0 / 60%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid oklch(1 0 0 / 18%);
+  box-shadow: 0 8px 32px oklch(0 0 0 / 6%);
+}
+
+.dark .glass-card {
+  background: oklch(0.205 0 0 / 60%);
+  border: 1px solid oklch(1 0 0 / 8%);
+  box-shadow: 0 8px 32px oklch(0 0 0 / 20%);
+}
+
+/* ===== Background Decoration ===== */
+.bg-decor {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.bg-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.35;
+  will-change: transform;
+}
+
+.bg-blob-1 {
+  width: 500px;
+  height: 500px;
+  background: oklch(0.8 0.12 260);
+  top: -10%;
+  right: -5%;
+  animation: blob-float 18s ease-in-out infinite;
+}
+
+.bg-blob-2 {
+  width: 400px;
+  height: 400px;
+  background: oklch(0.85 0.1 200);
+  bottom: -8%;
+  left: -5%;
+  animation: blob-float 22s ease-in-out infinite reverse;
+}
+
+.bg-blob-3 {
+  width: 350px;
+  height: 350px;
+  background: oklch(0.82 0.08 300);
+  top: 40%;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: blob-float 20s ease-in-out infinite 3s;
+}
+
+.dark .bg-blob-1 {
+  background: oklch(0.35 0.08 260);
+  opacity: 0.2;
+}
+
+.dark .bg-blob-2 {
+  background: oklch(0.3 0.06 200);
+  opacity: 0.15;
+}
+
+.dark .bg-blob-3 {
+  background: oklch(0.32 0.06 300);
+  opacity: 0.18;
+}
+
+@keyframes blob-float {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -40px) scale(1.05); }
+  66% { transform: translate(-20px, 20px) scale(0.95); }
+}
+
 /* Hide scrollbar when not hovering the scrollable area */
 .scrollbar-auto {
   scrollbar-width: thin;
