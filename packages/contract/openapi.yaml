@@ -1,0 +1,520 @@
+openapi: "3.1.0"
+info:
+  title: UM-MimoTTS API (v4 codebase, v3 surface)
+  version: 4.0.0
+  description: >
+    MiMo-TTS 自动化流程工作台 REST v3（单机本地服务）。
+    契约先行（ADR-003）：本文件是前后端类型唯一事实源，
+    前端经 `npm run gen`（openapi-typescript）生成 `apps/web/src/api/v3.d.ts`。
+servers:
+  - url: http://127.0.0.1:30231/api/v3
+security:
+  - bearerAuth: []
+paths:
+  /health:
+    get:
+      security: []
+      summary: 健康检查（免鉴权）
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  version: { type: string }
+                required: [status, version]
+
+  /config:
+    get:
+      summary: 音色/模型/供应商/默认值与公告
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Config"
+
+  /providers:
+    get:
+      summary: 供应商列表（api_key 永不下发）
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Provider" }
+  /providers/{id}/key:
+    put:
+      summary: 保存供应商 API Key（服务端 AES-256-GCM 密文落盘）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_key: { type: string }
+              required: [api_key]
+      responses:
+        "200": { description: ok }
+        "404": { $ref: "#/components/responses/Error" }
+  /providers/{id}:
+    put:
+      summary: 编辑供应商元数据（name/base_url/budget_group，自定义上游）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                base_url: { type: string }
+                budget_group: { type: string }
+      responses:
+        "200": { description: ok }
+        "404": { $ref: "#/components/responses/Error" }
+  /providers/{id}/default:
+    put:
+      summary: 设为默认供应商
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /sessions:
+    get:
+      summary: 导入会话列表（SQL 分页）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionPage"
+    post:
+      summary: 创建导入会话
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+              required: [name]
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+  /sessions/{id}:
+    get:
+      summary: 会话详情
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Session" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: 删除会话及其任务/音频（级联）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+  /sessions/{id}/cancel:
+    post:
+      summary: 取消会话内全部非终态任务
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+  /sessions/{id}/export:
+    get:
+      summary: 导出会话全部成品音频（流式 ZIP）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: zip stream
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+
+  /import:
+    post:
+      summary: 批量导入 TXT（multipart，多文件单事务，UTF-8/GBK 探测）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files:
+                  type: array
+                  items: { type: string, format: binary }
+                session_id: { type: string }
+                session_name: { type: string }
+                voice: { type: string }
+                model: { type: string }
+                style: { type: string }
+              required: [files]
+      responses:
+        "202":
+          description: 导入已受理，任务后台入队
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImportResult" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /auth/scoped:
+    post:
+      summary: 签发短期 scoped 签名凭据（供 URL 场景：audio/events/preview，替代原始 token）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                  description: "audio:{task_id} | events:{channel} | preview:{voice_id}"
+              required: [scope]
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expires_in: { type: integer }
+                  scope: { type: string }
+                required: [token, expires_in, scope]
+        "400": { $ref: "#/components/responses/Error" }
+
+  /tasks:
+    get:
+      summary: 任务列表（SQL 分页 + 状态/会话/搜索过滤）
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 0 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 50, maximum: 500 } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/TaskStatus" } }
+        - { name: session_id, in: query, schema: { type: string } }
+        - { name: search, in: query, schema: { type: string } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskPage" }
+    post:
+      summary: 创建合成任务（提交即入队；超长文本智能分片）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTaskRequest" }
+      responses:
+        "201":
+          description: created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/Error" }
+  /tasks/{id}:
+    get:
+      summary: 任务详情（含分片）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskDetail" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      summary: 删除任务与音频文件
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+  /tasks/{id}/retry:
+    post:
+      summary: 重试失败任务（重切+重入队）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+        "400": { $ref: "#/components/responses/Error" }
+  /tasks/{id}/cancel:
+    post:
+      summary: 取消任务
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: ok }
+  /tasks/{id}/audio:
+    get:
+      summary: 任务音频（HTTP Range 流式播放/seek；token 经 query 或 Bearer）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: audio stream
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+        "206": { description: partial content }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /tasks/{id}/download:
+    get:
+      summary: 单任务音频下载（attachment；token 经 query 或 Bearer）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: audio file
+          content:
+            audio/wav:
+              schema: { type: string, format: binary }
+  /voices/{id}/preview:
+    get:
+      summary: 音色试听（302 重定向到官方 CDN 白名单；token 经 query 或 Bearer）
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: token, in: query, required: false, schema: { type: string } }
+      responses:
+        "302": { description: redirect to CDN sample }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /events:
+    get:
+      summary: SSE 实时事件流（channel=session:{id}|task:{id}|providers；token 经 query 或 Bearer）
+      parameters:
+        - { name: channel, in: query, required: true, schema: { type: string } }
+        - { name: token, in: query, required: false, schema: { type: string } }
+      responses:
+        "200":
+          description: text/event-stream（DomainEvent，`type` 标签 JSON）
+        "401": { $ref: "#/components/responses/Error" }
+
+  /stats:
+    get:
+      summary: 引擎运行时统计（队列深度/worker/各 provider AIMD 窗口与熔断状态）
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queue_depth: { type: integer }
+                  workers: { type: integer }
+                  providers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        provider_id: { type: string }
+                        group: { type: string }
+                        window: { type: integer }
+                        inflight: { type: integer }
+                        open: { type: boolean }
+                        retry_after_secs: { type: integer, nullable: true }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  responses:
+    Error:
+      description: 结构化错误
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error: { type: string }
+              code:
+                type: string
+                enum: [NOT_FOUND, INVALID_INPUT, UNAUTHORIZED, RATE_LIMITED,
+                       CONTENT_BLOCKED, CONTEXT_OVERFLOW, CONFLICT, INTERNAL]
+            required: [error, code]
+  schemas:
+    Id:
+      type: string
+      format: uuid
+    TaskStatus:
+      type: string
+      enum: [pending, queued, synthesizing, merging, done, failed, cancelled]
+    ChunkStatus:
+      type: string
+      enum: [pending, inflight, done, failed]
+    SessionStatus:
+      type: string
+      enum: [active, completed, failed, cancelled]
+    VoicePreset:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        language: { type: string }
+        gender: { type: string }
+        style: { type: string }
+        preview_url: { type: string }
+      required: [id, name, language, gender]
+    ModelPreset:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+      required: [id, name]
+    Provider:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        base_url: { type: string }
+        kind: { type: string, enum: [xiaomi, custom] }
+        is_configured: { type: boolean }
+        is_default: { type: boolean }
+        budget_group: { type: string }
+      required: [id, name, base_url, kind, is_configured, is_default]
+    Config:
+      type: object
+      properties:
+        voices: { type: array, items: { $ref: "#/components/schemas/VoicePreset" } }
+        models: { type: array, items: { $ref: "#/components/schemas/ModelPreset" } }
+        providers: { type: array, items: { $ref: "#/components/schemas/Provider" } }
+        default_voice: { type: string }
+        default_model: { type: string }
+        chunk: { $ref: "#/components/schemas/ChunkSettings" }
+        announcement: { type: string, nullable: true }
+        stream_audio: { type: boolean }
+      required: [voices, models, providers, default_voice, default_model, chunk, stream_audio]
+    ChunkSettings:
+      type: object
+      properties:
+        context_window_tokens: { type: integer }
+        target_tokens: { type: integer }
+        hard_cap_tokens: { type: integer }
+    Session:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/SessionStatus" }
+        total_tasks: { type: integer }
+        done_tasks: { type: integer }
+        failed_tasks: { type: integer }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+      required: [id, name, status, total_tasks, done_tasks, failed_tasks, created_at]
+    Task:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        session_id: { $ref: "#/components/schemas/Id", nullable: true }
+        title: { type: string }
+        status: { $ref: "#/components/schemas/TaskStatus" }
+        voice: { type: string }
+        model: { type: string }
+        style: { type: string, nullable: true }
+        total_chars: { type: integer }
+        total_tokens: { type: integer }
+        total_chunks: { type: integer }
+        done_chunks: { type: integer }
+        failed_chunks: { type: integer }
+        duration_ms: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+        has_audio: { type: boolean }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+      required: [id, title, status, voice, model, total_chunks, done_chunks,
+                 failed_chunks, has_audio, created_at]
+    Chunk:
+      type: object
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        task_id: { $ref: "#/components/schemas/Id" }
+        seq: { type: integer }
+        text: { type: string }
+        token_estimate: { type: integer }
+        status: { $ref: "#/components/schemas/ChunkStatus" }
+        retry_count: { type: integer }
+        duration_ms: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+      required: [id, task_id, seq, token_estimate, status, retry_count]
+    TaskDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Task" }
+        - type: object
+          properties:
+            content: { type: string }
+            chunks: { type: array, items: { $ref: "#/components/schemas/Chunk" } }
+    CreateTaskRequest:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        voice: { type: string }
+        model: { type: string, default: "mimo-v2.5-tts" }
+        style: { type: string, nullable: true }
+        provider_id: { type: string, nullable: true }
+        session_id: { $ref: "#/components/schemas/Id", nullable: true }
+        priority: { type: integer, default: 0 }
+      required: [title, content, voice]
+    TaskPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Task" } }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+      required: [data, total, page, page_size]
+    SessionPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/Session" } }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+      required: [data, total, page, page_size]
+    ImportResult:
+      type: object
+      properties:
+        session_id: { $ref: "#/components/schemas/Id" }
+        files_received: { type: integer }
+        tasks_created: { type: integer }
+        rejected: { type: array, items: { type: string } }
+      required: [session_id, files_received, tasks_created]

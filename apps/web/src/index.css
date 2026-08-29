@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Tailwind 4: class-based dark mode (dark default + localStorage memory +
+ * manual toggle). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * UM-MimoTTS v4 design tokens (ADR-014).
+ * Source: docs/compose/plans/2026-08-28-mimo-adaptation-research.md §3
+ * (official style tokens). Brand #FF6900 (dark #FF8533); ink scale
+ * #1A1A1A/#666666/#999999 (dark greys inverted).
+ */
+@theme {
+  --color-brand: #ff6900;
+  --color-brand-hover: #e65100;
+  --color-brand-pressed: #ff5c00;
+  --color-brand-soft: rgba(255, 103, 0, 0.08);
+  --color-brand-ring: rgba(255, 103, 0, 0.2);
+
+  --color-ink: #1a1a1a;
+  --color-ink-secondary: #666666;
+  --color-ink-tertiary: #999999;
+
+  --color-surface: #ffffff;
+  --color-surface-2: #f7f7f7;
+  --color-surface-3: #f0f0f0;
+  --color-border: #e8e8e8;
+
+  --font-sans: "MiSans", -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Geist Mono", "JetBrains Mono", "SF Mono", monospace;
+}
+
+/* Dark theme token overrides: redeclare the CSS variables under html.dark —
+ * Tailwind utilities referencing var() pick them up automatically. */
+.dark {
+  --color-brand: #ff8533;
+  --color-brand-hover: #ff9a55;
+  --color-brand-pressed: #ff6700;
+  --color-brand-soft: rgba(255, 133, 51, 0.1);
+  --color-brand-ring: rgba(255, 133, 51, 0.24);
+
+  --color-ink: #e5e5e5;
+  --color-ink-secondary: #999999;
+  --color-ink-tertiary: #666666;
+
+  --color-surface: #0b0b0b;
+  --color-surface-2: #151515;
+  --color-surface-3: #1e1e1e;
+  --color-border: #2a2a2a;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-surface text-ink font-sans antialiased;
+  }
+
+  /* IDs/timestamps/numbers: mono + tabular numerals. */
+  .num {
+    @apply font-mono tabular-nums;
+  }
+}
+
+@layer components {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 4px;
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "@um-mimotts/contract",
+  "private": true,
+  "version": "4.0.0",
+  "description": "UM-MimoTTS v4 API contract (OpenAPI 3.1) — single source of truth for frontend types (ADR-003)",
+  "scripts": {
+    "gen": "openapi-typescript openapi.yaml -o generated/v3.d.ts",
+    "check": "openapi-typescript openapi.yaml -o generated/v3.d.ts --check"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.10.0"
+  }
+}

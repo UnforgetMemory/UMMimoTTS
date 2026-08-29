@@ -1,5 +1,9 @@
 {
   "devDependencies": {
     "@playwright/test": "^1.60.0"
+  },
+  "scripts": {
+    "e2e:build": "npm run build --prefix apps/web && cargo build -p mimotts-cli --features embed-ui",
+    "e2e": "npx playwright test -c e2e-v4/playwright.config.ts"
   }
 }

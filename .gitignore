@@ -1,7 +1,9 @@
 # ── Rust ──────────────────────────────────────────────────
 **/target/
 **/*.rs.bk
-Cargo.lock
+# Cargo.lock 入库（v4 起可复现构建；库 crate 不受影响）
+# 例外：冻结的 v3 backend/ 目录维持独立构建，lock 不入库
+backend/Cargo.lock
 
 # ── Node ──────────────────────────────────────────────────
 node_modules/
@@ -11,6 +13,7 @@ pnpm-lock.yaml
 # ── Environment ────────────────────────────────────────────
 .env
 .env.local
+.env.*
 frontend/.env*
 e2e/.env*
 
@@ -40,10 +43,23 @@ start-*.bat
 # ── AI / Agent development tools ──────────────────────────
 .lingma/
 .agents/
+.um.agents/
 .opencode
 .codegraph
 .sisyphus
-docs/
+# Agent-generated docs stay local except the tracked ADR + v4 plans (the
+# README links them; they must ship with the repo). `docs/*` (not `docs/`)
+# keeps the directory itself traversable for the negations below.
+docs/*
+!docs/adr/
+!docs/compose/
+docs/adr/*
+!docs/adr/decisions.md
+docs/compose/*
+!docs/compose/plans/
+docs/compose/plans/*
+!docs/compose/plans/2026-08-28-mimotts-workbench-rebuild.md
+!docs/compose/plans/2026-08-28-mimo-adaptation-research.md
 .playwright-mcp/
 
 # ── Logs ──────────────────────────────────────────────────
@@ -69,6 +85,9 @@ e2e-report/
 *-test.ps1
 *TEST-REPORT.md
 *.test.*
+# v4 frontend unit tests must be tracked (v3 legacy `*.test.*` rule is scoped out)
+!apps/web/src/**/*.test.ts
+!apps/web/src/**/*.test.tsx
 sse_test.txt
 test_cancel.rs
 test-browser.js
@@ -78,3 +97,14 @@ frontend/public/snapshot-*
 # ── Runtime data ──────────────────────────────────────────
 data/
 .localref/
+
+# ── v4 rebuild hygiene (legacy artifacts committed pre-v4) ──
+backend/task_texts.db
+backend/text_files/
+.omo/
+stress_results/
+frontend/dist/
+apps/web/dist/
+packages/contract/generated/
+e2e-v4/.state.json
+e2e-v4/test-results/
