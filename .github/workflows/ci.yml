@@ -10,43 +10,65 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build-and-test:
-    name: Build & Test
+  rust:
+    name: Rust workspace (v4)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-      
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-      
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-      
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Cache cargo
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            backend/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('backend/Cargo.lock') }}
-      
-      - name: Run backend tests
-        working-directory: backend
-        run: cargo test
-      
-      - name: Build backend release
-        working-directory: backend
-        run: cargo build --release
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock', '**/Cargo.toml') }}
+      - name: Test workspace
+        run: cargo test --workspace
+      - name: Build release
+        run: cargo build --release -p mimotts-cli
+
+  frontend:
+    name: Frontend (React 19 + TS7)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Generate contract types
+        working-directory: packages/contract
+        run: |
+          npm ci
+          npm run gen
+      - name: Copy types into the frontend
+        run: node apps/web/scripts/copy-contract-types.mjs
+      - name: Contract drift gate (committed v3.d.ts must match openapi.yaml)
+        run: git diff --exit-code -- apps/web/src/api/v3.d.ts
+      - name: Install
+        working-directory: apps/web
+        run: npm ci
+      - name: Type-check + build (TS7)
+        working-directory: apps/web
+        run: npm run build
+      - name: Unit tests
+        working-directory: apps/web
+        run: npm test -- --run
+
+  stress:
+    name: 1000-file stress gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-stress-${{ hashFiles('Cargo.lock') }}
+      - name: Stress
+        run: cargo test -p mimotts-engine --test stress_v4 -- --nocapture
