@@ -1,0 +1,34 @@
+[package]
+name = "mimotts-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "UM-MimoTTS v4 HTTP layer: REST v3 + SSE + auth + embedded web UI"
+
+[dependencies]
+mimotts-core.workspace = true
+mimotts-engine.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+actix-web = "4"
+actix-cors = "0.7"
+actix-files = "0.6"
+actix-multipart = "0.7"
+rust-embed = { version = "8", optional = true }
+mime_guess = "2"
+dotenvy = "0.15"
+sha2 = "0.10"
+hex = "0.4"
+tokio-stream = "0.1"
+zip = "0.6"
+
+[features]
+# Single-binary distribution — embeds apps/web/dist at compile time.
+# Requires the frontend to be built first (npm run build in apps/web).
+embed-ui = ["dep:rust-embed"]

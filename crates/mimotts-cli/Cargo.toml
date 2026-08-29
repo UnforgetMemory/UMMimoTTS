@@ -1,0 +1,35 @@
+[package]
+name = "mimotts-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "UM-MimoTTS v4 CLI: serve / run / key / migrate (headless-first)"
+
+[[bin]]
+name = "mimotts"
+path = "src/main.rs"
+
+[dependencies]
+mimotts-core.workspace = true
+mimotts-engine.workspace = true
+mimotts-api.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap = { version = "4", features = ["derive"] }
+dotenvy = "0.15"
+actix-web = "4"
+actix-cors = "0.7"
+actix-files = "0.6"
+mime_guess = "2"
+rusqlite = { version = "0.39", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.34"
+
+[features]
+embed-ui = ["mimotts-api/embed-ui"]

@@ -1,0 +1,22 @@
+[package]
+name = "mimotts-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "UM-MimoTTS v4 core: domain, events, chunking, audio, crypto (pure, no IO)"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+aes-gcm = "0.10"
+base64.workspace = true
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }

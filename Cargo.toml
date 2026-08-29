@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/mimotts-core",
+  "crates/mimotts-engine",
+  "crates/mimotts-api",
+  "crates/mimotts-cli",
+]
+# v3 legacy crate is frozen; keep it out of the v4 workspace.
+exclude = ["backend"]
+
+[workspace.package]
+version = "4.0.3"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+mimotts-core = { path = "crates/mimotts-core" }
+mimotts-engine = { path = "crates/mimotts-engine" }
+mimotts-api = { path = "crates/mimotts-api" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "v7", "serde"] }
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.34"
+reqwest = { version = "0.13", features = ["json", "stream"] }
+base64 = "0.22"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
